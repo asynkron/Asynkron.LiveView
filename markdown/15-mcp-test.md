@@ -26,19 +26,3 @@ graph TD
 ```
 
 This file demonstrates the MCP server's ability to create markdown files that integrate seamlessly with the live view system.
-
-
-
-## MCP Update Test
-
-This was appended via MCP!
-
-
-## MCP Update Test
-
-This was appended via MCP!
-
-
-## MCP Update Test
-
-This was appended via MCP!
