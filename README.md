@@ -25,7 +25,7 @@ Instead of reading static logs or scrolling endlessly in a terminal, you get a *
 ## How to
 
 Open a browser to: `http://localhost:8080/?path={path-to-your-markdown-logs}`.
-e.g. ``http://localhost:8080/?path=~/git/asynkron/Asynkron.DurableFunctions/Logs`
+e.g. `http://localhost:8080/?path=~/git/asynkron/Asynkron.DurableFunctions/Logs`
 
 Update your `agents.md` (or similar file depending on agent) to something similar to this:
 
