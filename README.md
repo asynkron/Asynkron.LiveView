@@ -22,6 +22,72 @@ When working with CLI-based AI agents such as **Codex CLI** or **CoPilot CLI**, 
 
 Instead of reading static logs or scrolling endlessly in a terminal, you get a **clear, dynamic, and live view** of what your AI agent is doing.
 
+## How to
+
+Open a browser to: `http://localhost:8080/?path={path-to-your-markdown-logs}`.
+e.g. ``http://localhost:8080/?path=~/git/asynkron/Asynkron.DurableFunctions/Logs`
+
+Update your `agents.md` (or similar file depending on agent) to something similar to this:
+
+```
+
+
+## CLI
+- when working using in the CLI, I want you to place markdown files into a /logs directory. we have a special viewer that display any new content there. we can show mermaid diagrams, code diffs, code snippets, architectural plans etc.
+
+Example log file: `log{unixtimestamp}.md` - always use the current unix timestamp to ensure unique filenames.
+
+---
+boring activities:
+### 2025-09-27 17:20 CEST — MultiHost Soak Test Initiated
+* ✅ Goal: repeat Category=MultiHost suite for 5 consecutive passes.
+* ✅ Loop cadence: sequential runs, capturing per-iteration duration & status.
+* ✅ Environment: local Testcontainers PostgreSQL (auto-provisioned per run).
+* ⚠️ Something broke a bit.
+* ❌ Something terrible happened
+---
+
+Infographics / examples
+// Mermaid diagrams - use often, class, sequence and flow charts. make sure to escpae { ( node and other reserved chars in mermaid syntax
+// Relevant Code blocks
+// Test result table + summary
+// Log snippets.
+
+---
+
+Success stories, we completed some larger work
+### 2025-09-27 17:20 CEST — VICTORY!
+* ⭐️ We did it! All tests passed!
+* ⭐️ Everything is awesome!
+* 🎉 5/5 passes of Category=MultiHost suite.
+
+---
+
+### Always add log files when:
+
+1. building the project
+ - report build success or failure
+ - include any relevant build errors
+2. running tests
+    - report test success or failure
+    - include test summary and any relevant test failures 
+3. making any code changes
+    - include code diffs or snippets of the changes made, whichever makes most sense
+4. completing any significant task
+    - include a summary of what was accomplished
+    - highlight any important details or next steps 
+5. every 15 minutes if nothing else has happened
+    - provide a brief status update
+    - mention any ongoing tasks or upcoming milestones
+6. whenever you make a plan or change a plan
+    - outline the new plan or changes made
+    - explain the reasoning behind the changes
+    - confirm with user that the plan aligns with their goals
+7. whenever you think the user would benefit from an update
+    - use your judgment to determine when an update is warranted
+ - consider the user's perspective and what information would be most helpful
+```
+
 ---
 
 ## Features
