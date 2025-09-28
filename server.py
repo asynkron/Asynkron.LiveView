@@ -70,8 +70,8 @@ class LiveViewServer:
             except Exception as e:
                 logger.error(f"Error reading file {md_file}: {e}")
                 
-        # Sort by creation time
-        files.sort(key=lambda x: x['created'])
+        # Sort by creation time (newest first)
+        files.sort(key=lambda x: x['created'], reverse=True)
         return files
     
     def get_unified_markdown(self) -> str:
@@ -229,6 +229,45 @@ class LiveViewServer:
             padding: 10px;
             border-radius: 5px;
         }
+        .diagram-error {
+            color: #dc3545;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .diagram-placeholder {
+            background: #e9ecef;
+            border: 1px solid #dee2e6;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            color: #6c757d;
+            text-align: center;
+        }
+        .diagram-placeholder pre {
+            background: #f8f9fa;
+            margin-top: 10px;
+            text-align: left;
+        }
+        .content-flash {
+            animation: flashIn 0.8s ease-in-out;
+        }
+        @keyframes flashIn {
+            0% { 
+                background-color: #fff3cd;
+                transform: scale(1.02);
+            }
+            50% { 
+                background-color: #ffeaa7;
+                transform: scale(1.01);
+            }
+            100% { 
+                background-color: white;
+                transform: scale(1);
+            }
+        }
         .file-separator {
             border-top: 2px solid #e9ecef;
             margin: 30px 0;
@@ -294,7 +333,21 @@ class LiveViewServer:
         <p>Loading markdown content...</p>
     </div>
 
+    <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
     <script>
+        // Initialize Mermaid with error handling
+        let mermaidReady = false;
+        try {
+            mermaid.initialize({ 
+                startOnLoad: false,
+                theme: 'default',
+                securityLevel: 'loose'
+            });
+            mermaidReady = true;
+        } catch (error) {
+            console.warn('Mermaid not available:', error);
+        }
+
         // Simple markdown parser (basic implementation)
         function parseMarkdown(md) {
             let html = md;
@@ -312,7 +365,8 @@ class LiveViewServer:
             
             // Code blocks
             html = html.replace(/```mermaid([\\s\\S]*?)```/gim, function(match, content) {
-                return '<div class="diagram-placeholder">🔗 Mermaid Diagram:<br><pre>' + content.trim() + '</pre></div>';
+                const id = 'mermaid-' + Math.random().toString(36).substr(2, 9);
+                return `<div class="mermaid" id="${id}">${content.trim()}</div>`;
             });
             html = html.replace(/```(\\w+)?([\\s\\S]*?)```/gim, '<pre><code>$2</code></pre>');
             
@@ -386,10 +440,37 @@ class LiveViewServer:
             return html;
         }
         
-        function updateContent(content) {
+        function updateContent(content, isNewContent = false) {
             const contentEl = document.getElementById('content');
             const html = renderMarkdown(content);
             contentEl.innerHTML = html;
+            
+            // Add flash effect for new content
+            if (isNewContent) {
+                contentEl.classList.add('content-flash');
+                setTimeout(() => {
+                    contentEl.classList.remove('content-flash');
+                }, 800);
+            }
+            
+            // Render Mermaid diagrams
+            const mermaidElements = contentEl.querySelectorAll('.mermaid');
+            if (mermaidReady && typeof mermaid !== 'undefined') {
+                mermaidElements.forEach(async (element) => {
+                    try {
+                        const { svg } = await mermaid.render(element.id + '-svg', element.textContent);
+                        element.innerHTML = svg;
+                    } catch (error) {
+                        console.error('Error rendering Mermaid diagram:', error);
+                        element.innerHTML = `<div class="diagram-error">Error rendering diagram: ${error.message}</div>`;
+                    }
+                });
+            } else {
+                // Fallback for when Mermaid is not available
+                mermaidElements.forEach((element) => {
+                    element.innerHTML = `<div class="diagram-placeholder">📊 Mermaid Diagram (requires network access):<br><pre>${element.textContent}</pre></div>`;
+                });
+            }
         }
         
         function connectWebSocket() {
@@ -410,10 +491,10 @@ class LiveViewServer:
                     const data = JSON.parse(event.data);
                     
                     if (data.type === 'initial') {
-                        updateContent(data.content);
+                        updateContent(data.content, false);
                         updateStatus(true, 'Content loaded');
                     } else if (data.type === 'update') {
-                        updateContent(data.content);
+                        updateContent(data.content, true);
                         updateStatus(true, `Updated: ${data.new_file}`);
                         
                         // Flash notification
