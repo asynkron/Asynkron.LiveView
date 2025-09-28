@@ -92,6 +92,60 @@ python server.py --help
 - `--dir DIRECTORY`: Specify the directory to watch for markdown files (default: `markdown`)
 - `--port PORT`: Set the server port (default: `8080`)
 
+### Dynamic Path Support
+
+The server now supports pointing to different directories in multiple ways:
+
+#### 1. Query Parameter (Highest Priority)
+
+Navigate to any directory using the `path` query parameter:
+
+```bash
+# Point to a specific directory
+http://localhost:8080/?path=/path/to/your/markdown/files
+
+# Use tilde expansion for home directory  
+http://localhost:8080/?path=~/Documents/notes
+
+# Example from the original request
+http://localhost:8080/?path=~/git/asynkron/Asynkron.DurableFunctions/Logs
+```
+
+#### 2. Environment Variable (Fallback)
+
+Set the `LIVEVIEW_PATH` environment variable:
+
+```bash
+# Using the script
+LIVEVIEW_PATH=~/git/project/docs ./run.sh
+
+# Using the server directly
+LIVEVIEW_PATH=/path/to/markdown python server.py
+```
+
+#### 3. Command Line Argument (Default)
+
+Use the traditional `--dir` argument:
+
+```bash
+python server.py --dir /path/to/markdown --port 3000
+```
+
+### Priority Order
+
+1. Query parameter (`?path=...`)
+2. Environment variable (`LIVEVIEW_PATH`)  
+3. Command line argument (`--dir`)
+4. Default (`markdown/`)
+
+### Fallback Behavior
+
+When the specified directory is missing or empty, the server displays helpful markdown content explaining:
+- What went wrong
+- How to fix the issue
+- Usage examples
+- Alternative methods to specify paths
+
 ### Example
 
 ```bash
@@ -108,8 +162,28 @@ python server.py --dir /path/to/my/docs --port 3000
 ## API Endpoints
 
 - `GET /`: Main web interface
+  - Query parameter: `?path=/path/to/directory` - Specify custom directory
 - `GET /ws`: WebSocket endpoint for live updates
+  - Query parameter: `?path=/path/to/directory` - Specify custom directory for WebSocket connection  
 - `GET /api/content`: JSON API returning unified markdown content
+  - Query parameter: `?path=/path/to/directory` - Specify custom directory
+  - Returns: `{content, files, timestamp, directory}`
+
+### Usage Examples
+
+```bash
+# Start server with default directory
+./run.sh
+
+# Start server with environment variable
+LIVEVIEW_PATH=~/Documents/notes ./run.sh
+
+# Start server on custom port with custom directory
+LIVEVIEW_PATH=/var/log/markdown PORT=3000 ./run.sh
+
+# Access different directories via URL
+curl "http://localhost:8080/api/content?path=~/git/project/docs"
+```
 
 ## File Structure
 

@@ -13,6 +13,7 @@ import os
 import time
 from pathlib import Path
 from typing import List, Dict, Any
+from urllib.parse import unquote
 from aiohttp import web, WSMsgType
 from aiohttp.web_response import Response
 from watchdog.observers import Observer
@@ -43,22 +44,95 @@ class LiveViewServer:
     """Main server class for the markdown live view system."""
     
     def __init__(self, markdown_dir: str = "markdown", port: int = 8080):
-        self.markdown_dir = Path(markdown_dir)
+        self.default_markdown_dir = Path(markdown_dir)
+        self.markdown_dir = self.default_markdown_dir  # Current active directory
         self.port = port
         self.clients: set = set()
         self.observer = None
         
-        # Ensure markdown directory exists
-        self.markdown_dir.mkdir(exist_ok=True)
+        # Ensure default markdown directory exists
+        self.default_markdown_dir.mkdir(exist_ok=True)
+    
+    def resolve_markdown_path(self, path_param: str = None) -> Path:
+        """Resolve the markdown directory path from various sources."""
+        # Priority: query parameter > environment variable > default
+        target_path = None
         
-    def get_markdown_files(self) -> List[Dict[str, Any]]:
+        if path_param:
+            # Use query parameter path
+            target_path = path_param
+            logger.info(f"Using path from query parameter: {target_path}")
+        elif os.environ.get('LIVEVIEW_PATH'):
+            # Use environment variable
+            target_path = os.environ.get('LIVEVIEW_PATH')
+            logger.info(f"Using path from LIVEVIEW_PATH environment variable: {target_path}")
+        
+        if target_path:
+            # Expand user home directory (~)
+            expanded_path = Path(target_path).expanduser().resolve()
+            return expanded_path
+        else:
+            # Use default directory
+            return self.default_markdown_dir
+    
+    def get_fallback_content(self, requested_path: Path) -> str:
+        """Generate fallback markdown content when directory is missing or empty."""
+        return f"""# 📁 Directory Not Found or Empty
+
+The requested directory could not be accessed or contains no markdown files.
+
+**Requested Path:** `{requested_path}`
+
+## What happened?
+
+- The directory doesn't exist, or
+- The directory exists but contains no `.md` files, or  
+- There was a permission error accessing the directory
+
+## How to fix this:
+
+1. **Check the path**: Make sure the directory exists and contains `.md` files
+2. **Check permissions**: Ensure the server can read the directory
+3. **Use query parameter**: Try `?path=/your/markdown/directory`
+4. **Use environment variable**: Set `LIVEVIEW_PATH=/your/markdown/directory`
+
+## Examples:
+
+- **Query string**: `http://localhost:8080/?path=~/Documents/notes`
+- **Environment variable**: `LIVEVIEW_PATH=~/git/project/docs ./run.sh`
+
+---
+
+*This is a fallback message displayed when the requested directory is not accessible.*
+"""
+        
+    def get_markdown_files(self, custom_path: Path = None) -> List[Dict[str, Any]]:
         """Get all markdown files sorted by creation time."""
         files = []
+        target_dir = custom_path if custom_path else self.markdown_dir
         
-        if not self.markdown_dir.exists():
-            return files
+        if not target_dir.exists():
+            logger.warning(f"Directory does not exist: {target_dir}")
+            # Return fallback content
+            return [{
+                'path': target_dir / 'fallback.md',
+                'name': 'Directory Not Found',
+                'created': time.time(),
+                'content': self.get_fallback_content(target_dir)
+            }]
             
-        for md_file in self.markdown_dir.glob('*.md'):
+        md_files = list(target_dir.glob('*.md'))
+        if not md_files:
+            logger.warning(f"No markdown files found in: {target_dir}")
+            # Return fallback content for empty directory
+            return [{
+                'path': target_dir / 'fallback.md', 
+                'name': 'No Markdown Files Found',
+                'created': time.time(),
+                'content': self.get_fallback_content(target_dir)
+            }]
+            
+        for md_file in md_files:
             try:
                 stat = md_file.stat()
                 files.append({
@@ -74,9 +148,9 @@ class LiveViewServer:
         files.sort(key=lambda x: x['created'], reverse=True)
         return files
     
-    def get_unified_markdown(self) -> str:
+    def get_unified_markdown(self, custom_path: Path = None) -> str:
         """Get all markdown content unified into a single string."""
-        files = self.get_markdown_files()
+        files = self.get_markdown_files(custom_path)
         unified_content = []
         
         for file_info in files:
@@ -91,12 +165,18 @@ class LiveViewServer:
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         
+        # Extract path parameter for this WebSocket connection
+        path_param = request.query.get('path')
+        if path_param:
+            path_param = unquote(path_param)
+        target_path = self.resolve_markdown_path(path_param)
+        
         self.clients.add(ws)
         logger.info(f"WebSocket client connected. Total clients: {len(self.clients)}")
         
         try:
-            # Send initial content
-            unified_content = self.get_unified_markdown()
+            # Send initial content from the resolved path
+            unified_content = self.get_unified_markdown(target_path)
             await ws.send_str(json.dumps({
                 'type': 'initial',
                 'content': unified_content
@@ -154,6 +234,16 @@ class LiveViewServer:
     
     async def handle_index(self, request):
         """Serve the main HTML page."""
+        # Check for path parameter in query string
+        path_param = request.query.get('path')
+        if path_param:
+            # URL decode the path parameter
+            path_param = unquote(path_param)
+        
+        # Resolve the target directory
+        target_path = self.resolve_markdown_path(path_param)
+        logger.info(f"Serving content from: {target_path}")
+        
         html_content = """
 <!DOCTYPE html>
 <html lang="en">
@@ -327,6 +417,7 @@ class LiveViewServer:
         <h1>📄 Markdown Live View</h1>
         <div id="status" class="status disconnected">Connecting...</div>
         <p>This page automatically updates when new markdown files are added to the watched directory.</p>
+        <p><strong>📁 Current Directory:</strong> <code>""" + str(target_path) + """</code></p>
     </div>
     
     <div id="content" class="content">
@@ -529,7 +620,13 @@ class LiveViewServer:
         
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            let wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            // Add query parameters to WebSocket URL if present in current URL
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('path')) {
+                wsUrl += `?path=${encodeURIComponent(urlParams.get('path'))}`;
+            }
             
             updateStatus(false, 'Connecting...');
             
@@ -599,11 +696,18 @@ class LiveViewServer:
     
     async def handle_api_content(self, request):
         """API endpoint to get unified markdown content."""
-        content = self.get_unified_markdown()
+        # Extract path parameter
+        path_param = request.query.get('path')
+        if path_param:
+            path_param = unquote(path_param)
+        target_path = self.resolve_markdown_path(path_param)
+        
+        content = self.get_unified_markdown(target_path)
         return web.json_response({
             'content': content,
-            'files': [f['name'] for f in self.get_markdown_files()],
-            'timestamp': time.time()
+            'files': [f['name'] for f in self.get_markdown_files(target_path)],
+            'timestamp': time.time(),
+            'directory': str(target_path)
         })
     
     def start_file_watcher(self, loop):
