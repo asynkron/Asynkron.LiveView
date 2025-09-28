@@ -1,6 +1,4 @@
-# Asynkron.LiveView
-
-## CLI AI Companion
+# Asynkron.LiveView -  CLI AI Companion
 
 ![Live View](live.png)
 
