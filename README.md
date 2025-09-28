@@ -28,6 +28,11 @@ Instead of reading static logs or scrolling endlessly in a terminal, you get a *
 - Example: `http://localhost:8080/?path=~/git/asynkron/Asynkron.DurableFunctions/Logs`
 
 ### Inside your own project repository
+
+Create a folder for your markdown logs, e.g. `/logs`.<br/>
+You can decide if you want to keep the logs as part of your git history, a form of architectural records.<br/>
+Or simply .gitignore the contents.<br/>
+
 Update your `agents.md` (or similar file depending on agent) to something similar to this:
 
 ```
