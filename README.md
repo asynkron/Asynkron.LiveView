@@ -171,7 +171,25 @@ The script automatically handles:
 
 ## Usage
 
-### Command Line Options
+### Unified Server (Recommended)
+
+The new unified server combines both LiveView and MCP functionality in a single process:
+
+```bash
+# Quick start with unified server
+./run_unified.sh
+
+# Or run directly
+python unified_server.py --help
+```
+
+**Unified Server Options:**
+- `--dir DIRECTORY`: Specify the directory to watch for markdown files (default: `markdown`)
+- `--port PORT`: Set the server port (default: `8080`)
+- `--disable-mcp`: Disable MCP functionality (LiveView only)
+- `--mcp-stdio`: Enable MCP stdio server alongside HTTP server
+
+### Legacy Command Line Options
 
 ```bash
 python server.py --help
@@ -259,9 +277,43 @@ python server.py --dir /path/to/my/docs --port 3000
 
 ## MCP Server Integration 🤖
 
-**NEW**: AI assistants can now directly create and manage markdown files using the Model Context Protocol (MCP) server!
+**UPDATED**: The system now features a unified server that combines both LiveView and MCP functionality in a single process!
 
-### Quick Start with MCP
+### Unified Server Architecture
+
+The new unified server provides:
+- **Single Process**: No need to manage separate servers
+- **HTTP MCP Endpoint**: AI assistants can use `POST /mcp` for JSON-RPC communication
+- **Shared Resources**: Common file watching and directory management  
+- **Real-time Integration**: MCP-created files immediately appear in LiveView
+- **Simplified Deployment**: One server to start and stop
+
+### Quick Start with Unified Server
+
+```bash
+# Start the unified server (recommended)
+./run_unified.sh
+```
+
+### MCP Integration Flow
+
+```mermaid
+graph TD
+    A[AI Assistant] --> B[HTTP MCP Endpoint]
+    B --> C[Unified Server]
+    C --> D[File System]
+    C --> E[File Watcher]
+    E --> F[WebSocket]
+    F --> G[Browser Auto-Update]
+    
+    style A fill:#e1f5fe
+    style C fill:#fff3e0
+    style G fill:#c8e6c9
+```
+
+### Legacy MCP Setup (Still Supported)
+
+For backwards compatibility, the original separate MCP server is still available:
 
 ```bash
 # Start both LiveView and make MCP server available
@@ -279,6 +331,17 @@ The MCP server provides the following tools for AI assistants:
 - **`delete_markdown_file`**: Remove markdown files
 
 ### AI Assistant Setup
+
+#### Using Unified Server (Recommended)
+
+1. **Start the unified server**: `./run_unified.sh`
+2. **Configure your AI assistant** to use HTTP MCP endpoint
+3. **Point to the MCP endpoint**: `POST http://localhost:8080/mcp`
+4. **Use JSON-RPC 2.0 protocol** for communication
+5. **Start creating markdown files** using the MCP tools
+6. **View results instantly** in the LiveView at `http://localhost:8080`
+
+#### Using Legacy MCP Server
 
 1. **Configure MCP in your AI assistant** using the provided `mcp_config.json`
 2. **Point to the MCP server**: `python mcp_server.py` 
@@ -299,13 +362,38 @@ graph TD
 
 Files created by AI assistants via MCP automatically appear in the live view with real-time updates!
 
+### Benefits of Unified Architecture
+
+- **Simplified Deployment**: Single process instead of managing two separate servers
+- **Better Resource Management**: Shared file watching and directory management
+- **Improved Performance**: Direct communication between LiveView and MCP components
+- **Easier Configuration**: One port, one process, one configuration
+- **Real-time Integration**: MCP file operations immediately trigger LiveView updates
+- **Reduced Complexity**: Fewer moving parts to manage and debug
+
+### Testing
+
+```bash
+# Test unified server functionality
+python test_unified.py
+
+# Test legacy MCP server
+python test_mcp.py
+```
+
 ### Usage Examples
 
 ```bash
+# Start unified server (recommended)
+./run_unified.sh
+
+# Start unified server with custom settings
+PORT=3000 MARKDOWN_DIR=docs ./run_unified.sh
+
 # Start server with default directory
 ./run.sh
 
-# Start server with MCP integration
+# Start server with MCP integration (legacy)
 ./run_with_mcp.sh
 
 # Start server with environment variable
@@ -317,11 +405,17 @@ LIVEVIEW_PATH=/var/log/markdown PORT=3000 ./run.sh
 # Access different directories via URL
 curl "http://localhost:8080/api/content?path=~/git/project/docs"
 
-# Test MCP server functionality
+# Test unified server functionality
+python test_unified.py
+
+# Test MCP server functionality (legacy)
 python test_mcp.py
 
-# Run MCP server standalone for AI assistants
+# Run MCP server standalone for AI assistants (legacy)
 python mcp_server.py --dir markdown
+
+# Run unified server with MCP HTTP endpoint
+python unified_server.py --port 8080 --dir markdown
 ```
 
 ## File Structure

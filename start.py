@@ -40,7 +40,7 @@ def main():
     if str(script_dir) not in sys.path:
         sys.path.insert(0, str(script_dir))
     
-    print("🚀 Starting Markdown Live View Server")
+    print("🚀 Starting Unified Markdown Live View Server with MCP Integration")
     print("=" * 40)
     
     # Check if dependencies are installed
@@ -54,11 +54,11 @@ def main():
             print("❌ Failed to install dependencies. Please run: pip install -r requirements.txt")
             return 1
     
-    # Start the server
-    print("🌐 Starting server...")
+    # Start the unified server
+    print("🌐 Starting unified server...")
     try:
-        from server import main as server_main
-        server_main()
+        from unified_server import main as unified_main
+        unified_main()
     except KeyboardInterrupt:
         print("\n👋 Server stopped by user")
         return 0
