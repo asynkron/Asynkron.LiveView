@@ -255,82 +255,183 @@ The requested directory could not be accessed or contains no markdown files.
     body {
       font-family: sans-serif;
       margin: 0;
-      padding: 0;
-      height: 100vh;
+      padding: 20px;
+      min-height: 100vh;
       background-color: #121a22;
       color: #ddd;
-      font-size: smaller;
+      font-size: 14px;
+      line-height: 1.6;
     }
 
-    .mermaid {
-      background-color: #121a22 !important;
+    .content {
+      max-width: 1200px;
+      margin: 0 auto;
     }
 
-    .mermaid svg {
-      background-color: #121a22 !important;
+    .status {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 1000;
     }
 
-    #mmd-0 .cluster rect {
-      fill: hsl(180deg 1.59% 28.35% / 12%) !important;
+    .status.connected {
+      background-color: #1f2937;
+      color: #10b981;
+      border: 1px solid #10b981;
     }
 
-    #viewer {
-      padding: 20px;
-      overflow-y: auto;
+    .status.disconnected {
+      background-color: #1f2937;
+      color: #ef4444;
+      border: 1px solid #ef4444;
     }
 
-    #editor {
-      display: none;
+    .content-flash {
+      animation: flash 0.8s ease-out;
     }
 
-    .mermaid {
-      background-color: #1e1e1e;
-      color: #ddd;
+    @keyframes flash {
+      0% { background-color: #374151; }
+      100% { background-color: transparent; }
     }
 
-    .mermaid svg {
-      background-color: #1e1e1e;
+    .file-separator {
+      margin: 2rem 0;
+      padding: 0.5rem;
+      background-color: #1f2937;
+      border-left: 4px solid #3b82f6;
+      border-radius: 4px;
+      font-size: 12px;
+      opacity: 0.7;
+    }
+
+    .file-separator::before {
+      content: "📄 ";
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: #f9fafb;
+      margin-top: 2rem;
+      margin-bottom: 1rem;
+    }
+
+    h1 { border-bottom: 2px solid #374151; padding-bottom: 0.3rem; }
+    h2 { border-bottom: 1px solid #374151; padding-bottom: 0.3rem; }
+
+    p {
+      margin-bottom: 1rem;
+    }
+
+    pre {
+      background: #1f2937;
+      padding: 1rem;
+      border-radius: 8px;
+      overflow-x: auto;
+      border: 1px solid #374151;
     }
 
     pre code {
-      background: #2d2d2d;
-      padding: 10px;
-      border-radius: 4px;
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
       display: block;
       overflow-x: auto;
     }
 
-    .mmd-error {
+    code {
+      background: #1f2937;
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.9em;
+      border: 1px solid #374151;
+    }
+
+    blockquote {
+      border-left: 4px solid #6b7280;
+      margin: 1rem 0;
+      padding-left: 1rem;
+      color: #9ca3af;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1rem 0;
+    }
+
+    th, td {
+      border: 1px solid #374151;
+      padding: 0.5rem;
+      text-align: left;
+    }
+
+    th {
+      background-color: #1f2937;
+    }
+
+    .mermaid {
+      background-color: #121a22 !important;
+      text-align: center;
+      margin: 1rem 0;
+    }
+
+    .mermaid svg {
+      background-color: #121a22 !important;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .diagram-placeholder, .diagram-error {
+      background: #1f2937;
+      border: 1px solid #374151;
+      padding: 1rem;
+      border-radius: 4px;
+      margin: 1rem 0;
+      text-align: center;
+    }
+
+    .diagram-error {
       background: #3b1f1f;
       color: #ffb3b3;
-      border: 1px solid #7a2a2a;
-      padding: 10px;
-      border-radius: 4px;
-      white-space: pre-wrap;
+      border-color: #7a2a2a;
     }
   </style>
 </head>
 <body>
-    <p><strong>📁 Current Directory:</strong> <code>""" + str(target_path) + """</code></p>   
-    
-    <div id="content" class="content">
-        <p>Loading markdown content...</p>
+    <div id="status" class="status disconnected">🔴 Disconnected</div>
+    <div class="content">
+        <p><strong>📁 Current Directory:</strong> <code>""" + str(target_path) + """</code></p>   
+        <div id="content">
+            <p>Loading markdown content...</p>
+        </div>
     </div>
 
     <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
     <script>
-        // Initialize Mermaid with proper error handling
+        // Simple self-contained markdown parser (no external dependencies)
         let mermaidReady = false;
-        let mermaidLoadPromise = null;
-        
-        // Wait for script to load before trying to initialize
+
+        // Initialize Mermaid with proper error handling
         function initializeMermaid() {
             if (typeof mermaid !== 'undefined') {
                 try {
                     mermaid.initialize({ 
                         startOnLoad: false,
-                        theme: 'default',
-                        securityLevel: 'loose'
+                        theme: 'dark',
+                        securityLevel: 'loose',
+                        themeVariables: {
+                            background: '#121a22',
+                            primaryColor: '#3b82f6',
+                            primaryTextColor: '#f9fafb',
+                            primaryBorderColor: '#374151',
+                            lineColor: '#6b7280',
+                            secondaryColor: '#1f2937',
+                            tertiaryColor: '#374151'
+                        }
                     });
                     mermaidReady = true;
                     console.log('Mermaid initialized successfully');
@@ -343,20 +444,55 @@ The requested directory could not be accessed or contains no markdown files.
                 mermaidReady = false;
             }
         }
-        
+
         // Try to initialize immediately if already loaded
         initializeMermaid();
         
         // If not loaded yet, wait for window load event
-        if (!mermaidReady) {
-            window.addEventListener('load', () => {
-                setTimeout(initializeMermaid, 100);
-            });
-        }
+        window.addEventListener('load', () => {
+            setTimeout(initializeMermaid, 100);
+        });
 
         function parseMarkdown(md) {
-            //TODO: use marked JS, not some nonsense homegrown stuff   
-            var html ="nonsense"         
+            // Simple but effective markdown parser
+            let html = md;
+            
+            // Handle code blocks first (to avoid interfering with other patterns)
+            html = html.replace(/```mermaid\\n([\\s\\S]*?)```/g, '<div class="mermaid">$1</div>');
+            html = html.replace(/```(\\w+)?\\n([\\s\\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>');
+            html = html.replace(/```([\\s\\S]*?)```/g, '<pre><code>$1</code></pre>');
+            
+            // Headers
+            html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
+            
+            // Bold and italic
+            html = html.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+            html = html.replace(/\\*([^*]+)\\*/g, '<em>$1</em>');
+            
+            // Inline code
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            
+            // Links
+            html = html.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2">$1</a>');
+            
+            // Blockquotes
+            html = html.replace(/^> (.*$)/gm, '<blockquote>$1</blockquote>');
+            
+            // Lists (simple implementation)
+            html = html.replace(/^\\* (.*$)/gm, '<ul><li>$1</li></ul>');
+            html = html.replace(/^\\d+\\. (.*$)/gm, '<ol><li>$1</li></ol>');
+            
+            // Line breaks and paragraphs
+            html = html.replace(/\\n\\n/g, '</p><p>');
+            html = html.replace(/\\n/g, '<br>');
+            
+            // Wrap in paragraphs if not already wrapped in block elements
+            if (!html.startsWith('<h') && !html.startsWith('<p') && !html.startsWith('<div') && !html.startsWith('<pre') && !html.startsWith('<ul') && !html.startsWith('<ol') && !html.startsWith('<blockquote')) {
+                html = '<p>' + html + '</p>';
+            }
+            
             return html;
         }
         
@@ -384,7 +520,7 @@ The requested directory could not be accessed or contains no markdown files.
             for (let i = 0; i < parts.length; i++) {
                 if (i % 2 === 1) {
                     // This is a filename
-                    html += `<div class="file-separator" data-file="${parts[i]}"></div>`;
+                    html += `<div class="file-separator" data-file="${parts[i]}">${parts[i]}</div>`;
                 } else if (parts[i].trim()) {
                     // This is content - parse markdown
                     html += parseMarkdown(parts[i].trim());
@@ -409,27 +545,23 @@ The requested directory could not be accessed or contains no markdown files.
             
             // Render Mermaid diagrams with proper async handling
             const mermaidElements = contentEl.querySelectorAll('.mermaid');
-            if (mermaidReady && typeof mermaid !== 'undefined') {
+            if (mermaidReady && typeof mermaid !== 'undefined' && mermaidElements.length > 0) {
                 // Process diagrams sequentially to avoid UI blocking
-                for (const element of mermaidElements) {
+                for (let i = 0; i < mermaidElements.length; i++) {
+                    const element = mermaidElements[i];
                     try {
-                        // Get clean source content from data attribute or fallback to textContent
-                        let sourceContent = '';
-                        if (element.hasAttribute('data-mermaid-source')) {
-                            // Decode from Base64
-                            sourceContent = atob(element.getAttribute('data-mermaid-source'));
-                        } else {
-                            // Fallback for corrupted content
-                            sourceContent = element.textContent.replace(/^📊 Mermaid Diagram \\(requires network access\\):/, '').trim();
-                        }
+                        const sourceContent = element.textContent.trim();
                         
-                        // Skip if content is empty or corrupted
-                        if (!sourceContent || sourceContent.includes('📊 Mermaid Diagram')) {
+                        // Skip if content is empty
+                        if (!sourceContent) {
                             continue;
                         }
                         
+                        // Generate unique ID for this diagram
+                        const diagramId = 'mermaid-' + Date.now() + '-' + i;
+                        
                         // Add timeout protection to prevent hanging
-                        const renderPromise = mermaid.render(element.id + '-svg', sourceContent);
+                        const renderPromise = mermaid.render(diagramId, sourceContent);
                         const timeoutPromise = new Promise((_, reject) => 
                             setTimeout(() => reject(new Error('Mermaid rendering timeout')), 5000)
                         );
@@ -438,20 +570,14 @@ The requested directory could not be accessed or contains no markdown files.
                         element.innerHTML = svg;
                     } catch (error) {
                         console.error('Error rendering Mermaid diagram:', error);
-                        element.innerHTML = `<div class="diagram-error">Error rendering diagram: ${error.message}</div>`;
+                        element.innerHTML = `<div class="diagram-error">⚠️ Error rendering diagram: ${error.message}</div>`;
                     }
                 }
-            } else {
+            } else if (mermaidElements.length > 0) {
                 // Fallback for when Mermaid is not available
                 mermaidElements.forEach((element) => {
-                    let sourceContent = '';
-                    if (element.hasAttribute('data-mermaid-source')) {
-                        // Decode from Base64
-                        sourceContent = atob(element.getAttribute('data-mermaid-source'));
-                    } else {
-                        sourceContent = element.textContent;
-                    }
-                    element.innerHTML = `<div class="diagram-placeholder">📊 Mermaid Diagram (requires network access):<br><pre>${sourceContent}</pre></div>`;
+                    const sourceContent = element.textContent.trim();
+                    element.innerHTML = `<div class="diagram-placeholder">📊 Mermaid Diagram (loading...):<br><pre>${sourceContent}</pre></div>`;
                 });
             }
         }
