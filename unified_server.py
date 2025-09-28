@@ -539,10 +539,13 @@ Create some `.md` files in your directory and refresh this page!
         if not target_dir.exists():
             logger.warning(f"Directory does not exist: {target_dir}")
             # Return fallback content
+            fallback_time = time.time()
             return [{
                 'path': target_dir / 'fallback.md',
                 'name': 'Directory Not Found',
-                'created': time.time(),
+                'created': fallback_time,
+                'updated': fallback_time,
+                'sort_key': fallback_time,
                 'content': self.get_fallback_content(target_dir)
             }]
             
@@ -550,10 +553,13 @@ Create some `.md` files in your directory and refresh this page!
         if not md_files:
             logger.warning(f"No markdown files found in: {target_dir}")
             # Return fallback content for empty directory
+            fallback_time = time.time()
             return [{
                 'path': target_dir / 'fallback.md', 
                 'name': 'No Markdown Files Found',
-                'created': time.time(),
+                'created': fallback_time,
+                'updated': fallback_time,
+                'sort_key': fallback_time,
                 'content': self.get_fallback_content(target_dir)
             }]
             
@@ -561,24 +567,31 @@ Create some `.md` files in your directory and refresh this page!
             try:
                 stat = md_file.stat()
                 content = md_file.read_text(encoding='utf-8')
+                created_ts = getattr(stat, 'st_birthtime', stat.st_ctime)
+                updated_ts = max(stat.st_mtime, created_ts)
                 files.append({
                     'path': md_file,
                     'name': md_file.name,
-                    'created': stat.st_ctime,
+                    'created': created_ts,
+                    'updated': stat.st_mtime,
+                    'sort_key': updated_ts,
                     'content': content
                 })
             except Exception as e:
                 logger.warning(f"Could not read file {md_file}: {e}")
                 # Add a placeholder for unreadable files
+                error_time = time.time()
                 files.append({
                     'path': md_file,
                     'name': md_file.name,
-                    'created': time.time(),
+                    'created': error_time,
+                    'updated': error_time,
+                    'sort_key': error_time,
                     'content': f"# Error Reading File\n\nCould not read `{md_file.name}`: {e}"
                 })
-        
-        # Sort by creation time (newest first so updates appear at the top)
-        files.sort(key=lambda x: x['created'], reverse=True)
+
+        # Sort by most recent update time so fresh changes stay at the top
+        files.sort(key=lambda x: x['sort_key'], reverse=True)
         return files
     
     def get_unified_markdown(self, custom_path: Path = None) -> str:
