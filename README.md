@@ -82,6 +82,32 @@ Asynkron.LiveView/
 - `websockets`: WebSocket protocol implementation
 - `watchdog`: File system monitoring
 
+## Installation Troubleshooting
+
+If you encounter dependency installation issues:
+
+### Externally-Managed Environment (e.g., Homebrew Python)
+```bash
+# Use virtual environment (recommended)
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Or install to user directory
+pip install --user -r requirements.txt
+```
+
+### System Installation Issues
+```bash
+# For systems that require explicit permission
+pip install --break-system-packages -r requirements.txt
+
+# Or use system package manager (Ubuntu/Debian)
+sudo apt install python3-aiohttp python3-watchdog
+```
+
+The `start.py` script automatically handles most installation scenarios and provides helpful guidance.
+
 ## Browser Support
 
 The web interface uses modern JavaScript and should work in all current browsers. The system loads:
