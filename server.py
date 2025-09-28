@@ -731,6 +731,17 @@ The requested directory could not be accessed or contains no markdown files.
             'timestamp': time.time(),
             'directory': str(target_path)
         })
+
+    async def handle_raw_markdown(self, request):
+        """Serve unified markdown content as plain text."""
+        path_param = request.query.get('path')
+        if path_param:
+            path_param = unquote(path_param)
+        target_path = self.resolve_markdown_path(path_param)
+
+        logger.info(f"Serving raw markdown from: {target_path}")
+        content = self.get_unified_markdown(target_path)
+        return web.Response(text=content, content_type='text/plain')
     
     def start_file_watcher(self, loop):
         """Start watching the markdown directory for changes."""
@@ -755,6 +766,7 @@ The requested directory could not be accessed or contains no markdown files.
         app.router.add_get('/', self.handle_index)
         app.router.add_get('/ws', self.handle_websocket)
         app.router.add_get('/api/content', self.handle_api_content)
+        app.router.add_get('/raw', self.handle_raw_markdown)
         
         # Get the current event loop
         loop = asyncio.get_event_loop()
