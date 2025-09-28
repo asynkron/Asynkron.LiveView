@@ -221,7 +221,7 @@
             const maxReconnectAttempts = 5;
             let mermaidReady = false;
             let mermaidIdCounter = 0;
-            let markedRenderer = null;
+            let markedConfigured = false;
             const textEncoder = new TextEncoder();
             const textDecoder = new TextDecoder();
 
@@ -316,35 +316,41 @@
                     return;
                 }
 
-                markedRenderer = new marked.Renderer();
-
-                const originalCodeRenderer = markedRenderer.code.bind(markedRenderer);
-                markedRenderer.code = function (code, language, escaped) {
-                    const rawLanguage = typeof language === 'string' ? language : '';
-                    const lang = rawLanguage.toLowerCase();
-                    if (lang === 'mermaid' || rawLanguage.toLowerCase().includes('mermaid')) {
-                        const id = `mermaid-${mermaidIdCounter++}`;
-                        const encodedSource = encodeMermaidSource(code);
-                        return `<div class="mermaid" id="${id}" data-mermaid-source="${encodedSource}"></div>`;
-                    }
-                    return originalCodeRenderer(code, language, escaped);
-                };
-
-                marked.setOptions({
-                    renderer: markedRenderer,
-                    highlight: function (code, lang) {
-                        if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
-                            try {
-                                return hljs.highlight(code, { language: lang }).value;
-                            } catch (err) {
-                                console.warn('Highlight.js error:', err);
+                if (!markedConfigured) {
+                    marked.use({
+                        walkTokens(token) {
+                            if (token && token.type === 'code') {
+                                const langInput = typeof token.lang === 'string' ? token.lang : '';
+                                const lang = langInput.toLowerCase();
+                                if (lang.includes('mermaid')) {
+                                    const id = `mermaid-${mermaidIdCounter++}`;
+                                    const encodedSource = encodeMermaidSource(token.text || token.raw || '');
+                                    const mermaidHtml = `<div class="mermaid" id="${id}" data-mermaid-source="${encodedSource}"></div>`;
+                                    token.type = 'html';
+                                    token.raw = mermaidHtml;
+                                    token.text = mermaidHtml;
+                                }
                             }
                         }
-                        return code;
-                    },
-                    breaks: true,
-                    gfm: true
-                });
+                    });
+
+                    marked.setOptions({
+                        highlight: function (code, lang) {
+                            if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+                                try {
+                                    return hljs.highlight(code, { language: lang }).value;
+                                } catch (err) {
+                                    console.warn('Highlight.js error:', err);
+                                }
+                            }
+                            return code;
+                        },
+                        breaks: true,
+                        gfm: true
+                    });
+
+                    markedConfigured = true;
+                }
             }
 
             function renderMermaidDiagrams() {
