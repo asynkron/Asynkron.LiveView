@@ -47,6 +47,7 @@ def main():
     try:
         import aiohttp
         import watchdog
+        import mcp
         print("✅ Dependencies already installed")
     except ImportError:
         print("📦 Installing dependencies...")

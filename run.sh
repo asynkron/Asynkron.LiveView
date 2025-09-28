@@ -136,7 +136,7 @@ install_dependencies() {
     
     # Strategy 4: Try installing individual packages
     print_info "Trying individual package installation..."
-    for package in aiohttp watchdog; do
+    for package in aiohttp watchdog mcp; do
         if "$PYTHON_CMD" -m pip install --user "$package" || \
            "$PYTHON_CMD" -m pip install --break-system-packages "$package"; then
             print_success "Installed $package"
@@ -154,7 +154,7 @@ install_dependencies() {
 check_dependencies() {
     print_info "Checking dependencies..."
     
-    if "$PYTHON_CMD" -c "import aiohttp, watchdog" 2>/dev/null; then
+    if "$PYTHON_CMD" -c "import aiohttp, watchdog, mcp" 2>/dev/null; then
         print_success "All dependencies are available"
         return 0
     else
@@ -279,6 +279,7 @@ main() {
             print_error "1. Install with package manager:"
             print_error "   - Ubuntu/Debian: sudo apt install python3-aiohttp python3-watchdog"
             print_error "   - macOS: brew install python-aiohttp python-watchdog"
+            print_error "   - Or install MCP via pip: pip install mcp"
             print_error "2. Use pipx: pipx install aiohttp watchdog"
             print_error "3. Create clean venv: rm -rf venv && python3 -m venv venv && source venv/bin/activate"
             exit 1
