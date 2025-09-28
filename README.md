@@ -257,11 +257,56 @@ python server.py --dir /path/to/my/docs --port 3000
   - Query parameter: `?path=/path/to/directory` - Specify custom directory
   - Returns: `{content, files, timestamp, directory}`
 
+## MCP Server Integration 🤖
+
+**NEW**: AI assistants can now directly create and manage markdown files using the Model Context Protocol (MCP) server!
+
+### Quick Start with MCP
+
+```bash
+# Start both LiveView and make MCP server available
+./run_with_mcp.sh
+```
+
+### MCP Server Features
+
+The MCP server provides the following tools for AI assistants:
+
+- **`create_markdown_file`**: Create new markdown files with auto-numbering
+- **`list_markdown_files`**: List all existing markdown files  
+- **`read_markdown_file`**: Read content of specific files
+- **`update_markdown_file`**: Append or replace file content
+- **`delete_markdown_file`**: Remove markdown files
+
+### AI Assistant Setup
+
+1. **Configure MCP in your AI assistant** using the provided `mcp_config.json`
+2. **Point to the MCP server**: `python mcp_server.py` 
+3. **Start creating markdown files** using the MCP tools
+4. **View results instantly** in the LiveView at `http://localhost:8080`
+
+### MCP Integration Flow
+
+```mermaid
+graph TD
+    A[AI Assistant] --> B[MCP Server]
+    B --> C[Create/Update Markdown Files]
+    C --> D[File Watcher]
+    D --> E[LiveView Server]
+    E --> F[WebSocket Update]
+    F --> G[Browser Auto-Refresh]
+```
+
+Files created by AI assistants via MCP automatically appear in the live view with real-time updates!
+
 ### Usage Examples
 
 ```bash
 # Start server with default directory
 ./run.sh
+
+# Start server with MCP integration
+./run_with_mcp.sh
 
 # Start server with environment variable
 LIVEVIEW_PATH=~/Documents/notes ./run.sh
@@ -271,18 +316,28 @@ LIVEVIEW_PATH=/var/log/markdown PORT=3000 ./run.sh
 
 # Access different directories via URL
 curl "http://localhost:8080/api/content?path=~/git/project/docs"
+
+# Test MCP server functionality
+python test_mcp.py
+
+# Run MCP server standalone for AI assistants
+python mcp_server.py --dir markdown
 ```
 
 ## File Structure
 
 ```
 Asynkron.LiveView/
-├── server.py          # Main server implementation
-├── start.py           # Simple startup script
-├── run.sh             # Automated setup script (recommended)
-├── requirements.txt   # Python dependencies
-├── markdown/          # Directory for example markdown files
-│   ├── 01-intro.md   # Sample files (ordered by timestamp)
+├── server.py              # Main LiveView server implementation
+├── mcp_server.py           # MCP server for AI integration (NEW)
+├── start.py               # Simple startup script
+├── run.sh                 # Automated setup script
+├── run_with_mcp.sh        # Setup script with MCP integration (NEW)
+├── test_mcp.py            # MCP server test script (NEW)
+├── mcp_config.json        # MCP server configuration (NEW)
+├── requirements.txt       # Python dependencies (includes MCP)
+├── markdown/              # Directory for markdown files
+│   ├── 01-intro.md       # Sample files (ordered by timestamp)
 │   └── 02-diagram.md
 └── README.md
 ```
@@ -290,8 +345,11 @@ Asynkron.LiveView/
 ## Dependencies
 
 - `aiohttp`: Async HTTP server and WebSocket support
-- `websockets`: WebSocket protocol implementation
+- `websockets`: WebSocket protocol implementation  
 - `watchdog`: File system monitoring
+- `mcp`: Model Context Protocol for AI integration (**NEW**)
+
+All dependencies are automatically installed by the setup scripts.
 
 ## Installation Troubleshooting
 
