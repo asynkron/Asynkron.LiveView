@@ -526,8 +526,8 @@ Create some `.md` files in your directory and refresh this page!
                     'content': f"# Error Reading File\n\nCould not read `{md_file.name}`: {e}"
                 })
         
-        # Sort by creation time
-        files.sort(key=lambda x: x['created'])
+        # Sort by creation time (newest first so updates appear at the top)
+        files.sort(key=lambda x: x['created'], reverse=True)
         return files
     
     def get_unified_markdown(self, custom_path: Path = None) -> str:
