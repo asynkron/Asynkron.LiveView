@@ -18,6 +18,7 @@
             color: #e0e6ed;
             background-color: #0d1117;
             padding: 20px;
+            font-size: smaller;
         }
 
         .container {
@@ -268,9 +269,44 @@
                     });
                     mermaidReady = true;
                     console.log('Mermaid initialized successfully');
+                    requestAnimationFrame(renderMermaidDiagrams);
                 } catch (error) {
                     console.error('Failed to initialize Mermaid:', error);
                     mermaidReady = false;
+                }
+            }
+
+            function escapeHtml(value) {
+                return String(value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            function encodeMermaidSource(code) {
+                if (!code) {
+                    return '';
+                }
+                const bytes = textEncoder.encode(code);
+                let binary = '';
+                bytes.forEach(byte => {
+                    binary += String.fromCharCode(byte);
+                });
+                return btoa(binary);
+            }
+
+            function decodeMermaidSource(encoded) {
+                if (!encoded) {
+                    return '';
+                }
+                try {
+                    const bytes = Uint8Array.from(atob(encoded), char => char.charCodeAt(0));
+                    return textDecoder.decode(bytes);
+                } catch (error) {
+                    console.warn('Failed to decode Mermaid source', error);
+                    return '';
                 }
             }
 
@@ -282,32 +318,16 @@
 
                 markedRenderer = new marked.Renderer();
 
-                const originalCodeRenderer = markedRenderer.code;
-                markedRenderer.code = function (code, language) {
-                    if (language === 'mermaid' && mermaidReady) {
+                const originalCodeRenderer = markedRenderer.code.bind(markedRenderer);
+                markedRenderer.code = function (code, language, escaped) {
+                    const rawLanguage = typeof language === 'string' ? language : '';
+                    const lang = rawLanguage.toLowerCase();
+                    if (lang === 'mermaid' || rawLanguage.toLowerCase().includes('mermaid')) {
                         const id = `mermaid-${mermaidIdCounter++}`;
-                        setTimeout(() => {
-                            const element = document.getElementById(id);
-                            if (element) {
-                                try {
-                                    mermaid.render(`${id}-svg`, code).then(result => {
-                                        element.innerHTML = result.svg;
-                                    }).catch(error => {
-                                        console.error('Mermaid rendering error:', error);
-                                        element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">
-                                            <strong>Mermaid Error:</strong><br>
-                                            <code>${error.message || 'Unknown error'}</code>
-                                        </div>`;
-                                    });
-                                } catch (error) {
-                                    console.error('Mermaid rendering error:', error);
-                                    element.innerHTML = `<div style="color: #cf222e;">Mermaid Error: ${error.message}</div>`;
-                                }
-                            }
-                        }, 0);
-                        return `<div id="${id}" class="mermaid">${code}</div>`;
+                        const encodedSource = encodeMermaidSource(code);
+                        return `<div class="mermaid" id="${id}" data-mermaid-source="${encodedSource}"></div>`;
                     }
-                    return originalCodeRenderer.call(this, code, language);
+                    return originalCodeRenderer(code, language, escaped);
                 };
 
                 marked.setOptions({
@@ -325,6 +345,37 @@
                     breaks: true,
                     gfm: true
                 });
+            }
+
+            function renderMermaidDiagrams() {
+                const mermaidElements = document.querySelectorAll('.mermaid');
+                if (!mermaidElements.length) {
+                    return;
+                }
+
+                if (mermaidReady && typeof mermaid !== 'undefined') {
+                    mermaidElements.forEach((element) => {
+                        const encoded = element.getAttribute('data-mermaid-source');
+                        const sourceContent = encoded ? decodeMermaidSource(encoded) : element.textContent;
+                        if (!sourceContent.trim()) {
+                            return;
+                        }
+                        mermaid.render(`${element.id}-svg`, sourceContent)
+                            .then(({ svg }) => {
+                                element.innerHTML = svg;
+                            })
+                            .catch((error) => {
+                                console.error('Mermaid rendering error:', error);
+                                element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">Mermaid rendering error: ${escapeHtml(error.message)}</div>`;
+                            });
+                    });
+                } else {
+                    mermaidElements.forEach((element) => {
+                        const encoded = element.getAttribute('data-mermaid-source');
+                        const sourceContent = encoded ? decodeMermaidSource(encoded) : element.textContent;
+                        element.innerHTML = `<div class="loading">📊 Mermaid diagram (awaiting Mermaid.js):<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
+                    });
+                }
             }
 
             function updateStatus(connected) {
@@ -412,15 +463,21 @@
                 }
 
                 try {
+                    mermaidIdCounter = 0;
                     const html = marked.parse(markdownContent);
                     document.getElementById('content').innerHTML = html;
 
                     // Highlight code blocks
                     if (typeof hljs !== 'undefined') {
                         document.querySelectorAll('pre code').forEach((block) => {
+                            if (block.classList.contains('language-mermaid')) {
+                                return;
+                            }
                             hljs.highlightElement(block);
                         });
                     }
+
+                    renderMermaidDiagrams();
                 } catch (error) {
                     console.error('Error rendering markdown:', error);
                     document.getElementById('content').innerHTML = `<div style="color: #cf222e;">Error rendering markdown: ${error.message}</div>`;
@@ -434,6 +491,7 @@
                     initializeMermaid();
                     setupMarked();
                     connectWebSocket();
+                    loadContent();
                 })
                 .catch((error) => {
                     console.error('Failed to load required libraries:', error);
