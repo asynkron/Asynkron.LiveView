@@ -13,7 +13,6 @@ import os
 import time
 from pathlib import Path
 from typing import List, Dict, Any
-import websockets
 from aiohttp import web, WSMsgType
 from aiohttp.web_response import Response
 from watchdog.observers import Observer
