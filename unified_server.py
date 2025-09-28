@@ -13,6 +13,7 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
+from html import escape
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote
 from aiohttp import web, WSMsgType
@@ -38,6 +39,36 @@ from mcp.types import (
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+INDEX_TEMPLATE_PLACEHOLDER = "__CURRENT_DIRECTORY__"
+DEFAULT_UNIFIED_INDEX_TEMPLATE = """<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+    <meta charset=\"UTF-8\">
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+    <title>Markdown Live View</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            padding: 2rem;
+            background-color: #121a22;
+            color: #ddd;
+        }
+        code {
+            background: #1d2a36;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Markdown Live View</h1>
+    <p>Template file missing. Showing fallback page.</p>
+    <p><strong>📁 Current Directory:</strong> <code>__CURRENT_DIRECTORY__</code></p>
+</body>
+</html>
+"""
 
 class MarkdownFileHandler(FileSystemEventHandler):
     """Handles file system events for markdown files."""
@@ -84,6 +115,7 @@ class UnifiedMarkdownServer:
         self.clients: set = set()
         self.observer = None
         self.enable_mcp = enable_mcp
+        self.template_path = Path(__file__).resolve().parent / "templates" / "unified_index.html"
         
         # Ensure default markdown directory exists
         self.default_markdown_dir.mkdir(exist_ok=True)
@@ -514,6 +546,22 @@ Create some `.md` files in your directory and refresh this page!
         
         return "".join(unified_content)
     
+    def load_index_template(self) -> str:
+        """Load unified index template from disk, falling back to a minimal version."""
+        try:
+            return self.template_path.read_text(encoding='utf-8')
+        except FileNotFoundError:
+            logger.error(f"Template file not found: {self.template_path}")
+        except Exception as exc:
+            logger.error(f"Error reading template {self.template_path}: {exc}")
+        return DEFAULT_UNIFIED_INDEX_TEMPLATE
+
+    def render_index_template(self, target_path: Path) -> str:
+        """Populate the template with runtime values."""
+        template = self.load_index_template()
+        safe_path = escape(str(target_path))
+        return template.replace(INDEX_TEMPLATE_PLACEHOLDER, safe_path)
+
     async def handle_index(self, request):
         """Serve the main HTML page."""
         # Get optional path parameter
@@ -522,466 +570,8 @@ Create some `.md` files in your directory and refresh this page!
         # Update the active directory
         self.markdown_dir = self.resolve_markdown_path(path_param)
         
-        return Response(text=f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Markdown Live View</title>
-    <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-        
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            color: #e0e6ed;
-            background-color: #0d1117;
-            padding: 20px;
-        }}
-        
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-        }}
-        
-        .header {{
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: linear-gradient(135deg, #1f2a33 0%, #253548 100%);
-            border-radius: 12px;
-            border: 1px solid #3d4f5c;
-        }}
-        
-        .header h1 {{
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            background: linear-gradient(135deg, #58a6ff 0%, #79c0ff 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }}
-        
-        .header p {{
-            color: #7d8590;
-            font-size: 1.1rem;
-        }}
-        
-        .directory-info {{
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }}
-        
-        .directory-info strong {{
-            color: #58a6ff;
-        }}
-        
-        #content {{
-            background: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 30px;
-            min-height: 400px;
-        }}
-        
-        /* Markdown styles */
-        #content h1, #content h2, #content h3, #content h4, #content h5, #content h6 {{
-            color: #f0f6fc;
-            margin-top: 24px;
-            margin-bottom: 16px;
-            font-weight: 600;
-            line-height: 1.25;
-        }}
-        
-        #content h1 {{
-            font-size: 2rem;
-            border-bottom: 1px solid #21262d;
-            padding-bottom: 8px;
-        }}
-        
-        #content h2 {{
-            font-size: 1.5rem;
-            border-bottom: 1px solid #21262d;
-            padding-bottom: 8px;
-        }}
-        
-        #content p {{
-            margin-bottom: 16px;
-        }}
-        
-        #content ul, #content ol {{
-            margin-bottom: 16px;
-            padding-left: 32px;
-        }}
-        
-        #content li {{
-            margin-bottom: 4px;
-        }}
-        
-        #content blockquote {{
-            margin: 16px 0;
-            padding: 0 16px;
-            border-left: 4px solid #58a6ff;
-            color: #7d8590;
-        }}
-        
-        #content code {{
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 2px 6px;
-            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-            font-size: 85%;
-        }}
-        
-        #content pre {{
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 16px;
-            overflow-x: auto;
-            margin: 16px 0;
-        }}
-        
-        #content pre code {{
-            background: none;
-            border: none;
-            padding: 0;
-            font-size: 85%;
-        }}
-        
-        #content a {{
-            color: #58a6ff;
-            text-decoration: none;
-        }}
-        
-        #content a:hover {{
-            text-decoration: underline;
-        }}
-        
-        #content table {{
-            border-collapse: collapse;
-            width: 100%;
-            margin: 16px 0;
-        }}
-        
-        #content th, #content td {{
-            border: 1px solid #30363d;
-            padding: 8px 12px;
-            text-align: left;
-        }}
-        
-        #content th {{
-            background: #161b22;
-            font-weight: 600;
-        }}
-        
-        #content hr {{
-            border: none;
-            border-top: 1px solid #30363d;
-            margin: 24px 0;
-        }}
-        
-        /* Mermaid diagram styles */
-        .mermaid {{
-            text-align: center;
-            margin: 20px 0;
-        }}
-        
-        /* Status indicator */
-        .status {{
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-            z-index: 1000;
-        }}
-        
-        .status.connected {{
-            background: #1a7f37;
-            color: white;
-        }}
-        
-        .status.disconnected {{
-            background: #cf222e;
-            color: white;
-        }}
-        
-        /* Loading animation */
-        .loading {{
-            text-align: center;
-            color: #7d8590;
-            font-style: italic;
-        }}
-        
-        /* Code highlighting */
-        .hljs {{
-            background: #161b22 !important;
-        }}
-    </style>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/14.1.2/marked.min.js" defer=""></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js" defer=""></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer=""></script>
-    <script>
-        window.addEventListener('DOMContentLoaded', () => {{
-            let ws = null;
-            let reconnectAttempts = 0;
-            const maxReconnectAttempts = 5;
-            let mermaidReady = false;
-            let mermaidIdCounter = 0;
-            let markedRenderer = null;
-            const textEncoder = new TextEncoder();
-            const textDecoder = new TextDecoder();
-
-            function waitForLibraries(maxRetries = 50, intervalMs = 100) {{
-                return new Promise((resolve, reject) => {{
-                    let attempts = 0;
-                    const check = () => {{
-                        if (typeof marked !== 'undefined' && typeof mermaid !== 'undefined' && typeof hljs !== 'undefined') {{
-                            resolve();
-                        }} else if (attempts >= maxRetries) {{
-                            reject(new Error('Required libraries failed to load'));
-                        }} else {{
-                            attempts += 1;
-                            setTimeout(check, intervalMs);
-                        }}
-                    }};
-                    check();
-                }});
-            }}
-
-            function initializeMermaid() {{
-                if (typeof mermaid === 'undefined') {{
-                    console.warn('Mermaid not available');
-                    mermaidReady = false;
-                    return;
-                }}
-
-                try {{
-                    mermaid.initialize({{
-                        startOnLoad: false,
-                        theme: 'dark',
-                        securityLevel: 'loose',
-                        themeVariables: {{
-                            background: '#121a22',
-                            primaryColor: '#1f2a33',
-                            secondaryColor: '#253548',
-                            primaryTextColor: '#e0e6ed',
-                            primaryBorderColor: '#3d4f5c',
-                            lineColor: '#7d8590',
-                            tertiaryColor: '#161b22',
-                            cScale0: '#58a6ff',
-                            cScale1: '#79c0ff',
-                            cScale2: '#a5f3fc'
-                        }}
-                    }});
-                    mermaidReady = true;
-                    console.log('Mermaid initialized successfully');
-                }} catch (error) {{
-                    console.error('Failed to initialize Mermaid:', error);
-                    mermaidReady = false;
-                }}
-            }}
-
-            function setupMarked() {{
-                if (typeof marked === 'undefined') {{
-                    console.warn('Marked not available');
-                    return;
-                }}
-
-                markedRenderer = new marked.Renderer();
-                
-                const originalCodeRenderer = markedRenderer.code;
-                markedRenderer.code = function(code, language) {{
-                    if (language === 'mermaid' && mermaidReady) {{
-                        const id = `mermaid-${{mermaidIdCounter++}}`;
-                        setTimeout(() => {{
-                            const element = document.getElementById(id);
-                            if (element) {{
-                                try {{
-                                    mermaid.render(`${{id}}-svg`, code).then(result => {{
-                                        element.innerHTML = result.svg;
-                                    }}).catch(error => {{
-                                        console.error('Mermaid rendering error:', error);
-                                        element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">
-                                            <strong>Mermaid Error:</strong><br>
-                                            <code>${{error.message || 'Unknown error'}}</code>
-                                        </div>`;
-                                    }});
-                                }} catch (error) {{
-                                    console.error('Mermaid rendering error:', error);
-                                    element.innerHTML = `<div style="color: #cf222e;">Mermaid Error: ${{error.message}}</div>`;
-                                }}
-                            }}
-                        }}, 0);
-                        return `<div id="${{id}}" class="mermaid">${{code}}</div>`;
-                    }}
-                    return originalCodeRenderer.call(this, code, language);
-                }};
-
-                marked.setOptions({{
-                    renderer: markedRenderer,
-                    highlight: function(code, lang) {{
-                        if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {{
-                            try {{
-                                return hljs.highlight(code, {{ language: lang }}).value;
-                            }} catch (err) {{
-                                console.warn('Highlight.js error:', err);
-                            }}
-                        }}
-                        return code;
-                    }},
-                    breaks: true,
-                    gfm: true
-                }});
-            }}
-
-            function updateStatus(connected) {{
-                const status = document.querySelector('.status') || createStatusElement();
-                if (connected) {{
-                    status.textContent = '🟢 Connected';
-                    status.className = 'status connected';
-                }} else {{
-                    status.textContent = '🔴 Disconnected';
-                    status.className = 'status disconnected';
-                }}
-            }}
-
-            function createStatusElement() {{
-                const status = document.createElement('div');
-                status.className = 'status';
-                document.body.appendChild(status);
-                return status;
-            }}
-
-            function connectWebSocket() {{
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${{protocol}}//${{window.location.host}}/ws${{window.location.search}}`;
-                
-                ws = new WebSocket(wsUrl);
-                
-                ws.onopen = function() {{
-                    console.log('WebSocket connected');
-                    updateStatus(true);
-                    reconnectAttempts = 0;
-                    loadContent();
-                }};
-                
-                ws.onmessage = function(event) {{
-                    console.log('Received WebSocket message:', event.data);
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'content_update') {{
-                        updateContent(data.content);
-                    }}
-                }};
-                
-                ws.onclose = function() {{
-                    console.log('WebSocket disconnected');
-                    updateStatus(false);
-                    attemptReconnect();
-                }};
-                
-                ws.onerror = function(error) {{
-                    console.error('WebSocket error:', error);
-                    updateStatus(false);
-                }};
-            }}
-
-            function attemptReconnect() {{
-                if (reconnectAttempts < maxReconnectAttempts) {{
-                    reconnectAttempts++;
-                    console.log(`Attempting to reconnect... (${{reconnectAttempts}}/${{maxReconnectAttempts}})`);
-                    setTimeout(connectWebSocket, Math.pow(2, reconnectAttempts) * 1000);
-                }} else {{
-                    console.error('Max reconnection attempts reached');
-                }}
-            }}
-
-            async function loadContent() {{
-                try {{
-                    const response = await fetch(`/api/content${{window.location.search}}`);
-                    const data = await response.json();
-                    updateContent(data.content);
-                    
-                    // Update directory info
-                    const directoryInfo = document.querySelector('.directory-info');
-                    if (directoryInfo) {{
-                        directoryInfo.innerHTML = `<strong>📁 Directory:</strong> ${{data.directory}} | <strong>📄 Files:</strong> ${{data.files}} | <strong>🕒 Last Updated:</strong> ${{new Date(data.timestamp * 1000).toLocaleString()}}`;
-                    }}
-                }} catch (error) {{
-                    console.error('Error loading content:', error);
-                    document.getElementById('content').innerHTML = '<div class="loading">❌ Error loading content</div>';
-                }}
-            }}
-
-            function updateContent(markdownContent) {{
-                if (typeof marked === 'undefined') {{
-                    document.getElementById('content').innerHTML = '<div class="loading">⏳ Loading markdown renderer...</div>';
-                    return;
-                }}
-
-                try {{
-                    const html = marked.parse(markdownContent);
-                    document.getElementById('content').innerHTML = html;
-                    
-                    // Highlight code blocks
-                    if (typeof hljs !== 'undefined') {{
-                        document.querySelectorAll('pre code').forEach((block) => {{
-                            hljs.highlightElement(block);
-                        }});
-                    }}
-                }} catch (error) {{
-                    console.error('Error rendering markdown:', error);
-                    document.getElementById('content').innerHTML = `<div style="color: #cf222e;">Error rendering markdown: ${{error.message}}</div>`;
-                }}
-            }}
-
-            // Initialize everything
-            waitForLibraries()
-                .then(() => {{
-                    console.log('All libraries loaded successfully');
-                    initializeMermaid();
-                    setupMarked();
-                    connectWebSocket();
-                }})
-                .catch((error) => {{
-                    console.error('Failed to load required libraries:', error);
-                    document.getElementById('content').innerHTML = '<div class="loading">❌ Failed to load required libraries</div>';
-                }});
-        }});
-    </script>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📝 Markdown Live View</h1>
-            <p>Real-time markdown file viewer with MCP integration</p>
-        </div>
-        
-        <div class="directory-info">
-            <strong>📁 Directory:</strong> {self.markdown_dir} | <strong>📄 Files:</strong> Loading... | <strong>🕒 Last Updated:</strong> Loading...
-        </div>
-        
-        <div id="content" class="loading">
-            ⏳ Loading content...
-        </div>
-    </div>
-</body>
-</html>
-        """, content_type='text/html')
+        html = self.render_index_template(self.markdown_dir)
+        return Response(text=html, content_type='text/html')
     
     async def handle_websocket(self, request):
         """Handle WebSocket connections."""
