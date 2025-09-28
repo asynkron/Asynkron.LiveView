@@ -30,6 +30,8 @@ print_error() {
 # Configuration
 MARKDOWN_DIR=${MARKDOWN_DIR:-markdown}
 PORT=${PORT:-8080}
+VENV_NAME="venv"
+REQUIREMENTS_FILE="requirements.txt"
 
 echo "🚀 Unified Markdown Live View Server"
 echo "====================================="
@@ -41,31 +43,134 @@ echo "  Server Port: $PORT"
 echo ""
 
 # Detect Python command
-PYTHON_CMD=""
-if command -v python3 &> /dev/null; then
-    PYTHON_CMD="python3"
-elif command -v python &> /dev/null; then
-    PYTHON_CMD="python"
-else
-    print_error "Python not found. Please install Python 3.7+"
+detect_python() {
+    print_info "Detecting Python installation..."
+    
+    # Try different Python commands
+    for cmd in python3 python python3.12 python3.11 python3.10 python3.9; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            # Check if it's Python 3.7+
+            version_check=$("$cmd" -c "import sys; print('.'.join(map(str, sys.version_info[:2])))" 2>/dev/null)
+            if [ $? -eq 0 ]; then
+                major=$(echo "$version_check" | cut -d. -f1)
+                minor=$(echo "$version_check" | cut -d. -f2)
+                if [ "$major" -eq 3 ] && [ "$minor" -ge 7 ]; then
+                    PYTHON_CMD="$cmd"
+                    PIP_CMD="$cmd -m pip"
+                    print_success "Found Python: $cmd (Python $version_check)"
+                    return 0
+                fi
+            fi
+        fi
+    done
+    
+    print_error "Python 3.7+ not found. Please install Python 3.7 or later."
     exit 1
+}
+
+# Setup virtual environment
+setup_venv() {
+    print_info "Setting up virtual environment..."
+    
+    if [ ! -d "$VENV_NAME" ]; then
+        print_info "Creating virtual environment..."
+        if ! "$PYTHON_CMD" -m venv "$VENV_NAME"; then
+            print_error "Failed to create virtual environment"
+            print_info "Trying without virtual environment..."
+            return 1
+        fi
+        print_success "Virtual environment created"
+    else
+        print_success "Virtual environment already exists"
+    fi
+    
+    # Activate virtual environment
+    source "$VENV_NAME/bin/activate" || {
+        print_error "Failed to activate virtual environment"
+        return 1
+    }
+    
+    print_success "Virtual environment activated"
+    return 0
+}
+
+# Install dependencies with fallback strategies
+install_dependencies() {
+    print_info "Checking dependencies..."
+    
+    # First check if all dependencies are already available
+    if "$PYTHON_CMD" -c "import aiohttp, watchdog, mcp" 2>/dev/null; then
+        print_success "All dependencies are available"
+        return 0
+    fi
+    
+    print_info "Installing Python dependencies..."
+    
+    # Upgrade pip first
+    print_info "Upgrading pip..."
+    "$PYTHON_CMD" -m pip install --upgrade pip || print_warning "Pip upgrade failed, continuing anyway..."
+    
+    # Strategy 1: Try normal pip install
+    if "$PYTHON_CMD" -m pip install -r "$REQUIREMENTS_FILE"; then
+        print_success "Dependencies installed successfully"
+        return 0
+    fi
+    
+    print_warning "Normal installation failed, trying alternative methods..."
+    
+    # Strategy 2: Try user installation
+    print_info "Trying user installation..."
+    if "$PYTHON_CMD" -m pip install --user -r "$REQUIREMENTS_FILE"; then
+        print_success "Dependencies installed in user directory"
+        return 0
+    fi
+    
+    # Strategy 3: Try with --break-system-packages (for externally managed environments)
+    print_info "Trying with --break-system-packages..."
+    if "$PYTHON_CMD" -m pip install --break-system-packages -r "$REQUIREMENTS_FILE"; then
+        print_success "Dependencies installed with system packages override"
+        return 0
+    fi
+    
+    # Strategy 4: Try installing individual packages
+    print_info "Trying individual package installation..."
+    for package in "aiohttp>=3.9.0" "watchdog>=3.0.0" "mcp>=1.0.0"; do
+        if "$PYTHON_CMD" -m pip install --user "$package" || \
+           "$PYTHON_CMD" -m pip install --break-system-packages "$package"; then
+            print_info "Installed $package"
+        else
+            print_warning "Failed to install $package"
+        fi
+    done
+    
+    # Final verification
+    if "$PYTHON_CMD" -c "import aiohttp, watchdog, mcp" 2>/dev/null; then
+        print_success "All dependencies are now available"
+        return 0
+    else
+        print_error "Failed to install all required dependencies"
+        print_info "Manual installation required:"
+        print_info "  python3 -m pip install --user aiohttp watchdog mcp"
+        print_info "  OR"
+        print_info "  python3 -m pip install --break-system-packages aiohttp watchdog mcp"
+        return 1
+    fi
+}
+
+# Detect Python and setup environment
+detect_python
+
+# Try to setup virtual environment, but continue without it if it fails
+if setup_venv; then
+    print_info "Using virtual environment"
+else
+    print_warning "Continuing without virtual environment"
 fi
 
-print_info "Using Python command: $PYTHON_CMD"
-
-# Check dependencies
-print_info "Checking dependencies..."
-if ! $PYTHON_CMD -c "import aiohttp, watchdog, mcp" 2>/dev/null; then
-    print_warning "Installing missing dependencies..."
-    $PYTHON_CMD -m pip install -r requirements.txt
-    if [ $? -eq 0 ]; then
-        print_success "Dependencies installed successfully"
-    else
-        print_error "Failed to install dependencies"
-        exit 1
-    fi
-else
-    print_success "All dependencies are available"
+# Install dependencies
+if ! install_dependencies; then
+    print_error "Dependency installation failed"
+    exit 1
 fi
 
 # Create markdown directory if it doesn't exist

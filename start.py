@@ -24,12 +24,19 @@ def install_dependencies():
             print("Dependencies installed successfully in user directory!")
             return True
         except subprocess.CalledProcessError as e2:
-            print(f"Failed to install dependencies: {e2}")
-            print("\n💡 Installation failed. You may need to:")
-            print("   1. Use a virtual environment: python3 -m venv venv && source venv/bin/activate")
-            print("   2. Or install system-wide: pip install --break-system-packages -r requirements.txt")
-            print("   3. Or use pipx if available: pipx install aiohttp watchdog")
-            return False
+            # Try with --break-system-packages for externally managed environments
+            print("User installation failed, trying with --break-system-packages...")
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "--break-system-packages", "-r", "requirements.txt"])
+                print("Dependencies installed successfully with system packages override!")
+                return True
+            except subprocess.CalledProcessError as e3:
+                print(f"Failed to install dependencies: {e3}")
+                print("\n💡 Installation failed. You may need to:")
+                print("   1. Use a virtual environment: python3 -m venv venv && source venv/bin/activate")
+                print("   2. Or install manually: pip install aiohttp watchdog mcp")
+                print("   3. Or use pipx if available: pipx install aiohttp watchdog mcp")
+                return False
 
 def main():
     """Main startup function."""
@@ -47,9 +54,10 @@ def main():
     try:
         import aiohttp
         import watchdog
+        import mcp
         print("✅ Dependencies already installed")
-    except ImportError:
-        print("📦 Installing dependencies...")
+    except ImportError as e:
+        print(f"📦 Installing dependencies... (Missing: {e.name})")
         if not install_dependencies():
             print("❌ Failed to install dependencies. Please run: pip install -r requirements.txt")
             return 1
