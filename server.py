@@ -335,17 +335,39 @@ class LiveViewServer:
 
     <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
     <script>
-        // Initialize Mermaid with error handling
+        // Initialize Mermaid with proper error handling
         let mermaidReady = false;
-        try {
-            mermaid.initialize({ 
-                startOnLoad: false,
-                theme: 'default',
-                securityLevel: 'loose'
+        let mermaidLoadPromise = null;
+        
+        // Wait for script to load before trying to initialize
+        function initializeMermaid() {
+            if (typeof mermaid !== 'undefined') {
+                try {
+                    mermaid.initialize({ 
+                        startOnLoad: false,
+                        theme: 'default',
+                        securityLevel: 'loose'
+                    });
+                    mermaidReady = true;
+                    console.log('Mermaid initialized successfully');
+                } catch (error) {
+                    console.warn('Mermaid initialization failed:', error);
+                    mermaidReady = false;
+                }
+            } else {
+                console.warn('Mermaid not available');
+                mermaidReady = false;
+            }
+        }
+        
+        // Try to initialize immediately if already loaded
+        initializeMermaid();
+        
+        // If not loaded yet, wait for window load event
+        if (!mermaidReady) {
+            window.addEventListener('load', () => {
+                setTimeout(initializeMermaid, 100);
             });
-            mermaidReady = true;
-        } catch (error) {
-            console.warn('Mermaid not available:', error);
         }
 
         // Simple markdown parser (basic implementation)
@@ -366,7 +388,10 @@ class LiveViewServer:
             // Code blocks
             html = html.replace(/```mermaid([\\s\\S]*?)```/gim, function(match, content) {
                 const id = 'mermaid-' + Math.random().toString(36).substr(2, 9);
-                return `<div class="mermaid" id="${id}">${content.trim()}</div>`;
+                const cleanContent = content.trim();
+                // Use Base64 encoding to avoid HTML attribute issues
+                const encodedContent = btoa(cleanContent);
+                return `<div class="mermaid" id="${id}" data-mermaid-source="${encodedContent}">${cleanContent}</div>`;
             });
             html = html.replace(/```(\\w+)?([\\s\\S]*?)```/gim, '<pre><code>$2</code></pre>');
             
@@ -459,8 +484,23 @@ class LiveViewServer:
                 // Process diagrams sequentially to avoid UI blocking
                 for (const element of mermaidElements) {
                     try {
+                        // Get clean source content from data attribute or fallback to textContent
+                        let sourceContent = '';
+                        if (element.hasAttribute('data-mermaid-source')) {
+                            // Decode from Base64
+                            sourceContent = atob(element.getAttribute('data-mermaid-source'));
+                        } else {
+                            // Fallback for corrupted content
+                            sourceContent = element.textContent.replace(/^📊 Mermaid Diagram \\(requires network access\\):/, '').trim();
+                        }
+                        
+                        // Skip if content is empty or corrupted
+                        if (!sourceContent || sourceContent.includes('📊 Mermaid Diagram')) {
+                            continue;
+                        }
+                        
                         // Add timeout protection to prevent hanging
-                        const renderPromise = mermaid.render(element.id + '-svg', element.textContent);
+                        const renderPromise = mermaid.render(element.id + '-svg', sourceContent);
                         const timeoutPromise = new Promise((_, reject) => 
                             setTimeout(() => reject(new Error('Mermaid rendering timeout')), 5000)
                         );
@@ -475,7 +515,14 @@ class LiveViewServer:
             } else {
                 // Fallback for when Mermaid is not available
                 mermaidElements.forEach((element) => {
-                    element.innerHTML = `<div class="diagram-placeholder">📊 Mermaid Diagram (requires network access):<br><pre>${element.textContent}</pre></div>`;
+                    let sourceContent = '';
+                    if (element.hasAttribute('data-mermaid-source')) {
+                        // Decode from Base64
+                        sourceContent = atob(element.getAttribute('data-mermaid-source'));
+                    } else {
+                        sourceContent = element.textContent;
+                    }
+                    element.innerHTML = `<div class="diagram-placeholder">📊 Mermaid Diagram (requires network access):<br><pre>${sourceContent}</pre></div>`;
                 });
             }
         }
