@@ -1,18 +1,42 @@
 # Asynkron.LiveView
 
+## CLI AI Companion
+
+![Live View](live.png)
+
 A live view system for markdown files that automatically detects, orders, and displays markdown content with real-time updates via WebSocket.
+
+---
+
+## Why This Matters
+
+When working with CLI-based AI agents such as **Codex CLI** or **CoPilot CLI**, you often get streams of progress, design discussions, reasoning, and plans logged as markdown into a folder (for example `/logs`).  
+
+**Asynkron.LiveView** connects to that folder and instantly visualizes the evolving state of the agent’s thoughts. This gives you a **real-time debugging and mental model helper**:  
+
+- See the agent’s reasoning unfold as structured markdown  
+- Follow design decisions as they develop  
+- Inspect progress logs in chronological order  
+- Visualize system diagrams and flows directly with **Mermaid.js**  
+- Keep context without digging through scattered files  
+
+Instead of reading static logs or scrolling endlessly in a terminal, you get a **clear, dynamic, and live view** of what your AI agent is doing.
+
+---
 
 ## Features
 
-- 📄 **Unified Markdown View**: Reads `.md` files from a folder and displays them as a single, unified document
-- ⏰ **Chronological Ordering**: Files are automatically ordered by creation timestamp
-- 🔄 **Live Updates**: Real-time detection of new markdown files with WebSocket streaming
-- 🎨 **Rich Rendering**: Full support for markdown syntax and Mermaid diagrams
-- 🌐 **Web Interface**: Clean, responsive HTML interface with marked.js and mermaid.js
+- 📄 **Unified Markdown View**: Reads `.md` files from a folder and displays them as a single, unified document  
+- ⏰ **Chronological Ordering**: Files are automatically ordered by creation timestamp  
+- 🔄 **Live Updates**: Real-time detection of new markdown files with WebSocket streaming  
+- 🎨 **Rich Rendering**: Full support for markdown syntax and Mermaid diagrams  
+- 🌐 **Web Interface**: Clean, responsive HTML interface with marked.js and mermaid.js  
 
-## Quick Start
+---
 
-### ⚡ **One-Command Setup (Recommended)**
+## Installation & Quick Start
+
+### ⚡ One-Command Setup (Recommended)
 
 ```bash
 ./run.sh
@@ -193,7 +217,7 @@ Asynkron.LiveView/
 ├── start.py           # Simple startup script
 ├── run.sh             # Automated setup script (recommended)
 ├── requirements.txt   # Python dependencies
-├── markdown/          # Directory for markdown files
+├── markdown/          # Directory for example markdown files
 │   ├── 01-intro.md   # Sample files (ordered by timestamp)
 │   └── 02-diagram.md
 └── README.md
