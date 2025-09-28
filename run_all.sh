@@ -22,8 +22,10 @@ PYTHON_CMD="${PYTHON_CMD:-$(choose_python)}"
 
 ensure_deps() {
   if ! "$PYTHON_CMD" -c "import aiohttp, watchdog, mcp" >/dev/null 2>&1; then
-    echo "Installing required Python packages..."
-    "$PYTHON_CMD" -m pip install -r requirements.txt
+    echo "Installing required Python packages (non-destructive)..."
+    if ! "$PYTHON_CMD" -m pip install --user -r requirements.txt; then
+      "$PYTHON_CMD" -m pip install --break-system-packages -r requirements.txt
+    fi
   fi
 }
 

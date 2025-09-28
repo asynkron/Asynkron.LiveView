@@ -31,8 +31,12 @@ from mcp.types import (
     ListToolsResult,
     Tool,
     TextContent,
+    DEFAULT_NEGOTIATED_VERSION,
     INTERNAL_ERROR,
+    INVALID_PARAMS,
+    INVALID_REQUEST,
     METHOD_NOT_FOUND,
+    PARSE_ERROR,
     JSONRPCError
 )
 
@@ -116,6 +120,9 @@ class UnifiedMarkdownServer:
         self.observer = None
         self.enable_mcp = enable_mcp
         self.template_path = Path(__file__).resolve().parent / "templates" / "unified_index.html"
+        self._mcp_client_capabilities: Dict[str, Any] | None = None
+        self._mcp_initialized = False
+        self._negotiated_protocol_version: str | int = DEFAULT_NEGOTIATED_VERSION
         
         # Ensure default markdown directory exists
         self.default_markdown_dir.mkdir(exist_ok=True)
@@ -125,100 +132,144 @@ class UnifiedMarkdownServer:
             self.mcp_server = Server("markdown-liveview")
             self._register_mcp_tools()
             logger.info(f"MCP Server initialized for directory: {self.default_markdown_dir}")
-    
+
+    def _build_tool_definitions(self) -> List[Tool]:
+        """Return the shared MCP tool definitions."""
+        return [
+            Tool(
+                name="create_markdown_file",
+                description="Create a new markdown file with the given content",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Name of the markdown file (without .md extension)"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Markdown content to write to the file"
+                        },
+                        "prefix": {
+                            "type": "string",
+                            "description": "Optional timestamp prefix (e.g., '01-', '02-'). If not provided, will auto-generate based on existing files.",
+                            "default": ""
+                        }
+                    },
+                    "required": ["filename", "content"]
+                }
+            ),
+            Tool(
+                name="list_markdown_files",
+                description="List all markdown files in the directory",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False
+                }
+            ),
+            Tool(
+                name="read_markdown_file",
+                description="Read the content of a specific markdown file",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Name of the markdown file (with or without .md extension)"
+                        }
+                    },
+                    "required": ["filename"]
+                }
+            ),
+            Tool(
+                name="update_markdown_file",
+                description="Update or append to an existing markdown file",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Name of the markdown file (with or without .md extension)"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Content to append or new content to replace"
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["append", "replace"],
+                            "description": "Whether to append to or replace the file content",
+                            "default": "append"
+                        }
+                    },
+                    "required": ["filename", "content"]
+                }
+            ),
+            Tool(
+                name="delete_markdown_file",
+                description="Delete a markdown file",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Name of the markdown file to delete (with or without .md extension)"
+                        }
+                    },
+                    "required": ["filename"]
+                }
+            )
+        ]
+
+    def _handle_mcp_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Process an MCP initialize request and return the server capabilities."""
+        protocol_version = params.get("protocolVersion") or DEFAULT_NEGOTIATED_VERSION
+        capabilities = params.get("capabilities")
+
+        if isinstance(capabilities, dict):
+            self._mcp_client_capabilities = capabilities
+        else:
+            self._mcp_client_capabilities = None
+
+        self._negotiated_protocol_version = protocol_version
+        self._mcp_initialized = False
+
+        init_options = self.mcp_server.create_initialization_options()
+        server_info: Dict[str, Any] = {
+            "name": init_options.server_name,
+            "version": init_options.server_version,
+        }
+
+        if init_options.website_url:
+            server_info["websiteUrl"] = init_options.website_url
+        if init_options.icons:
+            server_info["icons"] = [icon.model_dump(exclude_none=True) for icon in init_options.icons]
+
+        init_result: Dict[str, Any] = {
+            "protocolVersion": protocol_version,
+            "capabilities": init_options.capabilities.model_dump(exclude_none=True),
+            "serverInfo": server_info,
+        }
+
+        if init_options.instructions:
+            init_result["instructions"] = init_options.instructions
+
+        logger.info(
+            "MCP initialize handshake (protocol=%s, client caps present=%s)",
+            protocol_version,
+            isinstance(capabilities, dict),
+        )
+
+        return init_result
+
     def _register_mcp_tools(self):
         """Register all available MCP tools."""
-        
+
         @self.mcp_server.list_tools()
         async def list_tools() -> ListToolsResult:
             """List all available tools."""
-            tools = [
-                Tool(
-                    name="create_markdown_file",
-                    description="Create a new markdown file with the given content",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "filename": {
-                                "type": "string",
-                                "description": "Name of the markdown file (without .md extension)"
-                            },
-                            "content": {
-                                "type": "string",
-                                "description": "Markdown content to write to the file"
-                            },
-                            "prefix": {
-                                "type": "string",
-                                "description": "Optional timestamp prefix (e.g., '01-', '02-'). If not provided, will auto-generate based on existing files.",
-                                "default": ""
-                            }
-                        },
-                        "required": ["filename", "content"]
-                    }
-                ),
-                Tool(
-                    name="list_markdown_files",
-                    description="List all markdown files in the directory",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": False
-                    }
-                ),
-                Tool(
-                    name="read_markdown_file",
-                    description="Read the content of a specific markdown file",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "filename": {
-                                "type": "string",
-                                "description": "Name of the markdown file (with or without .md extension)"
-                            }
-                        },
-                        "required": ["filename"]
-                    }
-                ),
-                Tool(
-                    name="update_markdown_file",
-                    description="Update or append to an existing markdown file",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "filename": {
-                                "type": "string",
-                                "description": "Name of the markdown file (with or without .md extension)"
-                            },
-                            "content": {
-                                "type": "string",
-                                "description": "Content to add to the file"
-                            },
-                            "mode": {
-                                "type": "string",
-                                "enum": ["append", "replace"],
-                                "description": "Whether to append to or replace the file content",
-                                "default": "append"
-                            }
-                        },
-                        "required": ["filename", "content"]
-                    }
-                ),
-                Tool(
-                    name="delete_markdown_file",
-                    description="Delete a markdown file",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "filename": {
-                                "type": "string",
-                                "description": "Name of the markdown file (with or without .md extension)"
-                            }
-                        },
-                        "required": ["filename"]
-                    }
-                )
-            ]
-            return ListToolsResult(tools=tools)
+            return ListToolsResult(tools=self._build_tool_definitions())
         
         @self.mcp_server.call_tool()
         async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
@@ -637,81 +688,108 @@ Create some `.md` files in your directory and refresh this page!
         """HTTP endpoint for MCP protocol (JSON-RPC over HTTP)."""
         if not self.enable_mcp:
             return web.json_response({'error': 'MCP not enabled'}, status=503)
-        
+
         try:
             data = await request.json()
-            
-            # Handle different MCP methods
-            method = data.get('method')
-            params = data.get('params', {})
-            request_id = data.get('id')
-            
-            if method == 'tools/list':
-                tools = []
-                # Manually create tools list since we can't easily call the decorated function
-                tools = [
-                    {
-                        "name": "create_markdown_file",
-                        "description": "Create a new markdown file with the given content",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "filename": {"type": "string", "description": "Name of the markdown file (without .md extension)"},
-                                "content": {"type": "string", "description": "Markdown content to write to the file"},
-                                "prefix": {"type": "string", "description": "Optional timestamp prefix", "default": ""}
-                            },
-                            "required": ["filename", "content"]
-                        }
-                    },
-                    {
-                        "name": "list_markdown_files",
-                        "description": "List all markdown files in the directory",
-                        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}
-                    },
-                    {
-                        "name": "read_markdown_file", 
-                        "description": "Read the content of a specific markdown file",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {"filename": {"type": "string", "description": "Name of the markdown file"}},
-                            "required": ["filename"]
-                        }
-                    },
-                    {
-                        "name": "update_markdown_file",
-                        "description": "Update or append to an existing markdown file", 
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "filename": {"type": "string", "description": "Name of the markdown file"},
-                                "content": {"type": "string", "description": "Content to add to the file"},
-                                "mode": {"type": "string", "enum": ["append", "replace"], "description": "Whether to append to or replace the file content", "default": "append"}
-                            },
-                            "required": ["filename", "content"]
-                        }
-                    },
-                    {
-                        "name": "delete_markdown_file",
-                        "description": "Delete a markdown file",
-                        "inputSchema": {
-                            "type": "object", 
-                            "properties": {"filename": {"type": "string", "description": "Name of the markdown file"}},
-                            "required": ["filename"]
-                        }
-                    }
-                ]
-                
-                response = {
+        except json.JSONDecodeError as exc:
+            logger.warning(f"Failed to parse MCP request JSON: {exc}")
+            return web.json_response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": PARSE_ERROR, "message": "Malformed JSON payload"}
+                },
+                status=400,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error(f"Unexpected error reading MCP request body: {exc}")
+            return web.json_response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": INTERNAL_ERROR, "message": "Failed to read request body"}
+                },
+                status=500,
+            )
+
+        if not isinstance(data, dict):
+            return web.json_response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": INVALID_REQUEST, "message": "Request payload must be an object"}
+                },
+                status=400,
+            )
+
+        method = data.get('method')
+        params = data.get('params') or {}
+        request_id = data.get('id')
+
+        def jsonrpc_error(code: int, message: str, *, status: int = 400):
+            return web.json_response(
+                {
                     "jsonrpc": "2.0",
                     "id": request_id,
-                    "result": {"tools": tools}
-                }
-                
-            elif method == 'tools/call':
-                tool_name = params.get('name')
-                arguments = params.get('arguments', {})
-                
-                # Call the appropriate tool method
+                    "error": {"code": code, "message": message}
+                },
+                status=status,
+            )
+
+        if not method:
+            return jsonrpc_error(INVALID_REQUEST, "Request is missing method")
+
+        if method == 'initialize':
+            if request_id is None:
+                return jsonrpc_error(INVALID_REQUEST, "initialize requires an id")
+            if not isinstance(params, dict):
+                return jsonrpc_error(INVALID_PARAMS, "initialize params must be an object")
+
+            init_result = self._handle_mcp_initialize(params)
+            return web.json_response({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": init_result
+            })
+
+        if method == 'notifications/initialized':
+            self._mcp_initialized = True
+            return web.Response(status=204)
+
+        if method == 'ping':
+            if request_id is None:
+                return web.Response(status=204)
+            return web.json_response({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {}
+            })
+
+        if method == 'tools/list':
+            if request_id is None:
+                return jsonrpc_error(INVALID_REQUEST, "tools/list requires an id")
+            list_result = ListToolsResult(tools=self._build_tool_definitions())
+            return web.json_response({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": list_result.model_dump(exclude_none=True)
+            })
+
+        if method == 'tools/call':
+            if request_id is None:
+                return jsonrpc_error(INVALID_REQUEST, "tools/call requires an id")
+            if not isinstance(params, dict):
+                return jsonrpc_error(INVALID_PARAMS, "tools/call params must be an object")
+
+            tool_name = params.get('name')
+            arguments = params.get('arguments') or {}
+
+            if not tool_name:
+                return jsonrpc_error(INVALID_PARAMS, "Tool name is required")
+            if not isinstance(arguments, dict):
+                return jsonrpc_error(INVALID_PARAMS, "Tool arguments must be an object")
+
+            try:
                 if tool_name == "create_markdown_file":
                     result = await self._create_markdown_file(
                         arguments.get("filename", ""),
@@ -731,34 +809,31 @@ Create some `.md` files in your directory and refresh this page!
                 elif tool_name == "delete_markdown_file":
                     result = await self._delete_markdown_file(arguments.get("filename", ""))
                 else:
-                    return web.json_response({
+                    return jsonrpc_error(METHOD_NOT_FOUND, f"Unknown tool: {tool_name}")
+            except JSONRPCError as rpc_error:  # pragma: no cover - defensive while tooling stabilises
+                logger.error(f"MCP tool returned JSONRPCError: {rpc_error}")
+                return web.json_response(
+                    rpc_error.model_dump(exclude_none=True),
+                    status=400,
+                )
+            except Exception as exc:
+                logger.error(f"Unexpected error calling tool {tool_name}: {exc}")
+                return web.json_response(
+                    {
                         "jsonrpc": "2.0",
                         "id": request_id,
-                        "error": {"code": -32601, "message": f"Unknown tool: {tool_name}"}
-                    }, status=400)
-                
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "result": {"content": [{"type": "text", "text": result.content[0].text}]}
-                }
-                
-            else:
-                return web.json_response({
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "error": {"code": -32601, "message": f"Unknown method: {method}"}
-                }, status=400)
-            
-            return web.json_response(response)
-            
-        except Exception as e:
-            logger.error(f"Error in MCP HTTP handler: {e}")
+                        "error": {"code": INTERNAL_ERROR, "message": f"Tool execution failed: {exc}"}
+                    },
+                    status=500,
+                )
+
             return web.json_response({
                 "jsonrpc": "2.0",
-                "id": data.get('id') if 'data' in locals() else None,
-                "error": {"code": -32603, "message": f"Internal error: {e}"}
-            }, status=500)
+                "id": request_id,
+                "result": result.model_dump(exclude_none=True)
+            })
+
+        return jsonrpc_error(METHOD_NOT_FOUND, f"Unknown method: {method}")
     
     async def notify_clients_file_change(self, file_path: str):
         """Notify all connected clients about file changes."""
@@ -831,8 +906,6 @@ Create some `.md` files in your directory and refresh this page!
         app.router.add_get('/ws', self.handle_websocket)
         app.router.add_get('/api/content', self.handle_api_content)
         app.router.add_get('/raw', self.handle_raw_markdown)
-        
-        # MCP HTTP route (optional)
         if self.enable_mcp:
             app.router.add_post('/mcp', self.handle_mcp_http)
         
