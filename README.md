@@ -12,6 +12,23 @@ A live view system for markdown files that automatically detects, orders, and di
 
 ## Quick Start
 
+### ⚡ **One-Command Setup (Recommended)**
+
+```bash
+./run.sh
+```
+
+That's it! The script will automatically:
+- ✅ Detect your Python installation
+- ✅ Set up a virtual environment 
+- ✅ Install all dependencies
+- ✅ Create the markdown directory
+- ✅ Start the server at `http://localhost:8080`
+
+### 🔧 **Manual Setup**
+
+If you prefer manual setup:
+
 1. **Install Dependencies**:
    ```bash
    pip install -r requirements.txt
@@ -32,6 +49,37 @@ A live view system for markdown files that automatically detects, orders, and di
 
 4. **Add Markdown Files**:
    Drop `.md` files into the `markdown/` directory and watch them appear automatically!
+
+### 🛠️ **Script Options**
+
+The `run.sh` script supports several options for different environments:
+
+```bash
+# Full automated setup (creates virtual environment)
+./run.sh
+
+# Skip virtual environment, use system Python
+./run.sh --system
+
+# Skip virtual environment setup entirely  
+./run.sh --no-venv
+
+# Use custom port
+PORT=3000 ./run.sh
+
+# Watch different directory
+MARKDOWN_DIR=docs ./run.sh
+
+# Show help
+./run.sh --help
+```
+
+The script automatically handles:
+- 🐍 **Python Detection**: Finds Python 3.7+ automatically
+- 📦 **Dependency Management**: Tries multiple installation strategies
+- 🏠 **Environment Setup**: Creates isolated virtual environment
+- 🔧 **Error Recovery**: Graceful fallbacks for different system configurations
+- 🍎 **Cross-Platform**: Works on Linux, macOS, and WSL
 
 ## Usage
 
@@ -69,6 +117,7 @@ python server.py --dir /path/to/my/docs --port 3000
 Asynkron.LiveView/
 ├── server.py          # Main server implementation
 ├── start.py           # Simple startup script
+├── run.sh             # Automated setup script (recommended)
 ├── requirements.txt   # Python dependencies
 ├── markdown/          # Directory for markdown files
 │   ├── 01-intro.md   # Sample files (ordered by timestamp)
@@ -84,7 +133,12 @@ Asynkron.LiveView/
 
 ## Installation Troubleshooting
 
-If you encounter dependency installation issues:
+**🚀 The easiest way to avoid all setup issues is to use the automated script:**
+```bash
+./run.sh
+```
+
+If you encounter dependency installation issues with manual setup:
 
 ### Externally-Managed Environment (e.g., Homebrew Python)
 ```bash
@@ -106,7 +160,7 @@ pip install --break-system-packages -r requirements.txt
 sudo apt install python3-aiohttp python3-watchdog
 ```
 
-The `start.py` script automatically handles most installation scenarios and provides helpful guidance.
+The `start.py` script and `run.sh` script both automatically handle most installation scenarios and provide helpful guidance.
 
 ## Browser Support
 
