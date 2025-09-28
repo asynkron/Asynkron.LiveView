@@ -440,7 +440,7 @@ class LiveViewServer:
             return html;
         }
         
-        function updateContent(content, isNewContent = false) {
+        async function updateContent(content, isNewContent = false) {
             const contentEl = document.getElementById('content');
             const html = renderMarkdown(content);
             contentEl.innerHTML = html;
@@ -453,18 +453,25 @@ class LiveViewServer:
                 }, 800);
             }
             
-            // Render Mermaid diagrams
+            // Render Mermaid diagrams with proper async handling
             const mermaidElements = contentEl.querySelectorAll('.mermaid');
             if (mermaidReady && typeof mermaid !== 'undefined') {
-                mermaidElements.forEach(async (element) => {
+                // Process diagrams sequentially to avoid UI blocking
+                for (const element of mermaidElements) {
                     try {
-                        const { svg } = await mermaid.render(element.id + '-svg', element.textContent);
+                        // Add timeout protection to prevent hanging
+                        const renderPromise = mermaid.render(element.id + '-svg', element.textContent);
+                        const timeoutPromise = new Promise((_, reject) => 
+                            setTimeout(() => reject(new Error('Mermaid rendering timeout')), 5000)
+                        );
+                        
+                        const { svg } = await Promise.race([renderPromise, timeoutPromise]);
                         element.innerHTML = svg;
                     } catch (error) {
                         console.error('Error rendering Mermaid diagram:', error);
                         element.innerHTML = `<div class="diagram-error">Error rendering diagram: ${error.message}</div>`;
                     }
-                });
+                }
             } else {
                 // Fallback for when Mermaid is not available
                 mermaidElements.forEach((element) => {
@@ -486,15 +493,15 @@ class LiveViewServer:
                 console.log('WebSocket connected');
             };
             
-            ws.onmessage = function(event) {
+            ws.onmessage = async function(event) {
                 try {
                     const data = JSON.parse(event.data);
                     
                     if (data.type === 'initial') {
-                        updateContent(data.content, false);
+                        await updateContent(data.content, false);
                         updateStatus(true, 'Content loaded');
                     } else if (data.type === 'update') {
-                        updateContent(data.content, true);
+                        await updateContent(data.content, true);
                         updateStatus(true, `Updated: ${data.new_file}`);
                         
                         // Flash notification
