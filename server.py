@@ -36,7 +36,25 @@ class MarkdownFileHandler(FileSystemEventHandler):
             logger.info(f"New markdown file detected: {event.src_path}")
             # Schedule the coroutine on the main event loop
             asyncio.run_coroutine_threadsafe(
-                self.server.notify_clients_new_file(event.src_path), 
+                self.server.notify_clients_file_change(event.src_path), 
+                self.loop
+            )
+    
+    def on_modified(self, event):
+        if not event.is_directory and event.src_path.endswith('.md'):
+            logger.info(f"Markdown file modified: {event.src_path}")
+            # Schedule the coroutine on the main event loop
+            asyncio.run_coroutine_threadsafe(
+                self.server.notify_clients_file_change(event.src_path), 
+                self.loop
+            )
+    
+    def on_deleted(self, event):
+        if not event.is_directory and event.src_path.endswith('.md'):
+            logger.info(f"Markdown file deleted: {event.src_path}")
+            # Schedule the coroutine on the main event loop
+            asyncio.run_coroutine_threadsafe(
+                self.server.notify_clients_file_change(event.src_path), 
                 self.loop
             )
 
@@ -201,8 +219,8 @@ The requested directory could not be accessed or contains no markdown files.
             
         return ws
     
-    async def notify_clients_new_file(self, file_path: str):
-        """Notify all connected clients about new file."""
+    async def notify_clients_file_change(self, file_path: str):
+        """Notify all connected clients about file changes (create, modify, delete)."""
         if not self.clients:
             return
             
@@ -214,7 +232,7 @@ The requested directory could not be accessed or contains no markdown files.
             message = json.dumps({
                 'type': 'update',
                 'content': unified_content,
-                'new_file': Path(file_path).name
+                'changed_file': Path(file_path).name
             })
             
             # Send to all connected clients
@@ -222,12 +240,16 @@ The requested directory could not be accessed or contains no markdown files.
             for client in self.clients:
                 try:
                     await client.send_str(message)
+                    logger.debug(f"Sent update to client for file: {Path(file_path).name}")
                 except Exception as e:
                     logger.error(f"Error sending to client: {e}")
                     disconnected_clients.add(client)
             
             # Remove disconnected clients
             self.clients -= disconnected_clients
+            
+            if disconnected_clients:
+                logger.info(f"Removed {len(disconnected_clients)} disconnected clients")
             
         except Exception as e:
             logger.error(f"Error notifying clients: {e}")
@@ -662,7 +684,7 @@ The requested directory could not be accessed or contains no markdown files.
                             updateStatus(true, 'Content loaded');
                         } else if (data.type === 'update') {
                             await updateContent(data.content, true);
-                            updateStatus(true, `Updated: ${data.new_file}`);
+                            updateStatus(true, `Updated: ${data.changed_file}`);
                             setTimeout(() => updateStatus(true), 3000);
                         } else if (data.type === 'pong') {
                             console.log('Pong received');
