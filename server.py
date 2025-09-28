@@ -252,173 +252,66 @@ The requested directory could not be accessed or contains no markdown files.
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Markdown Live View</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .header {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            border-left: 4px solid #007bff;
-        }
-        .status {
-            margin-bottom: 10px;
-            padding: 10px;
-            border-radius: 4px;
-            font-weight: bold;
-        }
-        .status.connected {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        .status.disconnected {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        .content {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        pre {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            overflow-x: auto;
-        }
-        code {
-            background: #f8f9fa;
-            padding: 2px 4px;
-            border-radius: 3px;
-            font-family: 'Monaco', 'Consolas', monospace;
-        }
-        pre code {
-            background: none;
-            padding: 0;
-        }
-        blockquote {
-            border-left: 4px solid #ddd;
-            margin: 0;
-            padding-left: 20px;
-            color: #666;
-        }
-        .mermaid {
-            text-align: center;
-            margin: 20px 0;
-            background: #f9f9f9;
-            border: 1px solid #ddd;
-            padding: 10px;
-            border-radius: 5px;
-        }
-        .diagram-error {
-            color: #dc3545;
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-        }
-        .diagram-placeholder {
-            background: #e9ecef;
-            border: 1px solid #dee2e6;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 10px 0;
-            color: #6c757d;
-            text-align: center;
-        }
-        .diagram-placeholder pre {
-            background: #f8f9fa;
-            margin-top: 10px;
-            text-align: left;
-        }
-        .content-flash {
-            animation: flashIn 0.8s ease-in-out;
-        }
-        @keyframes flashIn {
-            0% { 
-                background-color: #fff3cd;
-                transform: scale(1.02);
-            }
-            50% { 
-                background-color: #ffeaa7;
-                transform: scale(1.01);
-            }
-            100% { 
-                background-color: white;
-                transform: scale(1);
-            }
-        }
-        .file-separator {
-            border-top: 2px solid #e9ecef;
-            margin: 30px 0;
-            position: relative;
-        }
-        .file-separator::after {
-            content: attr(data-file);
-            position: absolute;
-            top: -12px;
-            left: 20px;
-            background: white;
-            padding: 0 10px;
-            color: #6c757d;
-            font-size: 0.9em;
-            font-weight: bold;
-        }
-        h1, h2, h3, h4, h5, h6 {
-            color: #2c3e50;
-            margin-top: 30px;
-            margin-bottom: 15px;
-        }
-        ul, ol {
-            margin: 15px 0;
-            padding-left: 30px;
-        }
-        li {
-            margin: 5px 0;
-        }
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 20px 0;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 12px;
-            text-align: left;
-        }
-        th {
-            background-color: #f2f2f2;
-            font-weight: bold;
-        }
-        .diagram-placeholder {
-            background: #e8f4fd;
-            border: 2px dashed #4a90e2;
-            padding: 20px;
-            text-align: center;
-            margin: 20px 0;
-            border-radius: 5px;
-            color: #2c5282;
-            font-style: italic;
-        }
-    </style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      background-color: #121a22;
+      color: #ddd;
+      font-size: smaller;
+    }
+
+    .mermaid {
+      background-color: #121a22 !important;
+    }
+
+    .mermaid svg {
+      background-color: #121a22 !important;
+    }
+
+    #mmd-0 .cluster rect {
+      fill: hsl(180deg 1.59% 28.35% / 12%) !important;
+    }
+
+    #viewer {
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    #editor {
+      display: none;
+    }
+
+    .mermaid {
+      background-color: #1e1e1e;
+      color: #ddd;
+    }
+
+    .mermaid svg {
+      background-color: #1e1e1e;
+    }
+
+    pre code {
+      background: #2d2d2d;
+      padding: 10px;
+      border-radius: 4px;
+      display: block;
+      overflow-x: auto;
+    }
+
+    .mmd-error {
+      background: #3b1f1f;
+      color: #ffb3b3;
+      border: 1px solid #7a2a2a;
+      padding: 10px;
+      border-radius: 4px;
+      white-space: pre-wrap;
+    }
+  </style>
 </head>
 <body>
-    <div class="header">
-        <h1>📄 Markdown Live View</h1>
-        <div id="status" class="status disconnected">Connecting...</div>
-        <p>This page automatically updates when new markdown files are added to the watched directory.</p>
-        <p><strong>📁 Current Directory:</strong> <code>""" + str(target_path) + """</code></p>
-    </div>
+    <p><strong>📁 Current Directory:</strong> <code>""" + str(target_path) + """</code></p>   
     
     <div id="content" class="content">
         <p>Loading markdown content...</p>
@@ -461,64 +354,9 @@ The requested directory could not be accessed or contains no markdown files.
             });
         }
 
-        // Simple markdown parser (basic implementation)
         function parseMarkdown(md) {
-            let html = md;
-            
-            // Headers
-            html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-            html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-            html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-            
-            // Bold
-            html = html.replace(/\\*\\*(.*?)\\*\\*/gim, '<strong>$1</strong>');
-            
-            // Italic
-            html = html.replace(/\\*(.*?)\\*/gim, '<em>$1</em>');
-            
-            // Code blocks
-            html = html.replace(/```mermaid([\\s\\S]*?)```/gim, function(match, content) {
-                const id = 'mermaid-' + Math.random().toString(36).substr(2, 9);
-                const cleanContent = content.trim();
-                // Use Base64 encoding to avoid HTML attribute issues
-                const encodedContent = btoa(cleanContent);
-                return `<div class="mermaid" id="${id}" data-mermaid-source="${encodedContent}">${cleanContent}</div>`;
-            });
-            html = html.replace(/```(\\w+)?([\\s\\S]*?)```/gim, '<pre><code>$2</code></pre>');
-            
-            // Inline code
-            html = html.replace(/`([^`]+)`/gim, '<code>$1</code>');
-            
-            // Links
-            html = html.replace(/\\[([^\\]]+)\\]\\(([^\\)]+)\\)/gim, '<a href="$2">$1</a>');
-            
-            // Lists
-            html = html.replace(/^\\s*[-\\*\\+] (.*)$/gim, '<li>$1</li>');
-            html = html.replace(/((<li>.*<\\/li>\\n?)+)/gim, '<ul>$1</ul>');
-            
-            // Blockquotes
-            html = html.replace(/^> (.*)$/gim, '<blockquote>$1</blockquote>');
-            
-            // Line breaks
-            html = html.replace(/\\n\\n/gim, '</p><p>');
-            html = html.replace(/\\n/gim, '<br>');
-            
-            // Wrap in paragraphs
-            html = '<p>' + html + '</p>';
-            
-            // Clean up empty paragraphs
-            html = html.replace(/<p><\\/p>/gim, '');
-            html = html.replace(/<p>(<h[1-6]>)/gim, '$1');
-            html = html.replace(/(<\\/h[1-6]>)<\\/p>/gim, '$1');
-            html = html.replace(/<p>(<ul>)/gim, '$1');
-            html = html.replace(/(<\\/ul>)<\\/p>/gim, '$1');
-            html = html.replace(/<p>(<pre>)/gim, '$1');
-            html = html.replace(/(<\\/pre>)<\\/p>/gim, '$1');
-            html = html.replace(/<p>(<blockquote>)/gim, '$1');
-            html = html.replace(/(<\\/blockquote>)<\\/p>/gim, '$1');
-            html = html.replace(/<p>(<div)/gim, '$1');
-            html = html.replace(/(<\\/div>)<\\/p>/gim, '$1');
-            
+            //TODO: use marked JS, not some nonsense homegrown stuff   
+            var html ="nonsense"         
             return html;
         }
         
