@@ -255,7 +255,7 @@ The requested directory could not be accessed or contains no markdown files.
     body {
       font-family: sans-serif;
       margin: 0;
-      padding: 0;
+      padding: 20px;
       height: 100vh;
       background-color: #121a22;
       color: #ddd;
