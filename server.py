@@ -312,25 +312,70 @@ The requested directory could not be accessed or contains no markdown files.
 </head>
 <body>
     <p><strong>📁 Current Directory:</strong> <code>""" + str(target_path) + """</code></p>   
+    <div id="status" class="status">🟡 Connecting...</div>
     
     <div id="content" class="content">
         <p>Loading markdown content...</p>
     </div>
 
-    <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer=""></script>
+    <!-- Mermaid.js for diagrams -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js" defer=""></script>
+    <!-- Highlight.js for code highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer=""></script>
     <script>
-        // Initialize Mermaid with proper error handling
-        let mermaidReady = false;
-        let mermaidLoadPromise = null;
-        
-        // Wait for script to load before trying to initialize
-        function initializeMermaid() {
-            if (typeof mermaid !== 'undefined') {
+        window.addEventListener('DOMContentLoaded', () => {
+            let ws = null;
+            let reconnectAttempts = 0;
+            const maxReconnectAttempts = 5;
+            let mermaidReady = false;
+            let mermaidIdCounter = 0;
+            let markedRenderer = null;
+            const textEncoder = new TextEncoder();
+            const textDecoder = new TextDecoder();
+
+            function waitForLibraries(maxRetries = 50, intervalMs = 100) {
+                return new Promise((resolve, reject) => {
+                    let attempts = 0;
+                    const check = () => {
+                        if (typeof marked !== 'undefined' && typeof mermaid !== 'undefined' && typeof hljs !== 'undefined') {
+                            resolve();
+                        } else if (attempts >= maxRetries) {
+                            reject(new Error('Required libraries failed to load'));
+                        } else {
+                            attempts += 1;
+                            setTimeout(check, intervalMs);
+                        }
+                    };
+                    check();
+                });
+            }
+
+            function initializeMermaid() {
+                if (typeof mermaid === 'undefined') {
+                    console.warn('Mermaid not available');
+                    mermaidReady = false;
+                    return;
+                }
+
                 try {
-                    mermaid.initialize({ 
+                    mermaid.initialize({
                         startOnLoad: false,
-                        theme: 'default',
-                        securityLevel: 'loose'
+                        theme: 'dark',
+                        securityLevel: 'loose',
+                        themeVariables: {
+                            background: '#121a22',
+                            primaryColor: '#1f2a33',
+                            secondaryColor: '#253548',
+                            primaryTextColor: '#e0e6ed',
+                            secondaryTextColor: '#c8d2dc',
+                            lineColor: '#4f94d4',
+                            nodeBorder: '#4f94d4',
+                            clusterBkg: '#1b2732',
+                            clusterBorder: '#4f94d4'
+                        }
                     });
                     mermaidReady = true;
                     console.log('Mermaid initialized successfully');
@@ -338,194 +383,333 @@ The requested directory could not be accessed or contains no markdown files.
                     console.warn('Mermaid initialization failed:', error);
                     mermaidReady = false;
                 }
-            } else {
-                console.warn('Mermaid not available');
-                mermaidReady = false;
             }
-        }
-        
-        // Try to initialize immediately if already loaded
-        initializeMermaid();
-        
-        // If not loaded yet, wait for window load event
-        if (!mermaidReady) {
-            window.addEventListener('load', () => {
-                setTimeout(initializeMermaid, 100);
-            });
-        }
 
-        function parseMarkdown(md) {
-            //TODO: use marked JS, not some nonsense homegrown stuff   
-            var html ="nonsense"         
-            return html;
-        }
-        
-        let ws = null;
-        let reconnectAttempts = 0;
-        const maxReconnectAttempts = 5;
-        
-        function updateStatus(connected, message = '') {
-            const statusEl = document.getElementById('status');
-            if (connected) {
-                statusEl.className = 'status connected';
-                statusEl.textContent = '🟢 Connected' + (message ? ` - ${message}` : '');
-                reconnectAttempts = 0;
-            } else {
-                statusEl.className = 'status disconnected';
-                statusEl.textContent = '🔴 Disconnected' + (message ? ` - ${message}` : '');
+            function escapeHtml(str) {
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
             }
-        }
-        
-        function renderMarkdown(content) {
-            // Split content by file separators and process
-            const parts = content.split(/<!-- Source: (.+?) -->/);
-            let html = '';
-            
-            for (let i = 0; i < parts.length; i++) {
-                if (i % 2 === 1) {
-                    // This is a filename
-                    html += `<div class="file-separator" data-file="${parts[i]}"></div>`;
-                } else if (parts[i].trim()) {
-                    // This is content - parse markdown
-                    html += parseMarkdown(parts[i].trim());
+
+            function encodeMermaidSource(code) {
+                const bytes = textEncoder.encode(code || '');
+                let binary = '';
+                bytes.forEach((byte) => {
+                    binary += String.fromCharCode(byte);
+                });
+                return btoa(binary);
+            }
+
+            function decodeMermaidSource(encoded) {
+                if (!encoded) {
+                    return '';
+                }
+                try {
+                    const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+                    return textDecoder.decode(bytes);
+                } catch (error) {
+                    console.warn('Failed to decode Mermaid source', error);
+                    return '';
                 }
             }
-            
-            return html;
-        }
-        
-        async function updateContent(content, isNewContent = false) {
-            const contentEl = document.getElementById('content');
-            const html = renderMarkdown(content);
-            contentEl.innerHTML = html;
-            
-            // Add flash effect for new content
-            if (isNewContent) {
-                contentEl.classList.add('content-flash');
-                setTimeout(() => {
-                    contentEl.classList.remove('content-flash');
-                }, 800);
-            }
-            
-            // Render Mermaid diagrams with proper async handling
-            const mermaidElements = contentEl.querySelectorAll('.mermaid');
-            if (mermaidReady && typeof mermaid !== 'undefined') {
-                // Process diagrams sequentially to avoid UI blocking
-                for (const element of mermaidElements) {
+
+            function getMarkedRenderer() {
+                if (typeof marked === 'undefined') {
+                    console.warn('Marked not available');
+                    return null;
+                }
+
+                if (markedRenderer) {
+                    return markedRenderer;
+                }
+
+                const renderer = new marked.Renderer();
+                const originalCodeRenderer = renderer.code.bind(renderer);
+                renderer.code = (code, infostring, escaped) => {
+                    let langInput = '';
+                    if (typeof infostring === 'string') {
+                        langInput = infostring.trim();
+                    } else if (infostring && typeof infostring.lang === 'string') {
+                        langInput = infostring.lang.trim();
+                    }
+
+                    const primaryLang = langInput.split(/\\s+/)[0] || '';
+                    const lang = primaryLang.toLowerCase();
+                    const langIncludesMermaid = langInput.toLowerCase().includes('mermaid');
+                    let rawCode = '';
+
+                    if (typeof code === 'string') {
+                        rawCode = code;
+                    } else if (code && typeof code.text === 'string') {
+                        rawCode = code.text;
+                    } else if (code && typeof code.value === 'string') {
+                        rawCode = code.value;
+                    } else if (code && typeof code.raw === 'string') {
+                        rawCode = code.raw;
+                    } else if (Array.isArray(code)) {
+                        rawCode = code.map((segment) => (segment && typeof segment.text === 'string' ? segment.text : String(segment || ''))).join('');
+                    } else if (code != null) {
+                        rawCode = String(code);
+                    }
+
+                    if (lang === 'mermaid' || langIncludesMermaid) {
+                        const mermaidId = `mermaid-${mermaidIdCounter++}`;
+                        const encodedSource = encodeMermaidSource(rawCode);
+                        return `<div class="mermaid" id="${mermaidId}" data-mermaid-source="${encodedSource}"></div>`;
+                    }
+
                     try {
-                        // Get clean source content from data attribute or fallback to textContent
-                        let sourceContent = '';
-                        if (element.hasAttribute('data-mermaid-source')) {
-                            // Decode from Base64
-                            sourceContent = atob(element.getAttribute('data-mermaid-source'));
-                        } else {
-                            // Fallback for corrupted content
-                            sourceContent = element.textContent.replace(/^📊 Mermaid Diagram \\(requires network access\\):/, '').trim();
+                        if (typeof hljs !== 'undefined') {
+                            if (lang && hljs.getLanguage(lang)) {
+                                const result = hljs.highlight(rawCode, { language: lang, ignoreIllegals: true });
+                                return `<pre><code class="hljs language-${lang}">${result.value}</code></pre>`;
+                            }
+                            const autoResult = hljs.highlightAuto(rawCode);
+                            return `<pre><code class="hljs language-${autoResult.language || 'plaintext'}">${autoResult.value}</code></pre>`;
                         }
-                        
-                        // Skip if content is empty or corrupted
-                        if (!sourceContent || sourceContent.includes('📊 Mermaid Diagram')) {
-                            continue;
-                        }
-                        
-                        // Add timeout protection to prevent hanging
-                        const renderPromise = mermaid.render(element.id + '-svg', sourceContent);
-                        const timeoutPromise = new Promise((_, reject) => 
-                            setTimeout(() => reject(new Error('Mermaid rendering timeout')), 5000)
-                        );
-                        
-                        const { svg } = await Promise.race([renderPromise, timeoutPromise]);
-                        element.innerHTML = svg;
-                    } catch (error) {
-                        console.error('Error rendering Mermaid diagram:', error);
-                        element.innerHTML = `<div class="diagram-error">Error rendering diagram: ${error.message}</div>`;
+                    } catch (highlightError) {
+                        console.warn('Highlight.js error', highlightError);
                     }
+
+                    return originalCodeRenderer(rawCode, infostring, escaped);
+                };
+
+                if (typeof hljs !== 'undefined') {
+                    hljs.configure({ ignoreUnescapedHTML: true });
                 }
-            } else {
-                // Fallback for when Mermaid is not available
-                mermaidElements.forEach((element) => {
-                    let sourceContent = '';
-                    if (element.hasAttribute('data-mermaid-source')) {
-                        // Decode from Base64
-                        sourceContent = atob(element.getAttribute('data-mermaid-source'));
-                    } else {
-                        sourceContent = element.textContent;
+
+                marked.setOptions({
+                    gfm: true,
+                    breaks: true,
+                    mangle: false,
+                    smartLists: true
+                });
+
+                markedRenderer = renderer;
+                return markedRenderer;
+            }
+
+            function preprocessTokens(tokens) {
+                if (!Array.isArray(tokens)) {
+                    return;
+                }
+
+                tokens.forEach((token) => {
+                    if (!token || typeof token !== 'object') {
+                        return;
                     }
-                    element.innerHTML = `<div class="diagram-placeholder">📊 Mermaid Diagram (requires network access):<br><pre>${sourceContent}</pre></div>`;
+
+                    if (token.type === 'code') {
+                        const langInput = typeof token.lang === 'string' ? token.lang : '';
+                        const langLower = langInput.toLowerCase();
+                        const isMermaid = langLower.includes('mermaid');
+
+                        if (isMermaid) {
+                            const mermaidId = `mermaid-${mermaidIdCounter++}`;
+                            const encodedSource = encodeMermaidSource(token.text || token.raw || '');
+                            const mermaidHtml = `<div class="mermaid" id="${mermaidId}" data-mermaid-source="${encodedSource}"></div>`;
+                            token.type = 'html';
+                            token.raw = mermaidHtml;
+                            token.text = mermaidHtml;
+                            return;
+                        }
+                    }
+
+                    if (Array.isArray(token.tokens)) {
+                        preprocessTokens(token.tokens);
+                    }
+
+                    if (Array.isArray(token.items)) {
+                        token.items.forEach((item) => {
+                            if (item && Array.isArray(item.tokens)) {
+                                preprocessTokens(item.tokens);
+                            }
+                        });
+                    }
                 });
             }
-        }
-        
-        function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            let wsUrl = `${protocol}//${window.location.host}/ws`;
-            
-            // Add query parameters to WebSocket URL if present in current URL
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.has('path')) {
-                wsUrl += `?path=${encodeURIComponent(urlParams.get('path'))}`;
-            }
-            
-            updateStatus(false, 'Connecting...');
-            
-            ws = new WebSocket(wsUrl);
-            
-            ws.onopen = function() {
-                updateStatus(true);
-                console.log('WebSocket connected');
-            };
-            
-            ws.onmessage = async function(event) {
+
+            function parseMarkdown(md) {
+                if (!md) {
+                    return '';
+                }
+
+                const renderer = getMarkedRenderer();
+                if (!renderer) {
+                    return `<pre>${escapeHtml(md)}</pre>`;
+                }
+
                 try {
-                    const data = JSON.parse(event.data);
-                    
-                    if (data.type === 'initial') {
-                        await updateContent(data.content, false);
-                        updateStatus(true, 'Content loaded');
-                    } else if (data.type === 'update') {
-                        await updateContent(data.content, true);
-                        updateStatus(true, `Updated: ${data.new_file}`);
-                        
-                        // Flash notification
-                        setTimeout(() => updateStatus(true), 3000);
-                    } else if (data.type === 'pong') {
-                        console.log('Pong received');
-                    }
-                } catch (e) {
-                    console.error('Error parsing WebSocket message:', e);
+                    const tokens = marked.lexer(md);
+                    preprocessTokens(tokens);
+                    return marked.parser(tokens, { renderer });
+                } catch (error) {
+                    console.error('Error parsing markdown with Marked:', error);
+                    return `<pre>${escapeHtml(md)}</pre>`;
                 }
-            };
-            
-            ws.onclose = function() {
-                updateStatus(false, 'Connection closed');
-                console.log('WebSocket disconnected');
-                
-                if (reconnectAttempts < maxReconnectAttempts) {
-                    reconnectAttempts++;
-                    setTimeout(() => {
-                        console.log(`Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`);
-                        connectWebSocket();
-                    }, 2000 * reconnectAttempts);
-                } else {
-                    updateStatus(false, 'Max reconnection attempts reached');
-                }
-            };
-            
-            ws.onerror = function(error) {
-                console.error('WebSocket error:', error);
-                updateStatus(false, 'Connection error');
-            };
-        }
-        
-        // Connect WebSocket
-        connectWebSocket();
-        
-        // Keep connection alive
-        setInterval(() => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({type: 'ping'}));
             }
-        }, 30000);
+
+            function updateStatus(connected, message = '') {
+                const statusEl = document.getElementById('status');
+                if (!statusEl) {
+                    return;
+                }
+                if (connected) {
+                    statusEl.className = 'status connected';
+                    statusEl.textContent = '🟢 Connected' + (message ? ` - ${message}` : '');
+                    reconnectAttempts = 0;
+                } else {
+                    statusEl.className = 'status disconnected';
+                    statusEl.textContent = '🔴 Disconnected' + (message ? ` - ${message}` : '');
+                }
+            }
+
+            function renderMarkdown(content) {
+                const parts = content.split(/<!-- Source: (.+?) -->/);
+                let html = '';
+                mermaidIdCounter = 0;
+
+                for (let i = 0; i < parts.length; i++) {
+                    if (i % 2 === 1) {
+                        html += `<div class="file-separator" data-file="${escapeHtml(parts[i])}"></div>`;
+                    } else if (parts[i].trim()) {
+                        html += parseMarkdown(parts[i].trim());
+                    }
+                }
+
+                return html;
+            }
+
+            async function updateContent(content, isNewContent = false) {
+                const contentEl = document.getElementById('content');
+                const html = renderMarkdown(content);
+                contentEl.innerHTML = html;
+
+                if (isNewContent) {
+                    contentEl.classList.add('content-flash');
+                    setTimeout(() => {
+                        contentEl.classList.remove('content-flash');
+                    }, 800);
+                }
+
+                const mermaidElements = contentEl.querySelectorAll('.mermaid');
+                if (mermaidReady && typeof mermaid !== 'undefined') {
+                    for (const element of mermaidElements) {
+                        try {
+                            let sourceContent = '';
+                            if (element.hasAttribute('data-mermaid-source')) {
+                                sourceContent = decodeMermaidSource(element.getAttribute('data-mermaid-source'));
+                            } else {
+                                sourceContent = element.textContent.replace(/^📊 Mermaid Diagram (requires network access):/, '').trim();
+                            }
+
+                            if (!sourceContent || sourceContent.includes('📊 Mermaid Diagram')) {
+                                continue;
+                            }
+
+                            const renderPromise = mermaid.render(element.id + '-svg', sourceContent);
+                            const timeoutPromise = new Promise((_, reject) =>
+                                setTimeout(() => reject(new Error('Mermaid rendering timeout')), 5000)
+                            );
+
+                            const { svg } = await Promise.race([renderPromise, timeoutPromise]);
+                            element.innerHTML = svg;
+                        } catch (error) {
+                            console.error('Error rendering Mermaid diagram:', error);
+                            element.innerHTML = `<div class="diagram-error">Error rendering diagram: ${error.message}</div>`;
+                        }
+                    }
+                } else {
+                    mermaidElements.forEach((element) => {
+                        let sourceContent = '';
+                        if (element.hasAttribute('data-mermaid-source')) {
+                            sourceContent = decodeMermaidSource(element.getAttribute('data-mermaid-source'));
+                        } else {
+                            sourceContent = element.textContent;
+                        }
+                        element.innerHTML = `<div class="diagram-placeholder">📊 Mermaid Diagram (requires network access):<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
+                    });
+                }
+            }
+
+            function connectWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                let wsUrl = `${protocol}//${window.location.host}/ws`;
+
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.has('path')) {
+                    wsUrl += `?path=${encodeURIComponent(urlParams.get('path'))}`;
+                }
+
+                updateStatus(false, 'Connecting...');
+
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = function() {
+                    updateStatus(true);
+                    console.log('WebSocket connected');
+                };
+
+                ws.onmessage = async function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+
+                        if (data.type === 'initial') {
+                            await updateContent(data.content, false);
+                            updateStatus(true, 'Content loaded');
+                        } else if (data.type === 'update') {
+                            await updateContent(data.content, true);
+                            updateStatus(true, `Updated: ${data.new_file}`);
+                            setTimeout(() => updateStatus(true), 3000);
+                        } else if (data.type === 'pong') {
+                            console.log('Pong received');
+                        }
+                    } catch (e) {
+                        console.error('Error parsing WebSocket message:', e);
+                    }
+                };
+
+                ws.onclose = function() {
+                    updateStatus(false, 'Connection closed');
+                    console.log('WebSocket disconnected');
+
+                    if (reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts += 1;
+                        setTimeout(() => {
+                            console.log(`Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`);
+                            connectWebSocket();
+                        }, 2000 * reconnectAttempts);
+                    } else {
+                        updateStatus(false, 'Max reconnection attempts reached');
+                    }
+                };
+
+                ws.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                    updateStatus(false, 'Connection error');
+                };
+            }
+
+            waitForLibraries()
+                .then(() => {
+                    initializeMermaid();
+                    connectWebSocket();
+                })
+                .catch((error) => {
+                    console.error(error);
+                    updateStatus(false, 'Library load failed');
+                    connectWebSocket();
+                });
+
+            setInterval(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'ping' }));
+                }
+            }, 30000);
+        });
     </script>
 </body>
 </html>
