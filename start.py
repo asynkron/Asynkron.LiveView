@@ -12,17 +12,33 @@ def install_dependencies():
     """Install required dependencies."""
     print("Installing dependencies...")
     try:
+        # First try normal installation
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
         print("Dependencies installed successfully!")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"Failed to install dependencies: {e}")
-        return False
+        # If it fails, try with --user flag for externally-managed environments
+        print("Standard installation failed, trying user installation...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "-r", "requirements.txt"])
+            print("Dependencies installed successfully in user directory!")
+            return True
+        except subprocess.CalledProcessError as e2:
+            print(f"Failed to install dependencies: {e2}")
+            print("\n💡 Installation failed. You may need to:")
+            print("   1. Use a virtual environment: python3 -m venv venv && source venv/bin/activate")
+            print("   2. Or install system-wide: pip install --break-system-packages -r requirements.txt")
+            print("   3. Or use pipx if available: pipx install aiohttp watchdog")
+            return False
 
 def main():
     """Main startup function."""
     script_dir = Path(__file__).parent
     os.chdir(script_dir)
+    
+    # Ensure current directory is in Python path for imports
+    if str(script_dir) not in sys.path:
+        sys.path.insert(0, str(script_dir))
     
     print("🚀 Starting Markdown Live View Server")
     print("=" * 40)
