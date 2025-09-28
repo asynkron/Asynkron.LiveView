@@ -261,6 +261,7 @@ The requested directory could not be accessed or contains no markdown files.
             color: #ddd;
             font-size: smaller;
         }
+
         .mermaid {
             background-color: #121a22 !important;
         }
@@ -282,8 +283,45 @@ The requested directory could not be accessed or contains no markdown files.
             display: none;
         }
 
+        .mermaid {
+            background-color: #1e1e1e;
+            color: #ddd;
+        }
+
+        .mermaid svg {
+            background-color: #1e1e1e;
+        }
+
+        pre code {
+            background: #2d2d2d;
+            padding: 10px;
+            border-radius: 4px;
+            display: block;
+            overflow-x: auto;
+        }
+
+        .mmd-error {
+            background: #3b1f1f;
+            color: #ffb3b3;
+            border: 1px solid #7a2a2a;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+
+        /* Hide header and status - we want clean simple look like old template */
         .header {
-            background: #1e1e1e;
+            display: none;
+        }
+        
+        .content {
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            box-shadow: none;
+        }
+        .header {
+            background: #f8f9fa;
             padding: 20px;
             border-radius: 8px;
             margin-bottom: 20px;
@@ -296,84 +334,70 @@ The requested directory could not be accessed or contains no markdown files.
             font-weight: bold;
         }
         .status.connected {
-            background: #2d4a2d;
-            color: #90ee90;
-            border: 1px solid #4a6b4a;
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
         }
         .status.disconnected {
-            background: #4a2d2d;
-            color: #ffb3b3;
-            border: 1px solid #6b4a4a;
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
         }
         .content {
-            background: #121a22;
+            background: white;
             padding: 20px;
             border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         pre {
-            background: #2d2d2d;
+            background: #f8f9fa;
             padding: 15px;
             border-radius: 5px;
             overflow-x: auto;
         }
         code {
-            background: #2d2d2d;
+            background: #f8f9fa;
             padding: 2px 4px;
             border-radius: 3px;
             font-family: 'Monaco', 'Consolas', monospace;
         }
         pre code {
-            background: #2d2d2d;
-            padding: 10px;
-            border-radius: 4px;
-            display: block;
-            overflow-x: auto;
+            background: none;
+            padding: 0;
         }
         blockquote {
-            border-left: 4px solid #666;
+            border-left: 4px solid #ddd;
             margin: 0;
             padding-left: 20px;
-            color: #aaa;
+            color: #666;
         }
         .mermaid {
             text-align: center;
             margin: 20px 0;
-            background: #1e1e1e;
-            border: 1px solid #444;
+            background: #f9f9f9;
+            border: 1px solid #ddd;
             padding: 10px;
             border-radius: 5px;
-            color: #ddd;
-        }
-        .mermaid svg {
-            background: #1e1e1e;
         }
         .diagram-error {
-            color: #ffb3b3;
-            background: #3b1f1f;
-            border: 1px solid #7a2a2a;
+            color: #dc3545;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
             padding: 10px;
             border-radius: 5px;
             margin: 10px 0;
         }
-        .mmd-error {
-            background: #3b1f1f;
-            color: #ffb3b3;
-            border: 1px solid #7a2a2a;
-            padding: 10px;
-            border-radius: 4px;
-            white-space: pre-wrap;
-        }
         .diagram-placeholder {
-            background: #2d2d2d;
-            border: 1px solid #555;
+            background: #e9ecef;
+            border: 1px solid #dee2e6;
             padding: 15px;
             border-radius: 5px;
             margin: 10px 0;
-            color: #aaa;
+            color: #6c757d;
             text-align: center;
         }
         .diagram-placeholder pre {
-            background: #1e1e1e;
+            background: #f8f9fa;
             margin-top: 10px;
             text-align: left;
         }
@@ -382,20 +406,20 @@ The requested directory could not be accessed or contains no markdown files.
         }
         @keyframes flashIn {
             0% { 
-                background-color: #2d3e2d;
+                background-color: #fff3cd;
                 transform: scale(1.02);
             }
             50% { 
-                background-color: #3d4e3d;
+                background-color: #ffeaa7;
                 transform: scale(1.01);
             }
             100% { 
-                background-color: #121a22;
+                background-color: white;
                 transform: scale(1);
             }
         }
         .file-separator {
-            border-top: 2px solid #444;
+            border-top: 2px solid #e9ecef;
             margin: 30px 0;
             position: relative;
         }
@@ -404,14 +428,14 @@ The requested directory could not be accessed or contains no markdown files.
             position: absolute;
             top: -12px;
             left: 20px;
-            background: #121a22;
+            background: white;
             padding: 0 10px;
-            color: #888;
+            color: #6c757d;
             font-size: 0.9em;
             font-weight: bold;
         }
         h1, h2, h3, h4, h5, h6 {
-            color: #ddd;
+            color: #2c3e50;
             margin-top: 30px;
             margin-bottom: 15px;
         }
@@ -428,52 +452,51 @@ The requested directory could not be accessed or contains no markdown files.
             margin: 20px 0;
         }
         th, td {
-            border: 1px solid #444;
+            border: 1px solid #ddd;
             padding: 12px;
             text-align: left;
         }
         th {
-            background-color: #2d2d2d;
+            background-color: #f2f2f2;
             font-weight: bold;
         }
         .diagram-placeholder {
-            background: #2d2d2d;
-            border: 2px dashed #555;
+            background: #e8f4fd;
+            border: 2px dashed #4a90e2;
             padding: 20px;
             text-align: center;
             margin: 20px 0;
             border-radius: 5px;
-            color: #aaa;
+            color: #2c5282;
             font-style: italic;
         }
     </style>
-    <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
 </head>
 <body>
-    <div id="viewer">
-        <div class="header">
-            <h1>📄 Markdown + Mermaid Live Viewer</h1>
-            <div id="status" class="status disconnected">Connecting...</div>
-            <p>This page automatically updates when new markdown files are added to the watched directory.</p>
-            <p><strong>📁 Current Directory:</strong> <code>""" + str(target_path) + """</code></p>
-        </div>
-        
-        <div id="content" class="content">
-            <p>Loading markdown content...</p>
-        </div>
+    <div class="header">
+        <h1>📄 Markdown Live View</h1>
+        <div id="status" class="status disconnected">Connecting...</div>
+        <p>This page automatically updates when new markdown files are added to the watched directory.</p>
+        <p><strong>📁 Current Directory:</strong> <code>""" + str(target_path) + """</code></p>
+    </div>
+    
+    <div id="content" class="content">
+        <p>Loading markdown content...</p>
     </div>
 
     <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
     <script>
-        // Initialize Mermaid with dark theme
+        // Initialize Mermaid with proper error handling
         let mermaidReady = false;
+        let mermaidLoadPromise = null;
         
+        // Wait for script to load before trying to initialize
         function initializeMermaid() {
             if (typeof mermaid !== 'undefined') {
                 try {
                     mermaid.initialize({ 
                         startOnLoad: false,
-                        theme: 'dark',
+                        theme: 'default',
                         securityLevel: 'loose'
                     });
                     mermaidReady = true;
@@ -482,10 +505,13 @@ The requested directory could not be accessed or contains no markdown files.
                     console.warn('Mermaid initialization failed:', error);
                     mermaidReady = false;
                 }
+            } else {
+                console.warn('Mermaid not available');
+                mermaidReady = false;
             }
         }
         
-        // Try to initialize immediately
+        // Try to initialize immediately if already loaded
         initializeMermaid();
         
         // If not loaded yet, wait for window load event
@@ -495,7 +521,7 @@ The requested directory could not be accessed or contains no markdown files.
             });
         }
 
-        // Simple markdown parser (enhanced for dark theme)
+        // Simple markdown parser (basic implementation)
         function parseMarkdown(md) {
             let html = md;
             
@@ -510,14 +536,15 @@ The requested directory could not be accessed or contains no markdown files.
             // Italic
             html = html.replace(/\\*(.*?)\\*/gim, '<em>$1</em>');
             
-            // Code blocks with language detection
+            // Code blocks
             html = html.replace(/```mermaid([\\s\\S]*?)```/gim, function(match, content) {
                 const id = 'mermaid-' + Math.random().toString(36).substr(2, 9);
                 const cleanContent = content.trim();
+                // Use Base64 encoding to avoid HTML attribute issues
                 const encodedContent = btoa(cleanContent);
                 return `<div class="mermaid" id="${id}" data-mermaid-source="${encodedContent}">${cleanContent}</div>`;
             });
-            html = html.replace(/```(\\w+)?([\\s\\S]*?)```/gim, '<pre><code class="language-$1">$2</code></pre>');
+            html = html.replace(/```(\\w+)?([\\s\\S]*?)```/gim, '<pre><code>$2</code></pre>');
             
             // Inline code
             html = html.replace(/`([^`]+)`/gim, '<code>$1</code>');
