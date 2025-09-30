@@ -905,10 +905,10 @@ Create some `.md` files in your directory and refresh this page!
         async with stdio_server() as streams:
             await self.mcp_server.run(streams[0], streams[1], self.mcp_server.create_initialization_options())
     
-    async def run(self, enable_stdio_mcp: bool = False):
-        """Run the unified server."""
+    def create_app(self) -> web.Application:
+        """Create the aiohttp application with all registered routes."""
         app = web.Application()
-        
+
         # LiveView routes
         app.router.add_get('/', self.handle_index)
         app.router.add_get('/ws', self.handle_websocket)
@@ -916,6 +916,12 @@ Create some `.md` files in your directory and refresh this page!
         app.router.add_get('/raw', self.handle_raw_markdown)
         if self.enable_mcp:
             app.router.add_post('/mcp', self.handle_mcp_http)
+
+        return app
+
+    async def run(self, enable_stdio_mcp: bool = False):
+        """Run the unified server."""
+        app = self.create_app()
         
         # Get the current event loop
         loop = asyncio.get_event_loop()
