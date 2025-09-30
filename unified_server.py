@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import time
 from datetime import datetime
 from pathlib import Path
@@ -137,31 +138,26 @@ class UnifiedMarkdownServer:
         """Return the shared MCP tool definitions."""
         return [
             Tool(
-                name="create_markdown_file",
-                description="Create a new markdown file with the given content",
+                name="show_content",
+                description="Create new markdown content that appears in the live view",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "filename": {
-                            "type": "string",
-                            "description": "Name of the markdown file (without .md extension)"
-                        },
                         "content": {
                             "type": "string",
-                            "description": "Markdown content to write to the file"
+                            "description": "Markdown content to create"
                         },
-                        "prefix": {
+                        "title": {
                             "type": "string",
-                            "description": "Optional timestamp prefix (e.g., '01-', '02-'). If not provided, will auto-generate based on existing files.",
-                            "default": ""
+                            "description": "Optional descriptive title included in responses"
                         }
                     },
-                    "required": ["filename", "content"]
+                    "required": ["content"]
                 }
             ),
             Tool(
-                name="list_markdown_files",
-                description="List all markdown files in the directory",
+                name="list_content",
+                description="List every markdown entry managed by the server",
                 inputSchema={
                     "type": "object",
                     "properties": {},
@@ -169,32 +165,32 @@ class UnifiedMarkdownServer:
                 }
             ),
             Tool(
-                name="read_markdown_file",
-                description="Read the content of a specific markdown file",
+                name="view_content",
+                description="Read markdown content using a File Id",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "filename": {
+                        "fileId": {
                             "type": "string",
-                            "description": "Name of the markdown file (with or without .md extension)"
+                            "description": "The File Id that was returned when the content was created"
                         }
                     },
-                    "required": ["filename"]
+                    "required": ["fileId"]
                 }
             ),
             Tool(
-                name="update_markdown_file",
-                description="Update or append to an existing markdown file",
+                name="update_content",
+                description="Append to or replace existing markdown content",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "filename": {
+                        "fileId": {
                             "type": "string",
-                            "description": "Name of the markdown file (with or without .md extension)"
+                            "description": "The File Id returned from show_content"
                         },
                         "content": {
                             "type": "string",
-                            "description": "Content to append or new content to replace"
+                            "description": "Markdown content to append or use when replacing"
                         },
                         "mode": {
                             "type": "string",
@@ -203,21 +199,21 @@ class UnifiedMarkdownServer:
                             "default": "append"
                         }
                     },
-                    "required": ["filename", "content"]
+                    "required": ["fileId", "content"]
                 }
             ),
             Tool(
-                name="delete_markdown_file",
-                description="Delete a markdown file",
+                name="remove_content",
+                description="Delete markdown content using its File Id",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "filename": {
+                        "fileId": {
                             "type": "string",
-                            "description": "Name of the markdown file to delete (with or without .md extension)"
+                            "description": "The File Id returned from show_content"
                         }
                     },
-                    "required": ["filename"]
+                    "required": ["fileId"]
                 }
             )
         ]
@@ -275,85 +271,85 @@ class UnifiedMarkdownServer:
         async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
             """Handle tool calls."""
             try:
-                if name == "create_markdown_file":
-                    return await self._create_markdown_file(
-                        arguments.get("filename", ""),
+                legacy_aliases = {
+                    "create_markdown_file": "show_content",
+                    "list_markdown_files": "list_content",
+                    "read_markdown_file": "view_content",
+                    "update_markdown_file": "update_content",
+                    "delete_markdown_file": "remove_content",
+                }
+                effective_name = legacy_aliases.get(name, name)
+
+                if effective_name == "show_content":
+                    return await self._show_content(
                         arguments.get("content", ""),
-                        arguments.get("prefix", "")
+                        arguments.get("title")
                     )
-                elif name == "list_markdown_files":
-                    return await self._list_markdown_files()
-                elif name == "read_markdown_file":
-                    return await self._read_markdown_file(arguments.get("filename", ""))
-                elif name == "update_markdown_file":
-                    return await self._update_markdown_file(
-                        arguments.get("filename", ""),
+                elif effective_name == "list_content":
+                    return await self._list_content()
+                elif effective_name == "view_content":
+                    return await self._view_content(arguments.get("fileId") or arguments.get("filename", ""))
+                elif effective_name == "update_content":
+                    return await self._update_content(
+                        arguments.get("fileId") or arguments.get("filename", ""),
                         arguments.get("content", ""),
                         arguments.get("mode", "append")
                     )
-                elif name == "delete_markdown_file":
-                    return await self._delete_markdown_file(arguments.get("filename", ""))
+                elif effective_name == "remove_content":
+                    return await self._remove_content(arguments.get("fileId") or arguments.get("filename", ""))
                 else:
                     raise JSONRPCError(METHOD_NOT_FOUND, f"Unknown tool: {name}")
             except Exception as e:
                 logger.error(f"Error in tool call {name}: {e}")
                 raise JSONRPCError(INTERNAL_ERROR, f"Tool execution failed: {e}")
-    
-    def _generate_next_prefix(self) -> str:
-        """Generate the next numbered prefix for a markdown file."""
-        existing_files = list(self.default_markdown_dir.glob('*.md'))
-        max_prefix = 0
-        
-        for file in existing_files:
-            name = file.stem
-            if '-' in name:
-                prefix_part = name.split('-')[0]
-                if prefix_part.isdigit():
-                    max_prefix = max(max_prefix, int(prefix_part))
-        
-        return f"{max_prefix + 1:02d}-"
-    
-    async def _create_markdown_file(self, filename: str, content: str, prefix: str = "") -> CallToolResult:
-        """Create a new markdown file."""
-        if not filename:
-            raise JSONRPCError(INTERNAL_ERROR, "Filename cannot be empty")
-        
-        # Add .md extension if not present
-        if not filename.endswith('.md'):
-            filename += '.md'
-        
-        # Add prefix if not provided
-        if not prefix and not filename[0].isdigit():
-            prefix = self._generate_next_prefix()
-        
-        final_filename = f"{prefix}{filename}"
-        file_path = self.default_markdown_dir / final_filename
-        
-        # Check if file already exists
-        if file_path.exists():
-            raise JSONRPCError(INTERNAL_ERROR, f"File '{final_filename}' already exists")
-        
+
+    def _generate_file_id(self) -> str:
+        """Generate a unique File Id for newly created content."""
+        for _ in range(10):
+            candidate = f"{secrets.token_hex(4)}.md"
+            if not (self.default_markdown_dir / candidate).exists():
+                return candidate
+        raise JSONRPCError(INTERNAL_ERROR, "Unable to allocate a unique File Id")
+
+    def _sanitize_file_id(self, file_id: str) -> str:
+        """Ensure the provided File Id maps to a safe filename."""
+        sanitized = Path(file_id).name
+        if not sanitized.endswith('.md'):
+            sanitized += '.md'
+        return sanitized
+
+    async def _show_content(self, content: str, title: Optional[str] = None) -> CallToolResult:
+        """Create a new markdown file using a generated File Id."""
+        if not content:
+            raise JSONRPCError(INTERNAL_ERROR, "Content cannot be empty")
+
+        file_id = self._generate_file_id()
+        file_path = self.default_markdown_dir / file_id
+
         try:
             file_path.write_text(content, encoding='utf-8')
-            logger.info(f"Created markdown file: {final_filename}")
-            
-            return CallToolResult(
-                content=[TextContent(
-                    type="text",
-                    text=f"Successfully created file '{final_filename}' with {len(content)} characters."
-                )]
+            logger.info(f"Created markdown file: {file_id}")
+
+            display_title = f" '{title}'" if title else ""
+            message = (
+                f"Created new markdown{display_title} entry.\n"
+                f"File Id: {file_id}"
             )
-            
+
+            return CallToolResult(
+                content=[TextContent(type="text", text=message)]
+            )
+
         except Exception as e:
             logger.error(f"Error creating file: {e}")
             raise JSONRPCError(INTERNAL_ERROR, f"Failed to create file: {e}")
-    
-    async def _list_markdown_files(self) -> CallToolResult:
+
+    async def _list_content(self) -> CallToolResult:
         """List all markdown files in the directory."""
         try:
             md_files = sorted(self.default_markdown_dir.glob('*.md'))
             file_info = []
-            
+
             for file_path in md_files:
                 try:
                     stat = file_path.stat()
@@ -374,101 +370,92 @@ class UnifiedMarkdownServer:
                     text=result_text
                 )]
             )
-            
+
         except Exception as e:
             logger.error(f"Error listing files: {e}")
             raise JSONRPCError(INTERNAL_ERROR, f"Failed to list files: {e}")
-    
-    async def _read_markdown_file(self, filename: str) -> CallToolResult:
+
+    async def _view_content(self, fileId: str) -> CallToolResult:  # type: ignore[override]
         """Read the content of a specific markdown file."""
-        if not filename:
-            raise JSONRPCError(INTERNAL_ERROR, "Filename cannot be empty")
-        
-        # Add .md extension if not present
-        if not filename.endswith('.md'):
-            filename += '.md'
-        
+        if not fileId:
+            raise JSONRPCError(INTERNAL_ERROR, "File Id cannot be empty")
+
+        filename = self._sanitize_file_id(fileId)
         file_path = self.default_markdown_dir / filename
-        
+
         if not file_path.exists():
             raise JSONRPCError(INTERNAL_ERROR, f"File '{filename}' does not exist")
-        
+
         try:
             content = file_path.read_text(encoding='utf-8')
-            
+
             return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text=f"Content of '{filename}':\n\n{content}"
                 )]
             )
-            
+
         except Exception as e:
             logger.error(f"Error reading file: {e}")
             raise JSONRPCError(INTERNAL_ERROR, f"Failed to read file: {e}")
-    
-    async def _update_markdown_file(self, filename: str, content: str, mode: str = "append") -> CallToolResult:
+
+    async def _update_content(self, fileId: str, content: str, mode: str = "append") -> CallToolResult:  # type: ignore[override]
         """Update or append to an existing markdown file."""
-        if not filename:
-            raise JSONRPCError(INTERNAL_ERROR, "Filename cannot be empty")
-        
-        # Add .md extension if not present
-        if not filename.endswith('.md'):
-            filename += '.md'
-        
+        if not fileId:
+            raise JSONRPCError(INTERNAL_ERROR, "File Id cannot be empty")
+
+        filename = self._sanitize_file_id(fileId)
         file_path = self.default_markdown_dir / filename
-        
+
         if not file_path.exists():
             raise JSONRPCError(INTERNAL_ERROR, f"File '{filename}' does not exist")
-        
+
         try:
             if mode == "replace":
                 file_path.write_text(content, encoding='utf-8')
                 action = "replaced"
             else:  # append
                 existing_content = file_path.read_text(encoding='utf-8')
-                new_content = existing_content + content
+                new_content = existing_content + '\n\n' + content
                 file_path.write_text(new_content, encoding='utf-8')
                 action = "appended to"
-            
+
             logger.info(f"Updated markdown file: {filename} ({mode} mode)")
-            
+
             return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text=f"Successfully {action} file '{filename}'."
                 )]
             )
-            
+
         except Exception as e:
             logger.error(f"Error updating file: {e}")
             raise JSONRPCError(INTERNAL_ERROR, f"Failed to update file: {e}")
-    
-    async def _delete_markdown_file(self, filename: str) -> CallToolResult:
+
+    async def _remove_content(self, fileId: str) -> CallToolResult:  # type: ignore[override]
         """Delete a markdown file."""
-        if not filename:
-            raise JSONRPCError(INTERNAL_ERROR, "Filename cannot be empty")
-        
-        # Add .md extension if not present
-        if not filename.endswith('.md'):
-            filename += '.md'
-        
+        if not fileId:
+            raise JSONRPCError(INTERNAL_ERROR, "File Id cannot be empty")
+
+        filename = self._sanitize_file_id(fileId)
         file_path = self.default_markdown_dir / filename
-        
+
         if not file_path.exists():
             raise JSONRPCError(INTERNAL_ERROR, f"File '{filename}' does not exist")
-        
+
         try:
             file_path.unlink()
             logger.info(f"Deleted markdown file: {filename}")
-            
+
             return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text=f"Successfully deleted file '{filename}'."
                 )]
             )
-            
+
         except Exception as e:
             logger.error(f"Error deleting file: {e}")
             raise JSONRPCError(INTERNAL_ERROR, f"Failed to delete file: {e}")
@@ -803,24 +790,32 @@ Create some `.md` files in your directory and refresh this page!
                 return jsonrpc_error(INVALID_PARAMS, "Tool arguments must be an object")
 
             try:
-                if tool_name == "create_markdown_file":
-                    result = await self._create_markdown_file(
-                        arguments.get("filename", ""),
+                legacy_aliases = {
+                    "create_markdown_file": "show_content",
+                    "list_markdown_files": "list_content",
+                    "read_markdown_file": "view_content",
+                    "update_markdown_file": "update_content",
+                    "delete_markdown_file": "remove_content",
+                }
+                effective_name = legacy_aliases.get(tool_name, tool_name)
+
+                if effective_name == "show_content":
+                    result = await self._show_content(
                         arguments.get("content", ""),
-                        arguments.get("prefix", "")
+                        arguments.get("title")
                     )
-                elif tool_name == "list_markdown_files":
-                    result = await self._list_markdown_files()
-                elif tool_name == "read_markdown_file":
-                    result = await self._read_markdown_file(arguments.get("filename", ""))
-                elif tool_name == "update_markdown_file":
-                    result = await self._update_markdown_file(
-                        arguments.get("filename", ""),
+                elif effective_name == "list_content":
+                    result = await self._list_content()
+                elif effective_name == "view_content":
+                    result = await self._view_content(arguments.get("fileId") or arguments.get("filename", ""))
+                elif effective_name == "update_content":
+                    result = await self._update_content(
+                        arguments.get("fileId") or arguments.get("filename", ""),
                         arguments.get("content", ""),
                         arguments.get("mode", "append")
                     )
-                elif tool_name == "delete_markdown_file":
-                    result = await self._delete_markdown_file(arguments.get("filename", ""))
+                elif effective_name == "remove_content":
+                    result = await self._remove_content(arguments.get("fileId") or arguments.get("filename", ""))
                 else:
                     return jsonrpc_error(METHOD_NOT_FOUND, f"Unknown tool: {tool_name}")
             except JSONRPCError as rpc_error:  # pragma: no cover - defensive while tooling stabilises

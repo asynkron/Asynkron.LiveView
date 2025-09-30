@@ -320,15 +320,15 @@ For backwards compatibility, the original separate MCP server is still available
 ./run_with_mcp.sh
 ```
 
-### MCP Server Features
+### MCP Server Tools
 
-The MCP server provides the following tools for AI assistants:
+The MCP server provides conversationally named tools for AI assistants:
 
-- **`create_markdown_file`**: Create new markdown files with auto-numbering
-- **`list_markdown_files`**: List all existing markdown files  
-- **`read_markdown_file`**: Read content of specific files
-- **`update_markdown_file`**: Append or replace file content
-- **`delete_markdown_file`**: Remove markdown files
+- **`show_content`**: Generate new markdown content. The server picks a random File Id ending in `.md`, stores the content, and returns the identifier so the assistant can reference it later.
+- **`list_content`**: List every markdown entry currently available along with helpful metadata.
+- **`view_content`**: Retrieve the content for a specific File Id that was previously returned by `show_content`.
+- **`update_content`**: Append to or completely replace an existing entry by supplying its File Id.
+- **`remove_content`**: Delete an entry using its File Id when it is no longer needed.
 
 ### AI Assistant Setup
 
