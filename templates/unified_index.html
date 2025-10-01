@@ -755,11 +755,12 @@
                         <body>
                             <div class="markdown-body" id="content">Loading...</div>
                             <script>
-                                mermaid.initialize({ startOnLoad: false, theme: 'default' });
-                                
-                                // Wait for marked to load
-                                function waitForMarked() {
-                                    if (typeof marked !== 'undefined') {
+                                // Wait for all libraries to load
+                                function waitForLibraries() {
+                                    if (typeof marked !== 'undefined' && typeof mermaid !== 'undefined') {
+                                        // Initialize mermaid after it's loaded
+                                        mermaid.initialize({ startOnLoad: false, theme: 'default' });
+                                        
                                         const content = ${JSON.stringify(result.content)};
                                         const html = marked.parse(content);
                                         document.getElementById('content').innerHTML = html;
@@ -777,24 +778,25 @@
                                                     element.parentElement.replaceWith(container);
                                                     rendered++;
                                                     if (rendered === mermaidElements.length) {
-                                                        setTimeout(() => window.print(), 500);
+                                                        // Increased delay to ensure rendering is complete before print
+                                                        setTimeout(() => window.print(), 1000);
                                                     }
                                                 }).catch(err => {
                                                     console.error('Mermaid error:', err);
                                                     rendered++;
                                                     if (rendered === mermaidElements.length) {
-                                                        setTimeout(() => window.print(), 500);
+                                                        setTimeout(() => window.print(), 1000);
                                                     }
                                                 });
                                             });
                                         } else {
-                                            setTimeout(() => window.print(), 500);
+                                            setTimeout(() => window.print(), 1000);
                                         }
                                     } else {
-                                        setTimeout(waitForMarked, 100);
+                                        setTimeout(waitForLibraries, 100);
                                     }
                                 }
-                                waitForMarked();
+                                waitForLibraries();
                             <\/script>
                         </body>
                         </html>
