@@ -9,14 +9,9 @@ Provides both web interface for viewing markdown files and MCP protocol support 
 import asyncio
 import json
 import logging
-import os
-import secrets
 import time
-from datetime import datetime
 from pathlib import Path
-from html import escape
 from typing import Any, Dict, List, Optional
-from urllib.parse import unquote
 from aiohttp import web, WSMsgType
 from aiohttp.web_response import Response
 from watchdog.observers import Observer
@@ -27,11 +22,8 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
     CallToolRequest,
-    CallToolResult,
     ListToolsRequest,
     ListToolsResult,
-    Tool,
-    TextContent,
     DEFAULT_NEGOTIATED_VERSION,
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -41,39 +33,15 @@ from mcp.types import (
     JSONRPCError
 )
 
+# Import component modules
+from components.file_manager import FileManager
+from components.mcp_tools import MCPTools
+from components.template_handler import TemplateHandler
+from components.request_handlers import RequestHandlers
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-INDEX_TEMPLATE_PLACEHOLDER = "__CURRENT_DIRECTORY__"
-DEFAULT_UNIFIED_INDEX_TEMPLATE = """<!DOCTYPE html>
-<html lang=\"en\">
-<head>
-    <meta charset=\"UTF-8\">
-    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
-    <title>Markdown Live View</title>
-    <style>
-        body {
-            font-family: sans-serif;
-            margin: 0;
-            padding: 2rem;
-            background-color: #121a22;
-            color: #ddd;
-        }
-        code {
-            background: #1d2a36;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-        }
-    </style>
-</head>
-<body>
-    <h1>Markdown Live View</h1>
-    <p>Template file missing. Showing fallback page.</p>
-    <p><strong>📁 Current Directory:</strong> <code>__CURRENT_DIRECTORY__</code></p>
-</body>
-</html>
-"""
 
 class MarkdownFileHandler(FileSystemEventHandler):
     """Handles file system events for markdown files."""
@@ -120,15 +88,19 @@ class UnifiedMarkdownServer:
         self.clients: set = set()
         self.observer = None
         self.enable_mcp = enable_mcp
-        self.template_path = Path(__file__).resolve().parent / "templates" / "unified_index.html"
         self._mcp_client_capabilities: Dict[str, Any] | None = None
         self._mcp_initialized = False
         self._negotiated_protocol_version: str | int = DEFAULT_NEGOTIATED_VERSION
         self.sticky_files: Dict[str, str] = {}  # Maps directory path to sticky filename
         self.chat_messages: List[Dict[str, Any]] = []  # Store recent chat messages
         
-        # Ensure default markdown directory exists
-        self.default_markdown_dir.mkdir(exist_ok=True)
+        # Initialize component modules (pass sticky_files reference to FileManager)
+        self.file_manager = FileManager(self.default_markdown_dir, self.sticky_files)
+        self.template_handler = TemplateHandler(
+            Path(__file__).resolve().parent / "templates" / "unified_index.html"
+        )
+        self.request_handlers = RequestHandlers(self.default_markdown_dir)
+        self.mcp_tools = MCPTools(self.default_markdown_dir, self.file_manager, self.chat_messages)
         
         # Initialize MCP server if enabled
         if self.enable_mcp:
@@ -136,112 +108,9 @@ class UnifiedMarkdownServer:
             self._register_mcp_tools()
             logger.info(f"MCP Server initialized for directory: {self.default_markdown_dir}")
 
-    def _build_tool_definitions(self) -> List[Tool]:
+    def _build_tool_definitions(self):
         """Return the shared MCP tool definitions."""
-        return [
-            Tool(
-                name="show_content",
-                description="Create new markdown content that appears in the live view",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "content": {
-                            "type": "string",
-                            "description": "Markdown content to create"
-                        },
-                        "title": {
-                            "type": "string",
-                            "description": "Optional descriptive title included in responses"
-                        }
-                    },
-                    "required": ["content"]
-                }
-            ),
-            Tool(
-                name="list_content",
-                description="List every markdown entry managed by the server",
-                inputSchema={
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": False
-                }
-            ),
-            Tool(
-                name="view_content",
-                description="Read markdown content using a File Id",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "fileId": {
-                            "type": "string",
-                            "description": "The File Id that was returned when the content was created"
-                        }
-                    },
-                    "required": ["fileId"]
-                }
-            ),
-            Tool(
-                name="update_content",
-                description="Append to or replace existing markdown content",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "fileId": {
-                            "type": "string",
-                            "description": "The File Id returned from show_content"
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "Markdown content to append or use when replacing"
-                        },
-                        "mode": {
-                            "type": "string",
-                            "enum": ["append", "replace"],
-                            "description": "Whether to append to or replace the file content",
-                            "default": "append"
-                        }
-                    },
-                    "required": ["fileId", "content"]
-                }
-            ),
-            Tool(
-                name="remove_content",
-                description="Delete markdown content using its File Id",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "fileId": {
-                            "type": "string",
-                            "description": "The File Id returned from show_content"
-                        }
-                    },
-                    "required": ["fileId"]
-                }
-            ),
-            Tool(
-                name="subscribe_chat",
-                description="Subscribe to receive chat messages from the UI. After subscribing, use get_chat_messages to poll for new messages.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": False
-                }
-            ),
-            Tool(
-                name="get_chat_messages",
-                description="Get recent chat messages from the UI. Returns messages since a given timestamp.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "since": {
-                            "type": "number",
-                            "description": "Unix timestamp - only return messages after this time. If not provided, returns all recent messages."
-                        }
-                    },
-                    "additionalProperties": False
-                }
-            )
-        ]
+        return self.mcp_tools.build_tool_definitions()
 
     def _handle_mcp_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Process an MCP initialize request and return the server capabilities."""
@@ -293,7 +162,7 @@ class UnifiedMarkdownServer:
             return ListToolsResult(tools=self._build_tool_definitions())
         
         @self.mcp_server.call_tool()
-        async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
+        async def call_tool(name: str, arguments: Dict[str, Any]):
             """Handle tool calls."""
             try:
                 legacy_aliases = {
@@ -306,401 +175,55 @@ class UnifiedMarkdownServer:
                 effective_name = legacy_aliases.get(name, name)
 
                 if effective_name == "show_content":
-                    return await self._show_content(
+                    return await self.mcp_tools.show_content(
                         arguments.get("content", ""),
                         arguments.get("title")
                     )
                 elif effective_name == "list_content":
-                    return await self._list_content()
+                    return await self.mcp_tools.list_content()
                 elif effective_name == "view_content":
-                    return await self._view_content(arguments.get("fileId") or arguments.get("filename", ""))
+                    return await self.mcp_tools.view_content(arguments.get("fileId") or arguments.get("filename", ""))
                 elif effective_name == "update_content":
-                    return await self._update_content(
+                    return await self.mcp_tools.update_content(
                         arguments.get("fileId") or arguments.get("filename", ""),
                         arguments.get("content", ""),
                         arguments.get("mode", "append")
                     )
                 elif effective_name == "remove_content":
-                    return await self._remove_content(arguments.get("fileId") or arguments.get("filename", ""))
+                    return await self.mcp_tools.remove_content(arguments.get("fileId") or arguments.get("filename", ""))
                 elif effective_name == "subscribe_chat":
-                    return await self._subscribe_chat()
+                    return await self.mcp_tools.subscribe_chat()
                 elif effective_name == "get_chat_messages":
-                    return await self._get_chat_messages(arguments.get("since"))
+                    return await self.mcp_tools.get_chat_messages(arguments.get("since"))
                 else:
                     raise JSONRPCError(METHOD_NOT_FOUND, f"Unknown tool: {name}")
             except Exception as e:
                 logger.error(f"Error in tool call {name}: {e}")
                 raise JSONRPCError(INTERNAL_ERROR, f"Tool execution failed: {e}")
 
-    def _generate_file_id(self) -> str:
-        """Generate a unique File Id for newly created content."""
-        for _ in range(10):
-            candidate = f"{secrets.token_hex(4)}.md"
-            if not (self.default_markdown_dir / candidate).exists():
-                return candidate
-        raise JSONRPCError(INTERNAL_ERROR, "Unable to allocate a unique File Id")
-
     def _sanitize_file_id(self, file_id: str) -> str:
         """Ensure the provided File Id maps to a safe filename."""
-        sanitized = Path(file_id).name
-        if not sanitized.endswith('.md'):
-            sanitized += '.md'
-        return sanitized
+        return self.file_manager.sanitize_file_id(file_id)
 
-    async def _show_content(self, content: str, title: Optional[str] = None) -> CallToolResult:
-        """Create a new markdown file using a generated File Id."""
-        if not content:
-            raise JSONRPCError(INTERNAL_ERROR, "Content cannot be empty")
-
-        file_id = self._generate_file_id()
-        file_path = self.default_markdown_dir / file_id
-
-        try:
-            file_path.write_text(content, encoding='utf-8')
-            logger.info(f"Created markdown file: {file_id}")
-
-            display_title = f" '{title}'" if title else ""
-            message = (
-                f"Created new markdown{display_title} entry.\n"
-                f"File Id: {file_id}"
-            )
-
-            return CallToolResult(
-                content=[TextContent(type="text", text=message)]
-            )
-
-        except Exception as e:
-            logger.error(f"Error creating file: {e}")
-            raise JSONRPCError(INTERNAL_ERROR, f"Failed to create file: {e}")
-
-    async def _list_content(self) -> CallToolResult:
-        """List all markdown files in the directory."""
-        try:
-            md_files = sorted(self.default_markdown_dir.glob('*.md'))
-            file_info = []
-
-            for file_path in md_files:
-                try:
-                    stat = file_path.stat()
-                    size = stat.st_size
-                    modified = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                    file_info.append(f"📄 {file_path.name} ({size} bytes, modified: {modified})")
-                except Exception as e:
-                    file_info.append(f"📄 {file_path.name} (error reading info: {e})")
-            
-            if not file_info:
-                result_text = "No markdown files found in the directory."
-            else:
-                result_text = f"Found {len(file_info)} markdown files:\n\n" + "\n".join(file_info)
-            
-            return CallToolResult(
-                content=[TextContent(
-                    type="text",
-                    text=result_text
-                )]
-            )
-
-        except Exception as e:
-            logger.error(f"Error listing files: {e}")
-            raise JSONRPCError(INTERNAL_ERROR, f"Failed to list files: {e}")
-
-    async def _view_content(self, fileId: str) -> CallToolResult:  # type: ignore[override]
-        """Read the content of a specific markdown file."""
-        if not fileId:
-            raise JSONRPCError(INTERNAL_ERROR, "File Id cannot be empty")
-
-        filename = self._sanitize_file_id(fileId)
-        file_path = self.default_markdown_dir / filename
-
-        if not file_path.exists():
-            raise JSONRPCError(INTERNAL_ERROR, f"File '{filename}' does not exist")
-
-        try:
-            content = file_path.read_text(encoding='utf-8')
-
-            return CallToolResult(
-                content=[TextContent(
-                    type="text",
-                    text=f"Content of '{filename}':\n\n{content}"
-                )]
-            )
-
-        except Exception as e:
-            logger.error(f"Error reading file: {e}")
-            raise JSONRPCError(INTERNAL_ERROR, f"Failed to read file: {e}")
-
-    async def _update_content(self, fileId: str, content: str, mode: str = "append") -> CallToolResult:  # type: ignore[override]
-        """Update or append to an existing markdown file."""
-        if not fileId:
-            raise JSONRPCError(INTERNAL_ERROR, "File Id cannot be empty")
-
-        filename = self._sanitize_file_id(fileId)
-        file_path = self.default_markdown_dir / filename
-
-        if not file_path.exists():
-            raise JSONRPCError(INTERNAL_ERROR, f"File '{filename}' does not exist")
-
-        try:
-            if mode == "replace":
-                file_path.write_text(content, encoding='utf-8')
-                action = "replaced"
-            else:  # append
-                existing_content = file_path.read_text(encoding='utf-8')
-                new_content = existing_content + '\n\n' + content
-                file_path.write_text(new_content, encoding='utf-8')
-                action = "appended to"
-
-            logger.info(f"Updated markdown file: {filename} ({mode} mode)")
-
-            return CallToolResult(
-                content=[TextContent(
-                    type="text",
-                    text=f"Successfully {action} file '{filename}'."
-                )]
-            )
-
-        except Exception as e:
-            logger.error(f"Error updating file: {e}")
-            raise JSONRPCError(INTERNAL_ERROR, f"Failed to update file: {e}")
-
-    async def _remove_content(self, fileId: str) -> CallToolResult:  # type: ignore[override]
-        """Delete a markdown file."""
-        if not fileId:
-            raise JSONRPCError(INTERNAL_ERROR, "File Id cannot be empty")
-
-        filename = self._sanitize_file_id(fileId)
-        file_path = self.default_markdown_dir / filename
-
-        if not file_path.exists():
-            raise JSONRPCError(INTERNAL_ERROR, f"File '{filename}' does not exist")
-
-        try:
-            file_path.unlink()
-            logger.info(f"Deleted markdown file: {filename}")
-
-            return CallToolResult(
-                content=[TextContent(
-                    type="text",
-                    text=f"Successfully deleted file '{filename}'."
-                )]
-            )
-
-        except Exception as e:
-            logger.error(f"Error deleting file: {e}")
-            raise JSONRPCError(INTERNAL_ERROR, f"Failed to delete file: {e}")
-    
-    async def _subscribe_chat(self) -> CallToolResult:
-        """Subscribe to chat messages from the UI."""
-        return CallToolResult(
-            content=[TextContent(
-                type="text",
-                text="Successfully subscribed to chat messages. Use the 'get_chat_messages' tool to poll for new messages from the UI. Messages are stored with timestamps, so you can track which ones you've already processed."
-            )]
-        )
-    
-    async def _get_chat_messages(self, since: Optional[float] = None) -> CallToolResult:
-        """Get chat messages since a given timestamp."""
-        try:
-            if since is None:
-                # Return all messages
-                messages = self.chat_messages
-            else:
-                # Return only messages after the given timestamp
-                messages = [msg for msg in self.chat_messages if msg['timestamp'] > since]
-            
-            if not messages:
-                return CallToolResult(
-                    content=[TextContent(
-                        type="text",
-                        text="No new chat messages."
-                    )]
-                )
-            
-            # Format messages
-            message_lines = []
-            for msg in messages:
-                timestamp_str = datetime.fromtimestamp(msg['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-                message_lines.append(f"[{timestamp_str}] {msg['message']}")
-            
-            result_text = f"Found {len(messages)} chat message(s):\n\n" + "\n".join(message_lines)
-            
-            return CallToolResult(
-                content=[TextContent(
-                    type="text",
-                    text=result_text
-                )]
-            )
-        except Exception as e:
-            logger.error(f"Error getting chat messages: {e}")
-            raise JSONRPCError(INTERNAL_ERROR, f"Failed to get chat messages: {e}")
-    
-    # LiveView server methods (copied and adapted from server.py)
     def resolve_markdown_path(self, path_param: str = None) -> Path:
         """Resolve the markdown directory path from various sources."""
-        # Priority order:
-        # 1. Query parameter: ?path=/some/path
-        # 2. Environment variable: LIVEVIEW_PATH
-        # 3. Default directory from constructor
-        
-        target_path = None
-        
-        if path_param:
-            # Handle query parameter
-            target_path = Path(unquote(path_param)).expanduser().resolve()
-            logger.info(f"Using path from query parameter: {target_path}")
-        else:
-            # Check environment variable
-            env_path = os.environ.get('LIVEVIEW_PATH')
-            if env_path:
-                target_path = Path(env_path).expanduser().resolve()
-                logger.info(f"Using path from environment variable: {target_path}")
-            else:
-                # Use default
-                target_path = self.default_markdown_dir
-                logger.info(f"Using default path: {target_path}")
-        
-        return target_path
-    
-    def get_fallback_content(self, requested_path: Path) -> str:
-        """Generate fallback markdown content when directory is missing or empty."""
-        return f"""# 📁 Directory Not Found or Empty
-
-The requested directory could not be accessed or contains no markdown files.
-
-**Requested Path:** `{requested_path}`
-
-## What happened?
-
-- The directory doesn't exist, or
-- The directory exists but contains no `.md` files, or  
-- There was a permission error accessing the directory
-
-## How to fix this:
-
-1. **Check the path**: Make sure the directory exists and contains `.md` files
-2. **Check permissions**: Ensure the server can read the directory
-3. **Use query parameter**: Try `?path=/your/markdown/directory`
-4. **Use environment variable**: Set `LIVEVIEW_PATH=/your/markdown/directory`
-
-## Examples:
-
-- **Query string**: `http://localhost:8080/?path=~/Documents/notes`
-- **Environment variable**: `LIVEVIEW_PATH=~/git/project/docs ./run.sh`
-
-## Get started:
-
-Create some `.md` files in your directory and refresh this page!
-"""
+        return self.request_handlers.resolve_markdown_path(path_param)
     
     def get_markdown_files(self, custom_path: Path = None) -> List[Dict[str, Any]]:
         """Get all markdown files sorted by creation time."""
-        files = []
-        target_dir = custom_path if custom_path else self.markdown_dir
-        
-        if not target_dir.exists():
-            logger.warning(f"Directory does not exist: {target_dir}")
-            # Return fallback content
-            fallback_time = time.time()
-            return [{
-                'path': target_dir / 'fallback.md',
-                'name': 'Directory Not Found',
-                'created': fallback_time,
-                'updated': fallback_time,
-                'sort_key': fallback_time,
-                'content': self.get_fallback_content(target_dir)
-            }]
-            
-        md_files = list(target_dir.glob('*.md'))
-        if not md_files:
-            logger.warning(f"No markdown files found in: {target_dir}")
-            # Return fallback content for empty directory
-            fallback_time = time.time()
-            return [{
-                'path': target_dir / 'fallback.md', 
-                'name': 'No Markdown Files Found',
-                'created': fallback_time,
-                'updated': fallback_time,
-                'sort_key': fallback_time,
-                'content': self.get_fallback_content(target_dir)
-            }]
-            
-        for md_file in md_files:
-            try:
-                stat = md_file.stat()
-                content = md_file.read_text(encoding='utf-8')
-                created_ts = getattr(stat, 'st_birthtime', stat.st_ctime)
-                updated_ts = max(stat.st_mtime, created_ts)
-                files.append({
-                    'path': md_file,
-                    'name': md_file.name,
-                    'created': created_ts,
-                    'updated': stat.st_mtime,
-                    'sort_key': updated_ts,
-                    'content': content
-                })
-            except Exception as e:
-                logger.warning(f"Could not read file {md_file}: {e}")
-                # Add a placeholder for unreadable files
-                error_time = time.time()
-                files.append({
-                    'path': md_file,
-                    'name': md_file.name,
-                    'created': error_time,
-                    'updated': error_time,
-                    'sort_key': error_time,
-                    'content': f"# Error Reading File\n\nCould not read `{md_file.name}`: {e}"
-                })
-
-        # Sort by most recent update time so fresh changes stay at the top
-        files.sort(key=lambda x: x['sort_key'], reverse=True)
-        
-        # Move sticky file to the top if one exists for this directory
-        sticky_filename = self.sticky_files.get(str(target_dir))
-        if sticky_filename:
-            sticky_index = None
-            for i, file_info in enumerate(files):
-                if file_info['name'] == sticky_filename:
-                    sticky_index = i
-                    break
-            
-            if sticky_index is not None and sticky_index > 0:
-                # Move sticky file to the beginning
-                sticky_file = files.pop(sticky_index)
-                files.insert(0, sticky_file)
-        
-        return files
+        return self.file_manager.get_markdown_files(custom_path)
     
     def get_unified_markdown(self, custom_path: Path = None) -> str:
         """Get all markdown content unified into a single string."""
-        files = self.get_markdown_files(custom_path)
-        if not files:
-            return "# No Markdown Files Found\n\nNo `.md` files were found in the specified directory."
-        
-        unified_content = []
-        for file_info in files:
-            content = file_info['content']
-            # Add separator between files (except for the first one)
-            if unified_content:
-                unified_content.append("\n\n---\n\n")
-            unified_content.append(content)
-        
-        return "".join(unified_content)
+        return self.file_manager.get_unified_markdown(custom_path)
     
     def load_index_template(self) -> str:
-        """Load unified index template from disk, falling back to a minimal version."""
-        try:
-            return self.template_path.read_text(encoding='utf-8')
-        except FileNotFoundError:
-            logger.error(f"Template file not found: {self.template_path}")
-        except Exception as exc:
-            logger.error(f"Error reading template {self.template_path}: {exc}")
-        return DEFAULT_UNIFIED_INDEX_TEMPLATE
+        """Load unified index template from disk."""
+        return self.template_handler.load_template()
 
     def render_index_template(self, target_path: Path) -> str:
         """Populate the template with runtime values."""
-        template = self.load_index_template()
-        safe_path = escape(str(target_path))
-        return template.replace(INDEX_TEMPLATE_PLACEHOLDER, safe_path)
+        return self.template_handler.render_template(target_path)
 
     async def handle_index(self, request):
         """Serve the main HTML page."""
@@ -784,9 +307,12 @@ Create some `.md` files in your directory and refresh this page!
                 'isSticky': file_info['name'] == sticky_filename
             })
         
+        # For empty directories, report at least 1 file (the fallback content)
+        file_count = len(files) if files else 1
+        
         return web.json_response({
             'content': unified_content,
-            'files': len(files),
+            'files': file_count,
             'fileList': file_list,
             'timestamp': time.time(),
             'directory': str(target_directory)
@@ -1054,35 +580,35 @@ Create some `.md` files in your directory and refresh this page!
                 effective_name = legacy_aliases.get(tool_name, tool_name)
 
                 if effective_name == "show_content":
-                    result = await self._show_content(
+                    result = await self.mcp_tools.show_content(
                         arguments.get("content", ""),
                         arguments.get("title")
                     )
                 elif effective_name == "list_content":
-                    result = await self._list_content()
+                    result = await self.mcp_tools.list_content()
                 elif effective_name == "view_content":
-                    result = await self._view_content(arguments.get("fileId") or arguments.get("filename", ""))
+                    result = await self.mcp_tools.view_content(arguments.get("fileId") or arguments.get("filename", ""))
                 elif effective_name == "update_content":
-                    result = await self._update_content(
+                    result = await self.mcp_tools.update_content(
                         arguments.get("fileId") or arguments.get("filename", ""),
                         arguments.get("content", ""),
                         arguments.get("mode", "append")
                     )
                 elif effective_name == "remove_content":
-                    result = await self._remove_content(arguments.get("fileId") or arguments.get("filename", ""))
+                    result = await self.mcp_tools.remove_content(arguments.get("fileId") or arguments.get("filename", ""))
                 elif effective_name == "subscribe_chat":
-                    result = await self._subscribe_chat()
+                    result = await self.mcp_tools.subscribe_chat()
                 elif effective_name == "get_chat_messages":
-                    result = await self._get_chat_messages(arguments.get("since"))
+                    result = await self.mcp_tools.get_chat_messages(arguments.get("since"))
                 else:
                     return jsonrpc_error(METHOD_NOT_FOUND, f"Unknown tool: {tool_name}")
-            except JSONRPCError as rpc_error:  # pragma: no cover - defensive while tooling stabilises
-                logger.error(f"MCP tool returned JSONRPCError: {rpc_error}")
-                return web.json_response(
-                    rpc_error.model_dump(exclude_none=True),
-                    status=400,
-                )
             except Exception as exc:
+                if hasattr(exc, 'model_dump'):
+                    logger.error(f"MCP tool returned JSONRPCError: {exc}")
+                    return web.json_response(
+                        exc.model_dump(exclude_none=True),
+                        status=400,
+                    )
                 logger.error(f"Unexpected error calling tool {tool_name}: {exc}")
                 return web.json_response(
                     {
