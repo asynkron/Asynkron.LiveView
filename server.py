@@ -456,6 +456,43 @@ class UnifiedMarkdownServer:
                 'error': str(e)
             }, status=500)
     
+    async def handle_mcp_info(self, request):
+        """GET endpoint for MCP server discovery and capabilities."""
+        if not self.enable_mcp:
+            return web.json_response({'error': 'MCP not enabled'}, status=503)
+        
+        # Return server information and available tools
+        tools = self._build_tool_definitions()
+        init_options = self.mcp_server.create_initialization_options()
+        
+        return web.json_response({
+            'protocol': 'MCP (Model Context Protocol)',
+            'version': init_options.server_version,
+            'name': init_options.server_name,
+            'description': 'MCP server for managing markdown files in the live view system',
+            'transport': 'JSON-RPC 2.0 over HTTP',
+            'endpoint': '/mcp',
+            'methods': ['POST'],
+            'capabilities': init_options.capabilities.model_dump(exclude_none=True),
+            'tools': [
+                {
+                    'name': tool.name,
+                    'description': tool.description
+                }
+                for tool in tools
+            ],
+            'usage': {
+                'initialize': 'POST /mcp with {"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2024-11-05","capabilities":{}}}',
+                'list_tools': 'POST /mcp with {"jsonrpc":"2.0","method":"tools/list","id":2}',
+                'call_tool': 'POST /mcp with {"jsonrpc":"2.0","method":"tools/call","id":3,"params":{"name":"show_content","arguments":{...}}}'
+            },
+            'documentation': {
+                'quick_reference': '/MCP_QUICK_REFERENCE.md',
+                'connection_guide': '/MCP_CONNECTION_GUIDE.md',
+                'troubleshooting': '/TROUBLESHOOTING_405.md'
+            }
+        })
+    
     async def handle_mcp_http(self, request):
         """HTTP endpoint for MCP protocol (JSON-RPC over HTTP)."""
         if not self.enable_mcp:
@@ -769,6 +806,7 @@ class UnifiedMarkdownServer:
         app.router.add_post('/api/toggle-sticky', self.handle_toggle_sticky)
         app.router.add_get('/raw', self.handle_raw_markdown)
         if self.enable_mcp:
+            app.router.add_get('/mcp', self.handle_mcp_info)  # Discovery endpoint
             app.router.add_post('/mcp', self.handle_mcp_http)
             app.router.add_get('/mcp/chat/subscribe', self.handle_chat_sse)
 
