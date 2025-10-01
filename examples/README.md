@@ -13,7 +13,7 @@ A simple Python client that connects to the SSE (Server-Sent Events) endpoint to
 1. Start the unified server:
    ```bash
    cd ..
-   python unified_server.py
+   python server.py
    ```
 
 2. Run the SSE chat client:

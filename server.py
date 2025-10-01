@@ -166,35 +166,26 @@ class UnifiedMarkdownServer:
         async def call_tool(name: str, arguments: Dict[str, Any]):
             """Handle tool calls."""
             try:
-                legacy_aliases = {
-                    "create_markdown_file": "show_content",
-                    "list_markdown_files": "list_content",
-                    "read_markdown_file": "view_content",
-                    "update_markdown_file": "update_content",
-                    "delete_markdown_file": "remove_content",
-                }
-                effective_name = legacy_aliases.get(name, name)
-
-                if effective_name == "show_content":
+                if name == "show_content":
                     return await self.mcp_tools.show_content(
                         arguments.get("content", ""),
                         arguments.get("title")
                     )
-                elif effective_name == "list_content":
+                elif name == "list_content":
                     return await self.mcp_tools.list_content()
-                elif effective_name == "view_content":
+                elif name == "view_content":
                     return await self.mcp_tools.view_content(arguments.get("fileId") or arguments.get("filename", ""))
-                elif effective_name == "update_content":
+                elif name == "update_content":
                     return await self.mcp_tools.update_content(
                         arguments.get("fileId") or arguments.get("filename", ""),
                         arguments.get("content", ""),
                         arguments.get("mode", "append")
                     )
-                elif effective_name == "remove_content":
+                elif name == "remove_content":
                     return await self.mcp_tools.remove_content(arguments.get("fileId") or arguments.get("filename", ""))
-                elif effective_name == "subscribe_chat":
+                elif name == "subscribe_chat":
                     return await self.mcp_tools.subscribe_chat()
-                elif effective_name == "get_chat_messages":
+                elif name == "get_chat_messages":
                     return await self.mcp_tools.get_chat_messages(arguments.get("since"))
                 else:
                     raise JSONRPCError(METHOD_NOT_FOUND, f"Unknown tool: {name}")
@@ -571,35 +562,26 @@ class UnifiedMarkdownServer:
                 return jsonrpc_error(INVALID_PARAMS, "Tool arguments must be an object")
 
             try:
-                legacy_aliases = {
-                    "create_markdown_file": "show_content",
-                    "list_markdown_files": "list_content",
-                    "read_markdown_file": "view_content",
-                    "update_markdown_file": "update_content",
-                    "delete_markdown_file": "remove_content",
-                }
-                effective_name = legacy_aliases.get(tool_name, tool_name)
-
-                if effective_name == "show_content":
+                if tool_name == "show_content":
                     result = await self.mcp_tools.show_content(
                         arguments.get("content", ""),
                         arguments.get("title")
                     )
-                elif effective_name == "list_content":
+                elif tool_name == "list_content":
                     result = await self.mcp_tools.list_content()
-                elif effective_name == "view_content":
+                elif tool_name == "view_content":
                     result = await self.mcp_tools.view_content(arguments.get("fileId") or arguments.get("filename", ""))
-                elif effective_name == "update_content":
+                elif tool_name == "update_content":
                     result = await self.mcp_tools.update_content(
                         arguments.get("fileId") or arguments.get("filename", ""),
                         arguments.get("content", ""),
                         arguments.get("mode", "append")
                     )
-                elif effective_name == "remove_content":
+                elif tool_name == "remove_content":
                     result = await self.mcp_tools.remove_content(arguments.get("fileId") or arguments.get("filename", ""))
-                elif effective_name == "subscribe_chat":
+                elif tool_name == "subscribe_chat":
                     result = await self.mcp_tools.subscribe_chat()
-                elif effective_name == "get_chat_messages":
+                elif tool_name == "get_chat_messages":
                     result = await self.mcp_tools.get_chat_messages(arguments.get("since"))
                 else:
                     return jsonrpc_error(METHOD_NOT_FOUND, f"Unknown tool: {tool_name}")
