@@ -208,6 +208,77 @@
         .hljs {
             background: #161b22 !important;
         }
+
+        /* File action buttons */
+        .file-block {
+            position: relative;
+            margin-bottom: 40px;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            padding: 10px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            align-items: center;
+        }
+
+        .file-name {
+            flex: 1;
+            color: #58a6ff;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .action-btn {
+            padding: 6px 12px;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            background: #21262d;
+            color: #e0e6ed;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .action-btn:hover {
+            background: #30363d;
+            border-color: #58a6ff;
+        }
+
+        .action-btn.delete {
+            color: #ff7b72;
+            border-color: #f85149;
+        }
+
+        .action-btn.delete:hover {
+            background: #f85149;
+            color: white;
+            border-color: #f85149;
+        }
+
+        .action-btn.download {
+            color: #79c0ff;
+            border-color: #58a6ff;
+        }
+
+        .action-btn.download:hover {
+            background: #58a6ff;
+            color: white;
+            border-color: #58a6ff;
+        }
+
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
     </style>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/14.1.2/marked.min.js" defer=""></script>
@@ -449,6 +520,10 @@
                 try {
                     const response = await fetch(`/api/content${window.location.search}`);
                     const data = await response.json();
+                    
+                    // Store file list globally for later use
+                    window.fileList = data.fileList || [];
+                    
                     updateContent(data.content);
 
                     // Update directory info
@@ -470,8 +545,43 @@
 
                 try {
                     mermaidIdCounter = 0;
-                    const html = marked.parse(markdownContent);
-                    document.getElementById('content').innerHTML = html;
+                    
+                    // Split content by file separators (---)
+                    const sections = markdownContent.split('\n\n---\n\n');
+                    const contentDiv = document.getElementById('content');
+                    contentDiv.innerHTML = '';
+                    
+                    sections.forEach((section, index) => {
+                        if (!section.trim()) return;
+                        
+                        // Create a file block container
+                        const fileBlock = document.createElement('div');
+                        fileBlock.className = 'file-block';
+                        
+                        // Add action buttons if we have file metadata
+                        if (window.fileList && window.fileList[index]) {
+                            const fileInfo = window.fileList[index];
+                            const actions = document.createElement('div');
+                            actions.className = 'file-actions';
+                            actions.innerHTML = `
+                                <span class="file-name">📄 ${escapeHtml(fileInfo.name)}</span>
+                                <button class="action-btn download" onclick="downloadFileAsPDF('${escapeHtml(fileInfo.fileId)}', '${escapeHtml(fileInfo.name)}')">
+                                    📥 Download PDF
+                                </button>
+                                <button class="action-btn delete" onclick="deleteFile('${escapeHtml(fileInfo.fileId)}')">
+                                    🗑️ Delete
+                                </button>
+                            `;
+                            fileBlock.appendChild(actions);
+                        }
+                        
+                        // Add the rendered content
+                        const contentSection = document.createElement('div');
+                        contentSection.innerHTML = marked.parse(section);
+                        fileBlock.appendChild(contentSection);
+                        
+                        contentDiv.appendChild(fileBlock);
+                    });
 
                     // Highlight code blocks
                     if (typeof hljs !== 'undefined') {
@@ -487,6 +597,127 @@
                 } catch (error) {
                     console.error('Error rendering markdown:', error);
                     document.getElementById('content').innerHTML = `<div style="color: #cf222e;">Error rendering markdown: ${error.message}</div>`;
+                }
+            }
+            
+            async function deleteFile(fileId) {
+                if (!confirm(`Are you sure you want to delete "${fileId}"?`)) {
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/api/delete${window.location.search}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ fileId: fileId })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        console.log('File deleted successfully');
+                        // Reload content
+                        loadContent();
+                    } else {
+                        alert(`Error deleting file: ${result.error}`);
+                    }
+                } catch (error) {
+                    console.error('Error deleting file:', error);
+                    alert(`Error deleting file: ${error.message}`);
+                }
+            }
+            
+            async function downloadFileAsPDF(fileId, fileName) {
+                try {
+                    // Get the individual file content
+                    const response = await fetch(`/api/file?fileId=${encodeURIComponent(fileId)}${window.location.search.replace('?', '&')}`);
+                    const result = await response.json();
+                    
+                    if (!result.success) {
+                        alert(`Error loading file: ${result.error}`);
+                        return;
+                    }
+                    
+                    // Create a temporary window with the rendered content
+                    const printWindow = window.open('', '_blank');
+                    printWindow.document.write(`
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>${escapeHtml(fileName)}</title>
+                            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown-dark.min.css">
+                            <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/14.1.2/marked.min.js"><\/script>
+                            <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"><\/script>
+                            <style>
+                                body {
+                                    background: white;
+                                    padding: 40px;
+                                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+                                }
+                                .markdown-body {
+                                    max-width: 800px;
+                                    margin: 0 auto;
+                                    color: #24292f;
+                                    background: white;
+                                }
+                                @media print {
+                                    body { padding: 20px; }
+                                }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="markdown-body" id="content">Loading...</div>
+                            <script>
+                                mermaid.initialize({ startOnLoad: false, theme: 'default' });
+                                
+                                // Wait for marked to load
+                                function waitForMarked() {
+                                    if (typeof marked !== 'undefined') {
+                                        const content = ${JSON.stringify(result.content)};
+                                        const html = marked.parse(content);
+                                        document.getElementById('content').innerHTML = html;
+                                        
+                                        // Render mermaid diagrams
+                                        const mermaidElements = document.querySelectorAll('.language-mermaid');
+                                        let rendered = 0;
+                                        if (mermaidElements.length > 0) {
+                                            mermaidElements.forEach((element, i) => {
+                                                const code = element.textContent;
+                                                const id = 'mermaid-' + i;
+                                                mermaid.render(id, code).then(({ svg }) => {
+                                                    const container = document.createElement('div');
+                                                    container.innerHTML = svg;
+                                                    element.parentElement.replaceWith(container);
+                                                    rendered++;
+                                                    if (rendered === mermaidElements.length) {
+                                                        setTimeout(() => window.print(), 500);
+                                                    }
+                                                }).catch(err => {
+                                                    console.error('Mermaid error:', err);
+                                                    rendered++;
+                                                    if (rendered === mermaidElements.length) {
+                                                        setTimeout(() => window.print(), 500);
+                                                    }
+                                                });
+                                            });
+                                        } else {
+                                            setTimeout(() => window.print(), 500);
+                                        }
+                                    } else {
+                                        setTimeout(waitForMarked, 100);
+                                    }
+                                }
+                                waitForMarked();
+                            <\/script>
+                        </body>
+                        </html>
+                    `);
+                    printWindow.document.close();
+                } catch (error) {
+                    console.error('Error downloading PDF:', error);
+                    alert(`Error downloading PDF: ${error.message}`);
                 }
             }
 

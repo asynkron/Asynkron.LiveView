@@ -668,12 +668,66 @@ Create some `.md` files in your directory and refresh this page!
         files = self.get_markdown_files(target_directory)
         unified_content = self.get_unified_markdown(target_directory)
         
+        # Build file list with metadata for UI actions
+        file_list = []
+        for file_info in files:
+            file_list.append({
+                'name': file_info['name'],
+                'path': str(file_info['path']),
+                'fileId': file_info['name'],
+                'created': file_info['created'],
+                'updated': file_info['updated']
+            })
+        
         return web.json_response({
             'content': unified_content,
             'files': len(files),
+            'fileList': file_list,
             'timestamp': time.time(),
             'directory': str(target_directory)
         })
+    
+    async def handle_delete_file(self, request):
+        """API endpoint to delete a markdown file."""
+        try:
+            data = await request.json()
+            file_id = data.get('fileId')
+            
+            if not file_id:
+                return web.json_response({
+                    'success': False,
+                    'error': 'fileId is required'
+                }, status=400)
+            
+            # Get the target directory
+            path_param = request.query.get('path')
+            target_directory = self.resolve_markdown_path(path_param)
+            
+            # Sanitize the file ID
+            filename = self._sanitize_file_id(file_id)
+            file_path = target_directory / filename
+            
+            if not file_path.exists():
+                return web.json_response({
+                    'success': False,
+                    'error': f'File not found: {filename}'
+                }, status=404)
+            
+            # Delete the file
+            file_path.unlink()
+            logger.info(f"Deleted file via API: {file_path}")
+            
+            return web.json_response({
+                'success': True,
+                'message': f'File deleted: {filename}'
+            })
+            
+        except Exception as e:
+            logger.error(f"Error deleting file: {e}")
+            return web.json_response({
+                'success': False,
+                'error': str(e)
+            }, status=500)
     
     async def handle_raw_markdown(self, request):
         """Serve unified markdown content as plain text."""
@@ -683,6 +737,47 @@ Create some `.md` files in your directory and refresh this page!
         
         unified_content = self.get_unified_markdown(target_directory)
         return Response(text=unified_content, content_type='text/plain', charset='utf-8')
+    
+    async def handle_get_file(self, request):
+        """API endpoint to get individual file content."""
+        try:
+            file_id = request.query.get('fileId')
+            
+            if not file_id:
+                return web.json_response({
+                    'success': False,
+                    'error': 'fileId is required'
+                }, status=400)
+            
+            # Get the target directory
+            path_param = request.query.get('path')
+            target_directory = self.resolve_markdown_path(path_param)
+            
+            # Sanitize the file ID
+            filename = self._sanitize_file_id(file_id)
+            file_path = target_directory / filename
+            
+            if not file_path.exists():
+                return web.json_response({
+                    'success': False,
+                    'error': f'File not found: {filename}'
+                }, status=404)
+            
+            # Read the file
+            content = file_path.read_text(encoding='utf-8')
+            
+            return web.json_response({
+                'success': True,
+                'fileId': file_id,
+                'content': content
+            })
+            
+        except Exception as e:
+            logger.error(f"Error reading file: {e}")
+            return web.json_response({
+                'success': False,
+                'error': str(e)
+            }, status=500)
     
     async def handle_mcp_http(self, request):
         """HTTP endpoint for MCP protocol (JSON-RPC over HTTP)."""
@@ -913,6 +1008,8 @@ Create some `.md` files in your directory and refresh this page!
         app.router.add_get('/', self.handle_index)
         app.router.add_get('/ws', self.handle_websocket)
         app.router.add_get('/api/content', self.handle_api_content)
+        app.router.add_get('/api/file', self.handle_get_file)
+        app.router.add_post('/api/delete', self.handle_delete_file)
         app.router.add_get('/raw', self.handle_raw_markdown)
         if self.enable_mcp:
             app.router.add_post('/mcp', self.handle_mcp_http)
