@@ -304,9 +304,37 @@
             border-color: #8b949e;
         }
 
+        .action-btn.markdown-toggle {
+            color: #a5d6ff;
+            border-color: #58a6ff;
+        }
+
+        .action-btn.markdown-toggle:hover {
+            background: #58a6ff;
+            color: white;
+            border-color: #58a6ff;
+        }
+
+        .action-btn.markdown-toggle.raw-mode {
+            background: #58a6ff;
+            color: white;
+        }
+
         .action-btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+
+        .file-content.raw-mode {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 16px;
+            color: #e0e6ed;
+            font-size: 0.9em;
         }
 
         .file-content {
@@ -604,6 +632,7 @@
                             actions.className = 'file-actions';
                             const expandBtnId = `expand-btn-${index}`;
                             const contentId = `content-${index}`;
+                            const markdownToggleBtnId = `markdown-toggle-btn-${index}`;
                             const stickyClass = fileInfo.isSticky ? 'active' : '';
                             const stickyIcon = fileInfo.isSticky ? '📌' : '📍';
                             actions.innerHTML = `
@@ -611,6 +640,9 @@
                                     ▼
                                 </button>
                                 <span class="file-name">📄 ${escapeHtml(fileInfo.name)}</span>
+                                <button class="action-btn markdown-toggle" id="${markdownToggleBtnId}" onclick="toggleMarkdownRaw('${contentId}', '${markdownToggleBtnId}')">
+                                    📝 Raw
+                                </button>
                                 <button class="action-btn sticky ${stickyClass}" onclick="toggleSticky('${escapeHtml(fileInfo.fileId)}')">
                                     ${stickyIcon} Sticky
                                 </button>
@@ -628,6 +660,7 @@
                         const contentSection = document.createElement('div');
                         contentSection.className = 'file-content';
                         contentSection.id = `content-${index}`;
+                        contentSection.setAttribute('data-raw-markdown', section);
                         contentSection.innerHTML = marked.parse(section);
                         fileBlock.appendChild(contentSection);
                         
@@ -651,7 +684,8 @@
                 }
             }
             
-            async function deleteFile(fileId) {
+            // Make functions globally accessible by attaching to window
+            window.deleteFile = async function(fileId) {
                 if (!confirm(`Are you sure you want to delete "${fileId}"?`)) {
                     return;
                 }
@@ -678,9 +712,9 @@
                     console.error('Error deleting file:', error);
                     alert(`Error deleting file: ${error.message}`);
                 }
-            }
+            };
             
-            async function downloadFileAsPDF(fileId, fileName) {
+            window.downloadFileAsPDF = async function(fileId, fileName) {
                 try {
                     // Get the individual file content
                     const response = await fetch(`/api/file?fileId=${encodeURIComponent(fileId)}${window.location.search.replace('?', '&')}`);
@@ -770,9 +804,9 @@
                     console.error('Error downloading PDF:', error);
                     alert(`Error downloading PDF: ${error.message}`);
                 }
-            }
+            };
             
-            function toggleExpand(contentId, btnId) {
+            window.toggleExpand = function(contentId, btnId) {
                 const content = document.getElementById(contentId);
                 const btn = document.getElementById(btnId);
                 
@@ -783,9 +817,9 @@
                     content.classList.add('collapsed');
                     btn.textContent = '▶';
                 }
-            }
+            };
             
-            async function toggleSticky(fileId) {
+            window.toggleSticky = async function(fileId) {
                 try {
                     const response = await fetch(`/api/toggle-sticky${window.location.search}`, {
                         method: 'POST',
@@ -808,7 +842,49 @@
                     console.error('Error toggling sticky:', error);
                     alert(`Error toggling sticky: ${error.message}`);
                 }
-            }
+            };
+
+            window.toggleMarkdownRaw = function(contentId, btnId) {
+                const content = document.getElementById(contentId);
+                const btn = document.getElementById(btnId);
+                
+                if (!content) return;
+                
+                // Check if we're in raw mode
+                const isRawMode = content.classList.contains('raw-mode');
+                
+                if (isRawMode) {
+                    // Switch back to markdown rendered mode
+                    const rawText = content.getAttribute('data-raw-markdown');
+                    if (rawText) {
+                        content.innerHTML = marked.parse(rawText);
+                        content.classList.remove('raw-mode');
+                        btn.classList.remove('raw-mode');
+                        btn.innerHTML = '📝 Raw';
+                        
+                        // Re-highlight code blocks
+                        if (typeof hljs !== 'undefined') {
+                            content.querySelectorAll('pre code').forEach((block) => {
+                                if (!block.classList.contains('language-mermaid')) {
+                                    hljs.highlightElement(block);
+                                }
+                            });
+                        }
+                        
+                        // Re-render mermaid diagrams
+                        renderMermaidDiagrams();
+                    }
+                } else {
+                    // Switch to raw markdown mode
+                    const rawText = content.getAttribute('data-raw-markdown');
+                    if (rawText) {
+                        content.textContent = rawText;
+                        content.classList.add('raw-mode');
+                        btn.classList.add('raw-mode');
+                        btn.innerHTML = '🎨 Rendered';
+                    }
+                }
+            };
 
             // Initialize everything
             waitForLibraries()
