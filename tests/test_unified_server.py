@@ -10,7 +10,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from unified_server import UnifiedMarkdownServer
+from server import UnifiedMarkdownServer
 
 
 async def _create_test_client(server: UnifiedMarkdownServer) -> TestClient:

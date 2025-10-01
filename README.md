@@ -180,7 +180,7 @@ The new unified server combines both LiveView and MCP functionality in a single 
 ./run_unified.sh
 
 # Or run directly
-python unified_server.py --help
+python server.py --help
 ```
 
 **Unified Server Options:**
@@ -476,7 +476,7 @@ python test_mcp.py
 python mcp_server.py --dir markdown
 
 # Run unified server with MCP HTTP endpoint
-python unified_server.py --port 8080 --dir markdown
+python server.py --port 8080 --dir markdown
 ```
 
 ## File Structure

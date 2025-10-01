@@ -58,7 +58,7 @@ def main():
     # Start the unified server
     print("🌐 Starting unified server...")
     try:
-        from unified_server import main as unified_main
+        from server import main as unified_main
         unified_main()
     except KeyboardInterrupt:
         print("\n👋 Server stopped by user")

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_all.sh - Start the unified LiveView + MCP server.
+# run.sh - Start the unified LiveView + MCP server.
 
 set -euo pipefail
 
@@ -45,7 +45,7 @@ main() {
   ensure_deps
   prepare_markdown_dir
 
-  cmd=("$PYTHON_CMD" "unified_server.py" "--port" "$PORT" "--dir" "$MARKDOWN_DIR")
+  cmd=("$PYTHON_CMD" "server.py" "--port" "$PORT" "--dir" "$MARKDOWN_DIR")
   if [[ "$ENABLE_STDIO" == "true" ]]; then
     cmd+=("--mcp-stdio")
   fi

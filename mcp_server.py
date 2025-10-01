@@ -143,34 +143,24 @@ class MarkdownMCPServer:
         async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
             """Handle tool calls."""
             try:
-                # Support legacy names as aliases to keep older MCP clients working.
-                legacy_aliases = {
-                    "create_markdown_file": "show_content",
-                    "list_markdown_files": "list_content",
-                    "read_markdown_file": "view_content",
-                    "update_markdown_file": "update_content",
-                    "delete_markdown_file": "remove_content",
-                }
-                effective_name = legacy_aliases.get(name, name)
-
-                if effective_name == "show_content":
+                if name == "show_content":
                     return await self._show_content(
                         content=arguments.get("content", ""),
                         title=arguments.get("title")
                     )
-                elif effective_name == "list_content":
+                elif name == "list_content":
                     return await self._list_content()
-                elif effective_name == "view_content":
+                elif name == "view_content":
                     return await self._view_content(
                         fileId=arguments.get("fileId") or arguments.get("filename", "")
                     )
-                elif effective_name == "update_content":
+                elif name == "update_content":
                     return await self._update_content(
                         fileId=arguments.get("fileId") or arguments.get("filename", ""),
                         content=arguments.get("content", ""),
                         mode=arguments.get("mode", "append")
                     )
-                elif effective_name == "remove_content":
+                elif name == "remove_content":
                     return await self._remove_content(
                         fileId=arguments.get("fileId") or arguments.get("filename", "")
                     )

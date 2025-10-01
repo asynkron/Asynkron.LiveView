@@ -42,7 +42,7 @@ sequenceDiagram
 
 ### 1. SSE Endpoint (`/mcp/chat/subscribe`)
 
-**Location:** `unified_server.py::handle_chat_sse()`
+**Location:** `server.py::handle_chat_sse()`
 
 **Features:**
 - Content-Type: `text/event-stream`
@@ -58,13 +58,13 @@ data: {"type": "chat", "message": "...", "timestamp": 1234567890.123}
 
 ### 2. WebSocket Handler
 
-**Location:** `unified_server.py::handle_websocket()`
+**Location:** `server.py::handle_websocket()`
 
 Receives chat messages from the browser UI and forwards them to `broadcast_chat_to_mcp()`.
 
 ### 3. Broadcast Function
 
-**Location:** `unified_server.py::broadcast_chat_to_mcp()`
+**Location:** `server.py::broadcast_chat_to_mcp()`
 
 **Responsibilities:**
 1. Store message in memory (backward compatibility with polling)
@@ -73,7 +73,7 @@ Receives chat messages from the browser UI and forwards them to `broadcast_chat_
 
 ### 4. Client Tracking
 
-**Location:** `unified_server.py::sse_clients`
+**Location:** `server.py::sse_clients`
 
 A set that tracks all active SSE connections for efficient broadcasting.
 
@@ -143,7 +143,7 @@ Lines starting with `:` are comment lines (ignored by clients but keep the conne
 
 ### Manual Testing
 
-1. Start server: `python unified_server.py`
+1. Start server: `python server.py`
 2. Run example client: `python examples/sse_chat_client.py`
 3. Open browser to `http://localhost:8080`
 4. Type message in chat input
