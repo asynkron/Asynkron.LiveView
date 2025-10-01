@@ -275,6 +275,19 @@ python server.py --dir /path/to/my/docs --port 3000
   - Query parameter: `?path=/path/to/directory` - Specify custom directory
   - Returns: `{content, files, timestamp, directory}`
 
+### MCP Endpoints
+
+- `POST /mcp`: JSON-RPC endpoint for MCP protocol
+  - Supports MCP tools: `show_content`, `list_content`, `view_content`, `update_content`, `remove_content`, `subscribe_chat`, `get_chat_messages`
+- `GET /mcp/chat/subscribe`: **SSE (Server-Sent Events)** endpoint for real-time chat messages
+  - Returns `text/event-stream` for push-based chat notifications
+  - Alternative to polling with `get_chat_messages`
+  - Example:
+    ```bash
+    curl -N http://localhost:8080/mcp/chat/subscribe
+    # Output: Server-Sent Events stream with chat messages
+    ```
+
 ## MCP Server Integration 🤖
 
 **UPDATED**: The system now features a unified server that combines both LiveView and MCP functionality in a single process!
@@ -300,16 +313,26 @@ The new unified server provides:
 ```mermaid
 graph TD
     A[AI Assistant] --> B[HTTP MCP Endpoint]
+    A --> H[SSE Chat Subscribe]
     B --> C[Unified Server]
+    H --> C
     C --> D[File System]
     C --> E[File Watcher]
     E --> F[WebSocket]
     F --> G[Browser Auto-Update]
+    F --> I[Chat Messages]
+    I --> H
     
     style A fill:#e1f5fe
     style C fill:#fff3e0
     style G fill:#c8e6c9
+    style H fill:#fff9c4
 ```
+
+**Chat Integration**: When users send chat messages from the browser, they are:
+1. Sent via WebSocket to the server
+2. Pushed to AI assistants via SSE (`/mcp/chat/subscribe`)
+3. Also available via polling (`get_chat_messages` tool)
 
 ### Legacy MCP Setup (Still Supported)
 
@@ -329,6 +352,44 @@ The MCP server provides conversationally named tools for AI assistants:
 - **`view_content`**: Retrieve the content for a specific File Id that was previously returned by `show_content`.
 - **`update_content`**: Append to or completely replace an existing entry by supplying its File Id.
 - **`remove_content`**: Delete an entry using its File Id when it is no longer needed.
+
+#### Chat Integration Tools
+
+- **`subscribe_chat`**: Subscribe to receive chat messages from the UI. Returns confirmation message.
+- **`get_chat_messages`**: Poll for chat messages since a given timestamp (legacy/fallback method).
+- **SSE Chat Stream** (Recommended): Connect to `GET /mcp/chat/subscribe` for push-based chat notifications.
+
+**Example: Subscribing to Chat via SSE**
+
+```bash
+# Connect to SSE endpoint for real-time chat messages
+curl -N http://localhost:8080/mcp/chat/subscribe
+
+# Output (Server-Sent Events):
+# data: {"type":"connected","message":"Successfully subscribed to chat messages"}
+# 
+# : heartbeat
+# 
+# data: {"type": "chat", "message": "Hello from user!", "timestamp": 1234567890.123}
+```
+
+**Example: Using Python to receive chat messages**
+
+```python
+import aiohttp
+import asyncio
+
+async def listen_to_chat():
+    async with aiohttp.ClientSession() as session:
+        async with session.get('http://localhost:8080/mcp/chat/subscribe') as resp:
+            async for line in resp.content:
+                if line.startswith(b'data: '):
+                    data = json.loads(line[6:])
+                    if data['type'] == 'chat':
+                        print(f"Received: {data['message']}")
+
+asyncio.run(listen_to_chat())
+```
 
 ### AI Assistant Setup
 
