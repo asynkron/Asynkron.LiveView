@@ -206,3 +206,65 @@ async def test_get_nonexistent_file(tmp_path: Path) -> None:
     finally:
         await client.close()
 
+
+@pytest.mark.asyncio
+async def test_toggle_sticky_endpoint(tmp_path: Path) -> None:
+    """Verify that /api/toggle-sticky toggles sticky status correctly."""
+    # Create test markdown files
+    file1 = tmp_path / "file1.md"
+    file1.write_text("# File 1\n\nFirst file.")
+    file2 = tmp_path / "file2.md"
+    file2.write_text("# File 2\n\nSecond file.")
+    
+    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    client = await _create_test_client(server)
+    try:
+        # Initially, no files should be sticky
+        response = await client.get("/api/content")
+        payload = await response.json()
+        assert all(not f["isSticky"] for f in payload["fileList"])
+        
+        # Toggle file2 to be sticky
+        response = await client.post("/api/toggle-sticky", json={"fileId": "file2.md"})
+        assert response.status == 200
+        payload = await response.json()
+        assert payload["success"] is True
+        assert payload["isSticky"] is True
+        
+        # Verify file2 is now sticky and at the top
+        response = await client.get("/api/content")
+        payload = await response.json()
+        file_list = payload["fileList"]
+        assert file_list[0]["name"] == "file2.md"
+        assert file_list[0]["isSticky"] is True
+        assert file_list[1]["isSticky"] is False
+        
+        # Toggle file1 to be sticky (should replace file2 as sticky)
+        response = await client.post("/api/toggle-sticky", json={"fileId": "file1.md"})
+        assert response.status == 200
+        payload = await response.json()
+        assert payload["success"] is True
+        assert payload["isSticky"] is True
+        
+        # Verify only file1 is now sticky and at the top
+        response = await client.get("/api/content")
+        payload = await response.json()
+        file_list = payload["fileList"]
+        assert file_list[0]["name"] == "file1.md"
+        assert file_list[0]["isSticky"] is True
+        assert file_list[1]["isSticky"] is False
+        
+        # Toggle file1 again to remove sticky status
+        response = await client.post("/api/toggle-sticky", json={"fileId": "file1.md"})
+        assert response.status == 200
+        payload = await response.json()
+        assert payload["success"] is True
+        assert payload["isSticky"] is False
+        
+        # Verify no files are sticky
+        response = await client.get("/api/content")
+        payload = await response.json()
+        assert all(not f["isSticky"] for f in payload["fileList"])
+    finally:
+        await client.close()
+

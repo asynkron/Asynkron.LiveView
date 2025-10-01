@@ -124,6 +124,7 @@ class UnifiedMarkdownServer:
         self._mcp_client_capabilities: Dict[str, Any] | None = None
         self._mcp_initialized = False
         self._negotiated_protocol_version: str | int = DEFAULT_NEGOTIATED_VERSION
+        self.sticky_files: Dict[str, str] = {}  # Maps directory path to sticky filename
         
         # Ensure default markdown directory exists
         self.default_markdown_dir.mkdir(exist_ok=True)
@@ -579,6 +580,21 @@ Create some `.md` files in your directory and refresh this page!
 
         # Sort by most recent update time so fresh changes stay at the top
         files.sort(key=lambda x: x['sort_key'], reverse=True)
+        
+        # Move sticky file to the top if one exists for this directory
+        sticky_filename = self.sticky_files.get(str(target_dir))
+        if sticky_filename:
+            sticky_index = None
+            for i, file_info in enumerate(files):
+                if file_info['name'] == sticky_filename:
+                    sticky_index = i
+                    break
+            
+            if sticky_index is not None and sticky_index > 0:
+                # Move sticky file to the beginning
+                sticky_file = files.pop(sticky_index)
+                files.insert(0, sticky_file)
+        
         return files
     
     def get_unified_markdown(self, custom_path: Path = None) -> str:
@@ -668,6 +684,9 @@ Create some `.md` files in your directory and refresh this page!
         files = self.get_markdown_files(target_directory)
         unified_content = self.get_unified_markdown(target_directory)
         
+        # Get the sticky filename for this directory
+        sticky_filename = self.sticky_files.get(str(target_directory))
+        
         # Build file list with metadata for UI actions
         file_list = []
         for file_info in files:
@@ -676,7 +695,8 @@ Create some `.md` files in your directory and refresh this page!
                 'path': str(file_info['path']),
                 'fileId': file_info['name'],
                 'created': file_info['created'],
-                'updated': file_info['updated']
+                'updated': file_info['updated'],
+                'isSticky': file_info['name'] == sticky_filename
             })
         
         return web.json_response({
@@ -774,6 +794,60 @@ Create some `.md` files in your directory and refresh this page!
             
         except Exception as e:
             logger.error(f"Error reading file: {e}")
+            return web.json_response({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+    
+    async def handle_toggle_sticky(self, request):
+        """API endpoint to toggle sticky status of a file."""
+        try:
+            data = await request.json()
+            file_id = data.get('fileId')
+            
+            if not file_id:
+                return web.json_response({
+                    'success': False,
+                    'error': 'fileId is required'
+                }, status=400)
+            
+            # Get the target directory
+            path_param = request.query.get('path')
+            target_directory = self.resolve_markdown_path(path_param)
+            
+            # Sanitize the file ID
+            filename = self._sanitize_file_id(file_id)
+            file_path = target_directory / filename
+            
+            if not file_path.exists():
+                return web.json_response({
+                    'success': False,
+                    'error': f'File not found: {filename}'
+                }, status=404)
+            
+            dir_key = str(target_directory)
+            current_sticky = self.sticky_files.get(dir_key)
+            
+            # Toggle: if this file is currently sticky, remove it; otherwise set it as sticky
+            if current_sticky == filename:
+                # Remove sticky status
+                del self.sticky_files[dir_key]
+                logger.info(f"Removed sticky status from: {filename}")
+                is_sticky = False
+            else:
+                # Set as sticky (only one file can be sticky at a time)
+                self.sticky_files[dir_key] = filename
+                logger.info(f"Set sticky status for: {filename} in {dir_key}")
+                is_sticky = True
+            
+            return web.json_response({
+                'success': True,
+                'isSticky': is_sticky,
+                'message': f'Sticky status toggled for: {filename}'
+            })
+            
+        except Exception as e:
+            logger.error(f"Error toggling sticky: {e}")
             return web.json_response({
                 'success': False,
                 'error': str(e)
@@ -1010,6 +1084,7 @@ Create some `.md` files in your directory and refresh this page!
         app.router.add_get('/api/content', self.handle_api_content)
         app.router.add_get('/api/file', self.handle_get_file)
         app.router.add_post('/api/delete', self.handle_delete_file)
+        app.router.add_post('/api/toggle-sticky', self.handle_toggle_sticky)
         app.router.add_get('/raw', self.handle_raw_markdown)
         if self.enable_mcp:
             app.router.add_post('/mcp', self.handle_mcp_http)

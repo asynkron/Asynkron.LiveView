@@ -275,9 +275,48 @@
             border-color: #58a6ff;
         }
 
+        .action-btn.sticky {
+            color: #ffa657;
+            border-color: #f0883e;
+        }
+
+        .action-btn.sticky:hover {
+            background: #f0883e;
+            color: white;
+            border-color: #f0883e;
+        }
+
+        .action-btn.sticky.active {
+            background: #f0883e;
+            color: white;
+            border-color: #f0883e;
+        }
+
+        .action-btn.expand {
+            color: #8b949e;
+            border-color: #30363d;
+            min-width: 35px;
+            justify-content: center;
+        }
+
+        .action-btn.expand:hover {
+            background: #30363d;
+            border-color: #8b949e;
+        }
+
         .action-btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+
+        .file-content {
+            transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+            overflow: hidden;
+        }
+
+        .file-content.collapsed {
+            max-height: 0 !important;
+            opacity: 0;
         }
     </style>
 
@@ -563,8 +602,18 @@
                             const fileInfo = window.fileList[index];
                             const actions = document.createElement('div');
                             actions.className = 'file-actions';
+                            const expandBtnId = `expand-btn-${index}`;
+                            const contentId = `content-${index}`;
+                            const stickyClass = fileInfo.isSticky ? 'active' : '';
+                            const stickyIcon = fileInfo.isSticky ? '📌' : '📍';
                             actions.innerHTML = `
+                                <button class="action-btn expand" id="${expandBtnId}" onclick="toggleExpand('${contentId}', '${expandBtnId}')">
+                                    ▼
+                                </button>
                                 <span class="file-name">📄 ${escapeHtml(fileInfo.name)}</span>
+                                <button class="action-btn sticky ${stickyClass}" onclick="toggleSticky('${escapeHtml(fileInfo.fileId)}')">
+                                    ${stickyIcon} Sticky
+                                </button>
                                 <button class="action-btn download" onclick="downloadFileAsPDF('${escapeHtml(fileInfo.fileId)}', '${escapeHtml(fileInfo.name)}')">
                                     📥 Download PDF
                                 </button>
@@ -577,6 +626,8 @@
                         
                         // Add the rendered content
                         const contentSection = document.createElement('div');
+                        contentSection.className = 'file-content';
+                        contentSection.id = `content-${index}`;
                         contentSection.innerHTML = marked.parse(section);
                         fileBlock.appendChild(contentSection);
                         
@@ -718,6 +769,44 @@
                 } catch (error) {
                     console.error('Error downloading PDF:', error);
                     alert(`Error downloading PDF: ${error.message}`);
+                }
+            }
+            
+            function toggleExpand(contentId, btnId) {
+                const content = document.getElementById(contentId);
+                const btn = document.getElementById(btnId);
+                
+                if (content.classList.contains('collapsed')) {
+                    content.classList.remove('collapsed');
+                    btn.textContent = '▼';
+                } else {
+                    content.classList.add('collapsed');
+                    btn.textContent = '▶';
+                }
+            }
+            
+            async function toggleSticky(fileId) {
+                try {
+                    const response = await fetch(`/api/toggle-sticky${window.location.search}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ fileId: fileId })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        console.log('Sticky status toggled successfully');
+                        // Reload content to reflect the change
+                        loadContent();
+                    } else {
+                        alert(`Error toggling sticky: ${result.error}`);
+                    }
+                } catch (error) {
+                    console.error('Error toggling sticky:', error);
+                    alert(`Error toggling sticky: ${error.message}`);
                 }
             }
 
