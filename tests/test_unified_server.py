@@ -96,3 +96,113 @@ async def test_mcp_http_endpoints(tmp_path: Path) -> None:
         assert "Hello from tests" in created_path.read_text()
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_api_content_includes_file_list(tmp_path: Path) -> None:
+    """Verify that /api/content returns fileList with metadata."""
+    # Create a test markdown file
+    test_file = tmp_path / "test.md"
+    test_file.write_text("# Test Content\n\nThis is a test.")
+    
+    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    client = await _create_test_client(server)
+    try:
+        response = await client.get("/api/content")
+        assert response.status == 200
+
+        payload = await response.json()
+        assert "fileList" in payload
+        assert isinstance(payload["fileList"], list)
+        assert len(payload["fileList"]) == 1
+        
+        file_info = payload["fileList"][0]
+        assert file_info["name"] == "test.md"
+        assert file_info["fileId"] == "test.md"
+        assert "path" in file_info
+        assert "created" in file_info
+        assert "updated" in file_info
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_delete_file_endpoint(tmp_path: Path) -> None:
+    """Verify that /api/delete successfully deletes files."""
+    # Create a test markdown file
+    test_file = tmp_path / "delete-me.md"
+    test_file.write_text("# Delete Me\n\nThis file will be deleted.")
+    
+    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    client = await _create_test_client(server)
+    try:
+        # Verify the file exists
+        assert test_file.exists()
+        
+        # Delete the file via API
+        response = await client.post("/api/delete", json={"fileId": "delete-me.md"})
+        assert response.status == 200
+
+        payload = await response.json()
+        assert payload["success"] is True
+        assert "deleted" in payload["message"].lower()
+        
+        # Verify the file was actually deleted
+        assert not test_file.exists()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_file_endpoint(tmp_path: Path) -> None:
+    """Verify that /api/file retrieves individual file content."""
+    # Create a test markdown file
+    test_content = "# Individual File\n\nThis is a single file's content."
+    test_file = tmp_path / "get-me.md"
+    test_file.write_text(test_content)
+    
+    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    client = await _create_test_client(server)
+    try:
+        response = await client.get("/api/file?fileId=get-me.md")
+        assert response.status == 200
+
+        payload = await response.json()
+        assert payload["success"] is True
+        assert payload["fileId"] == "get-me.md"
+        assert payload["content"] == test_content
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_file(tmp_path: Path) -> None:
+    """Verify that deleting a nonexistent file returns an error."""
+    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    client = await _create_test_client(server)
+    try:
+        response = await client.post("/api/delete", json={"fileId": "nonexistent.md"})
+        assert response.status == 404
+
+        payload = await response.json()
+        assert payload["success"] is False
+        assert "not found" in payload["error"].lower()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_nonexistent_file(tmp_path: Path) -> None:
+    """Verify that getting a nonexistent file returns an error."""
+    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    client = await _create_test_client(server)
+    try:
+        response = await client.get("/api/file?fileId=nonexistent.md")
+        assert response.status == 404
+
+        payload = await response.json()
+        assert payload["success"] is False
+        assert "not found" in payload["error"].lower()
+    finally:
+        await client.close()
+
