@@ -21,6 +21,10 @@
             font-size: smaller;
         }
 
+        .mermaid {
+            fill-opacity: 0.3;
+        }
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
@@ -587,10 +591,10 @@
                 try {
                     const response = await fetch(`/api/content${window.location.search}`);
                     const data = await response.json();
-                    
+
                     // Store file list globally for later use
                     window.fileList = data.fileList || [];
-                    
+
                     updateContent(data.content);
 
                     // Update directory info
@@ -612,19 +616,19 @@
 
                 try {
                     mermaidIdCounter = 0;
-                    
+
                     // Split content by file separators (---)
                     const sections = markdownContent.split('\n\n---\n\n');
                     const contentDiv = document.getElementById('content');
                     contentDiv.innerHTML = '';
-                    
+
                     sections.forEach((section, index) => {
                         if (!section.trim()) return;
-                        
+
                         // Create a file block container
                         const fileBlock = document.createElement('div');
                         fileBlock.className = 'file-block';
-                        
+
                         // Add action buttons if we have file metadata
                         if (window.fileList && window.fileList[index]) {
                             const fileInfo = window.fileList[index];
@@ -655,7 +659,7 @@
                             `;
                             fileBlock.appendChild(actions);
                         }
-                        
+
                         // Add the rendered content
                         const contentSection = document.createElement('div');
                         contentSection.className = 'file-content';
@@ -663,7 +667,7 @@
                         contentSection.setAttribute('data-raw-markdown', section);
                         contentSection.innerHTML = marked.parse(section);
                         fileBlock.appendChild(contentSection);
-                        
+
                         contentDiv.appendChild(fileBlock);
                     });
 
@@ -683,13 +687,13 @@
                     document.getElementById('content').innerHTML = `<div style="color: #cf222e;">Error rendering markdown: ${error.message}</div>`;
                 }
             }
-            
+
             // Make functions globally accessible by attaching to window
-            window.deleteFile = async function(fileId) {
+            window.deleteFile = async function (fileId) {
                 if (!confirm(`Are you sure you want to delete "${fileId}"?`)) {
                     return;
                 }
-                
+
                 try {
                     const response = await fetch(`/api/delete${window.location.search}`, {
                         method: 'POST',
@@ -698,9 +702,9 @@
                         },
                         body: JSON.stringify({ fileId: fileId })
                     });
-                    
+
                     const result = await response.json();
-                    
+
                     if (result.success) {
                         console.log('File deleted successfully');
                         // Reload content
@@ -713,18 +717,18 @@
                     alert(`Error deleting file: ${error.message}`);
                 }
             };
-            
-            window.downloadFileAsPDF = async function(fileId, fileName) {
+
+            window.downloadFileAsPDF = async function (fileId, fileName) {
                 try {
                     // Get the individual file content
                     const response = await fetch(`/api/file?fileId=${encodeURIComponent(fileId)}${window.location.search.replace('?', '&')}`);
                     const result = await response.json();
-                    
+
                     if (!result.success) {
                         alert(`Error loading file: ${result.error}`);
                         return;
                     }
-                    
+
                     // Create a temporary window with the rendered content
                     const printWindow = window.open('', '_blank');
                     printWindow.document.write(`
@@ -807,11 +811,11 @@
                     alert(`Error downloading PDF: ${error.message}`);
                 }
             };
-            
-            window.toggleExpand = function(contentId, btnId) {
+
+            window.toggleExpand = function (contentId, btnId) {
                 const content = document.getElementById(contentId);
                 const btn = document.getElementById(btnId);
-                
+
                 if (content.classList.contains('collapsed')) {
                     content.classList.remove('collapsed');
                     btn.textContent = '▼';
@@ -820,8 +824,8 @@
                     btn.textContent = '▶';
                 }
             };
-            
-            window.toggleSticky = async function(fileId) {
+
+            window.toggleSticky = async function (fileId) {
                 try {
                     const response = await fetch(`/api/toggle-sticky${window.location.search}`, {
                         method: 'POST',
@@ -830,9 +834,9 @@
                         },
                         body: JSON.stringify({ fileId: fileId })
                     });
-                    
+
                     const result = await response.json();
-                    
+
                     if (result.success) {
                         console.log('Sticky status toggled successfully');
                         // Reload content to reflect the change
@@ -846,15 +850,15 @@
                 }
             };
 
-            window.toggleMarkdownRaw = function(contentId, btnId) {
+            window.toggleMarkdownRaw = function (contentId, btnId) {
                 const content = document.getElementById(contentId);
                 const btn = document.getElementById(btnId);
-                
+
                 if (!content) return;
-                
+
                 // Check if we're in raw mode
                 const isRawMode = content.classList.contains('raw-mode');
-                
+
                 if (isRawMode) {
                     // Switch back to markdown rendered mode
                     const rawText = content.getAttribute('data-raw-markdown');
@@ -863,7 +867,7 @@
                         content.classList.remove('raw-mode');
                         btn.classList.remove('raw-mode');
                         btn.innerHTML = '📝 Raw';
-                        
+
                         // Re-highlight code blocks
                         if (typeof hljs !== 'undefined') {
                             content.querySelectorAll('pre code').forEach((block) => {
@@ -872,7 +876,7 @@
                                 }
                             });
                         }
-                        
+
                         // Re-render mermaid diagrams
                         renderMermaidDiagrams();
                     }
