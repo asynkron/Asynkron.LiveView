@@ -86,6 +86,7 @@ class UnifiedMarkdownServer:
         self.markdown_dir = self.default_markdown_dir  # Current active directory
         self.port = port
         self.clients: set = set()
+        self.sse_clients: set = set()  # Track SSE clients for chat messages
         self.observer = None
         self.enable_mcp = enable_mcp
         self._mcp_client_capabilities: Dict[str, Any] | None = None
@@ -661,9 +662,53 @@ class UnifiedMarkdownServer:
         except Exception as e:
             logger.error(f"Error notifying clients: {e}")
     
+    async def handle_chat_sse(self, request):
+        """SSE endpoint for chat message subscriptions."""
+        if not self.enable_mcp:
+            return web.json_response({'error': 'MCP not enabled'}, status=503)
+        
+        response = web.StreamResponse(
+            status=200,
+            reason='OK',
+            headers={
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no',  # Disable nginx buffering
+            }
+        )
+        await response.prepare(request)
+        
+        # Add this client to SSE clients
+        self.sse_clients.add(response)
+        logger.info(f"SSE client connected for chat. Total SSE clients: {len(self.sse_clients)}")
+        
+        try:
+            # Send initial connection confirmation
+            await response.write(b'data: {"type":"connected","message":"Successfully subscribed to chat messages"}\n\n')
+            
+            # Keep the connection alive
+            while True:
+                await asyncio.sleep(30)  # Send heartbeat every 30 seconds
+                try:
+                    await response.write(b': heartbeat\n\n')
+                except Exception as e:
+                    logger.debug(f"Failed to send heartbeat, client likely disconnected: {e}")
+                    break
+                    
+        except asyncio.CancelledError:
+            logger.info("SSE connection cancelled")
+        except Exception as e:
+            logger.error(f"SSE error: {e}")
+        finally:
+            self.sse_clients.discard(response)
+            logger.info(f"SSE client disconnected. Total SSE clients: {len(self.sse_clients)}")
+        
+        return response
+    
     async def broadcast_chat_to_mcp(self, message: str):
-        """Broadcast chat message to all connected MCP clients."""
-        # Store the message for polling
+        """Broadcast chat message to all connected MCP clients via SSE."""
+        # Store the message for polling (backward compatibility)
         chat_entry = {
             "type": "chat",
             "message": message,
@@ -677,6 +722,29 @@ class UnifiedMarkdownServer:
         
         logger.info(f"Stored chat message for MCP clients: {message[:50]}...")
         logger.info(f"Total chat messages stored: {len(self.chat_messages)}")
+        
+        # Send via SSE to all connected clients
+        if self.sse_clients:
+            sse_data = json.dumps({
+                "type": "chat",
+                "message": message,
+                "timestamp": chat_entry["timestamp"]
+            })
+            sse_message = f"data: {sse_data}\n\n"
+            
+            disconnected_clients = set()
+            for client in self.sse_clients:
+                try:
+                    await client.write(sse_message.encode('utf-8'))
+                except Exception as e:
+                    logger.warning(f"Failed to send SSE message to client: {e}")
+                    disconnected_clients.add(client)
+            
+            # Remove disconnected clients
+            for client in disconnected_clients:
+                self.sse_clients.discard(client)
+            
+            logger.info(f"Sent chat message via SSE to {len(self.sse_clients)} clients")
     
     def start_file_watcher(self, loop):
         """Start watching the markdown directory for changes."""
@@ -720,6 +788,7 @@ class UnifiedMarkdownServer:
         app.router.add_get('/raw', self.handle_raw_markdown)
         if self.enable_mcp:
             app.router.add_post('/mcp', self.handle_mcp_http)
+            app.router.add_get('/mcp/chat/subscribe', self.handle_chat_sse)
 
         return app
 
