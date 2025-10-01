@@ -268,3 +268,23 @@ async def test_toggle_sticky_endpoint(tmp_path: Path) -> None:
     finally:
         await client.close()
 
+
+@pytest.mark.asyncio
+async def test_sse_chat_subscription(tmp_path: Path) -> None:
+    """Verify that /mcp/chat/subscribe provides SSE stream for chat messages."""
+    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    client = await _create_test_client(server)
+    try:
+        # Start SSE subscription
+        response = await client.get("/mcp/chat/subscribe")
+        assert response.status == 200
+        assert response.headers.get("Content-Type") == "text/event-stream"
+        
+        # Read the initial connection message
+        chunk = await response.content.read(200)
+        assert b"data:" in chunk
+        assert b"connected" in chunk.lower()
+        
+    finally:
+        await client.close()
+
