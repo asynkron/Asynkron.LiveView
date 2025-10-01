@@ -125,6 +125,7 @@ class UnifiedMarkdownServer:
         self._mcp_initialized = False
         self._negotiated_protocol_version: str | int = DEFAULT_NEGOTIATED_VERSION
         self.sticky_files: Dict[str, str] = {}  # Maps directory path to sticky filename
+        self.chat_messages: List[Dict[str, Any]] = []  # Store recent chat messages
         
         # Ensure default markdown directory exists
         self.default_markdown_dir.mkdir(exist_ok=True)
@@ -216,6 +217,29 @@ class UnifiedMarkdownServer:
                     },
                     "required": ["fileId"]
                 }
+            ),
+            Tool(
+                name="subscribe_chat",
+                description="Subscribe to receive chat messages from the UI. After subscribing, use get_chat_messages to poll for new messages.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False
+                }
+            ),
+            Tool(
+                name="get_chat_messages",
+                description="Get recent chat messages from the UI. Returns messages since a given timestamp.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "since": {
+                            "type": "number",
+                            "description": "Unix timestamp - only return messages after this time. If not provided, returns all recent messages."
+                        }
+                    },
+                    "additionalProperties": False
+                }
             )
         ]
 
@@ -298,6 +322,10 @@ class UnifiedMarkdownServer:
                     )
                 elif effective_name == "remove_content":
                     return await self._remove_content(arguments.get("fileId") or arguments.get("filename", ""))
+                elif effective_name == "subscribe_chat":
+                    return await self._subscribe_chat()
+                elif effective_name == "get_chat_messages":
+                    return await self._get_chat_messages(arguments.get("since"))
                 else:
                     raise JSONRPCError(METHOD_NOT_FOUND, f"Unknown tool: {name}")
             except Exception as e:
@@ -460,6 +488,51 @@ class UnifiedMarkdownServer:
         except Exception as e:
             logger.error(f"Error deleting file: {e}")
             raise JSONRPCError(INTERNAL_ERROR, f"Failed to delete file: {e}")
+    
+    async def _subscribe_chat(self) -> CallToolResult:
+        """Subscribe to chat messages from the UI."""
+        return CallToolResult(
+            content=[TextContent(
+                type="text",
+                text="Successfully subscribed to chat messages. Use the 'get_chat_messages' tool to poll for new messages from the UI. Messages are stored with timestamps, so you can track which ones you've already processed."
+            )]
+        )
+    
+    async def _get_chat_messages(self, since: Optional[float] = None) -> CallToolResult:
+        """Get chat messages since a given timestamp."""
+        try:
+            if since is None:
+                # Return all messages
+                messages = self.chat_messages
+            else:
+                # Return only messages after the given timestamp
+                messages = [msg for msg in self.chat_messages if msg['timestamp'] > since]
+            
+            if not messages:
+                return CallToolResult(
+                    content=[TextContent(
+                        type="text",
+                        text="No new chat messages."
+                    )]
+                )
+            
+            # Format messages
+            message_lines = []
+            for msg in messages:
+                timestamp_str = datetime.fromtimestamp(msg['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
+                message_lines.append(f"[{timestamp_str}] {msg['message']}")
+            
+            result_text = f"Found {len(messages)} chat message(s):\n\n" + "\n".join(message_lines)
+            
+            return CallToolResult(
+                content=[TextContent(
+                    type="text",
+                    text=result_text
+                )]
+            )
+        except Exception as e:
+            logger.error(f"Error getting chat messages: {e}")
+            raise JSONRPCError(INTERNAL_ERROR, f"Failed to get chat messages: {e}")
     
     # LiveView server methods (copied and adapted from server.py)
     def resolve_markdown_path(self, path_param: str = None) -> Path:
@@ -664,7 +737,19 @@ Create some `.md` files in your directory and refresh this page!
         
         try:
             async for msg in ws:
-                if msg.type == WSMsgType.ERROR:
+                if msg.type == WSMsgType.TEXT:
+                    try:
+                        data = json.loads(msg.data)
+                        if data.get('type') == 'chat':
+                            # Handle chat message from UI
+                            chat_message = data.get('message', '')
+                            logger.info(f"Received chat message from UI: {chat_message}")
+                            await self.broadcast_chat_to_mcp(chat_message)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Received non-JSON message: {msg.data}")
+                    except Exception as e:
+                        logger.error(f"Error processing WebSocket message: {e}")
+                elif msg.type == WSMsgType.ERROR:
                     logger.error(f'WebSocket error: {ws.exception()}')
                     break
         except Exception as e:
@@ -985,6 +1070,10 @@ Create some `.md` files in your directory and refresh this page!
                     )
                 elif effective_name == "remove_content":
                     result = await self._remove_content(arguments.get("fileId") or arguments.get("filename", ""))
+                elif effective_name == "subscribe_chat":
+                    result = await self._subscribe_chat()
+                elif effective_name == "get_chat_messages":
+                    result = await self._get_chat_messages(arguments.get("since"))
                 else:
                     return jsonrpc_error(METHOD_NOT_FOUND, f"Unknown tool: {tool_name}")
             except JSONRPCError as rpc_error:  # pragma: no cover - defensive while tooling stabilises
@@ -1045,6 +1134,23 @@ Create some `.md` files in your directory and refresh this page!
             
         except Exception as e:
             logger.error(f"Error notifying clients: {e}")
+    
+    async def broadcast_chat_to_mcp(self, message: str):
+        """Broadcast chat message to all connected MCP clients."""
+        # Store the message for polling
+        chat_entry = {
+            "type": "chat",
+            "message": message,
+            "timestamp": time.time()
+        }
+        self.chat_messages.append(chat_entry)
+        
+        # Keep only last 100 messages
+        if len(self.chat_messages) > 100:
+            self.chat_messages = self.chat_messages[-100:]
+        
+        logger.info(f"Stored chat message for MCP clients: {message[:50]}...")
+        logger.info(f"Total chat messages stored: {len(self.chat_messages)}")
     
     def start_file_watcher(self, loop):
         """Start watching the markdown directory for changes."""

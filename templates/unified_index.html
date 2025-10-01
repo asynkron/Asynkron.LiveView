@@ -63,6 +63,68 @@
             color: #58a6ff;
         }
 
+        /* Chat input styles */
+        .chat-container {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .chat-input {
+            flex: 1;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 10px 15px;
+            color: #e0e6ed;
+            font-size: 0.95rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .chat-input:focus {
+            border-color: #58a6ff;
+        }
+
+        .chat-input::placeholder {
+            color: #7d8590;
+        }
+
+        .chat-send-btn {
+            padding: 10px 20px;
+            background: #238636;
+            border: 1px solid #2ea043;
+            border-radius: 6px;
+            color: white;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .chat-send-btn:hover {
+            background: #2ea043;
+            border-color: #3fb950;
+        }
+
+        .chat-send-btn:active {
+            background: #26a641;
+        }
+
+        .chat-send-btn:disabled {
+            background: #21262d;
+            border-color: #30363d;
+            color: #7d8590;
+            cursor: not-allowed;
+        }
+
         #content {
             background: #0d1117;
             padding: 0px;
@@ -892,6 +954,43 @@
                 }
             };
 
+            window.sendChatMessage = function () {
+                const input = document.getElementById('chat-input');
+                const message = input.value.trim();
+                
+                if (!message) {
+                    return;
+                }
+                
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    alert('WebSocket not connected. Cannot send message.');
+                    return;
+                }
+                
+                // Send chat message to server via WebSocket
+                try {
+                    ws.send(JSON.stringify({
+                        type: 'chat',
+                        message: message
+                    }));
+                    
+                    console.log('Sent chat message:', message);
+                    
+                    // Clear input
+                    input.value = '';
+                } catch (error) {
+                    console.error('Error sending chat message:', error);
+                    alert(`Error sending message: ${error.message}`);
+                }
+            };
+
+            window.handleChatKeyPress = function (event) {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    sendChatMessage();
+                }
+            };
+
             // Initialize everything
             waitForLibraries()
                 .then(() => {
@@ -914,6 +1013,19 @@
         <div class="directory-info">
             <strong>📁 Directory:</strong> __CURRENT_DIRECTORY__ | <strong>📄 Files:</strong> Loading... | <strong>🕒
                 Last Updated:</strong> Loading...
+        </div>
+
+        <div class="chat-container">
+            <input 
+                type="text" 
+                id="chat-input" 
+                class="chat-input" 
+                placeholder="💬 Send a message to connected AI agents..."
+                onkeypress="handleChatKeyPress(event)"
+            />
+            <button class="chat-send-btn" onclick="sendChatMessage()">
+                📤 Send
+            </button>
         </div>
 
         <div id="content" class="loading">
