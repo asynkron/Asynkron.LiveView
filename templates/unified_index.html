@@ -17,6 +17,9 @@
     <style>
         :root {
             color-scheme: dark;
+            --sidebar-width: 320px;
+            --sidebar-min-width: 220px;
+            --sidebar-max-width: 520px;
         }
 
         .cluster rect {
@@ -44,15 +47,19 @@
 
         .app-shell {
             display: grid;
-            grid-template-columns: minmax(0, 3fr) 280px;
-            gap: 0px;
-            padding: 0px;
+            grid-template-columns: minmax(0, 1fr) 10px minmax(var(--sidebar-min-width), var(--sidebar-width));
+            gap: 0;
+            padding: 0;
             min-height: 100vh;
         }
 
         @media (max-width: 980px) {
             .app-shell {
                 grid-template-columns: 1fr;
+            }
+
+            .splitter {
+                display: none;
             }
 
             .sidebar {
@@ -253,6 +260,28 @@
             background: rgba(88, 166, 255, 0.2);
         }
 
+        .splitter {
+            cursor: col-resize;
+            background: #21262d;
+            position: relative;
+        }
+
+        .splitter::after {
+            content: '';
+            position: absolute;
+            top: 20px;
+            bottom: 20px;
+            left: 50%;
+            width: 2px;
+            transform: translateX(-50%);
+            background: #30363d;
+            border-radius: 1px;
+        }
+
+        .splitter.dragging::after {
+            background: #58a6ff;
+        }
+
         .sidebar {
             display: flex;
             flex-direction: column;
@@ -261,7 +290,8 @@
             border-radius: 0;
             padding: 20px;
             gap: 8px;
-            max-height: calc(100vh - 48px);
+            min-height: 0;
+            overflow: hidden;
         }
 
         .sidebar-header {
@@ -294,12 +324,73 @@
             padding: 0;
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 4px;
             overflow-y: auto;
         }
 
-        .file-list li {
+        .file-list ul {
+            list-style: none;
+            margin: 4px 0 0;
+            padding-left: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .tree-node {
             margin: 0;
+        }
+
+        .tree-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 6px;
+            border-radius: 6px;
+        }
+
+        .tree-row:hover {
+            background: #1f242e;
+        }
+
+        .tree-toggle {
+            width: 18px;
+            height: 18px;
+            border: none;
+            background: none;
+            color: inherit;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .tree-toggle:focus-visible,
+        .tree-label:focus-visible,
+        .file-button:focus-visible {
+            outline: 2px solid #58a6ff;
+            outline-offset: 1px;
+        }
+
+        .tree-label {
+            flex: 1;
+            background: none;
+            border: none;
+            color: inherit;
+            text-align: left;
+            cursor: pointer;
+            padding: 6px 8px;
+            border-radius: 6px;
+            font: inherit;
+        }
+
+        .directory-label {
+            font-weight: 600;
+        }
+
+        .tree-children.collapsed {
+            display: none;
         }
 
         .file-button {
@@ -308,7 +399,7 @@
             border: 1px solid transparent;
             border-radius: 8px;
             color: inherit;
-            padding: 10px 12px;
+            padding: 8px 12px;
             text-align: left;
             cursor: pointer;
             transition: border 0.2s ease, background 0.2s ease;
@@ -321,6 +412,7 @@
         .file-button.active {
             background: #238636;
             border-color: #2ea043;
+            color: #fff;
         }
 
         .empty-state {
@@ -360,12 +452,14 @@
             <div id="content" class="content-area"></div>
             <div id="editor-container" class="editor-container"></div>
         </section>
+        <div id="splitter" class="splitter" role="separator" aria-orientation="vertical" tabindex="0"
+            aria-label="Resize sidebar"></div>
         <aside class="sidebar">
             <div class="sidebar-header">
                 <h2>Directory</h2>
                 <span id="connection-indicator" class="connection-indicator" title="WebSocket status"></span>
             </div>
-            <ul id="file-list" class="file-list"></ul>
+            <ul id="file-list" class="file-list" role="tree"></ul>
         </aside>
     </div>
 
@@ -424,9 +518,17 @@
             const cancelButton = document.getElementById('cancel-button');
             const editorContainer = document.getElementById('editor-container');
             const indicator = document.getElementById('connection-indicator');
+            const splitter = document.getElementById('splitter');
+            const sidebar = document.querySelector('.sidebar');
 
+            const initialIndex = normaliseFileIndex({
+                filesValue: state.files,
+                treeValue: state.fileTree,
+            });
             let currentFile = state.selectedFile || null;
-            let files = Array.isArray(state.files) ? state.files : [];
+            let files = initialIndex.files;
+            let fileTree = initialIndex.tree;
+            let sidebarWidth = clampSidebarWidth(loadStoredSidebarWidth());
             let websocket = null;
             let reconnectTimer = null;
             let isEditing = false;
@@ -460,6 +562,224 @@
             const relativeLinkDummyOrigin = 'http://__dummy__/';
             const relativeLinkSchemePattern = /^[a-zA-Z][\w+.-]*:/;
             const relativeLinkProtocolRelativePattern = /^\/\//;
+            const SIDEBAR_WIDTH_KEY = 'liveview.sidebarWidth';
+            const SIDEBAR_MIN_WIDTH = 220;
+            const SIDEBAR_MAX_WIDTH = 520;
+            const expandedDirectories = new Set();
+            const knownDirectories = new Set();
+
+            function normaliseFileIndex({ filesValue, treeValue }) {
+                let flat = [];
+                let tree = [];
+
+                if (Array.isArray(filesValue)) {
+                    flat = filesValue;
+                } else if (filesValue && Array.isArray(filesValue.files)) {
+                    flat = filesValue.files;
+                    if (Array.isArray(filesValue.tree)) {
+                        tree = filesValue.tree;
+                    }
+                }
+
+                if (!tree.length && Array.isArray(treeValue)) {
+                    tree = treeValue;
+                }
+
+                if (tree.length && !flat.length) {
+                    flat = flattenTree(tree);
+                }
+
+                if (!tree.length && flat.length) {
+                    tree = buildTreeFromFlatList(flat);
+                }
+
+                return { files: flat, tree };
+            }
+
+            function flattenTree(nodes) {
+                const result = [];
+                if (!Array.isArray(nodes)) {
+                    return result;
+                }
+
+                const stack = [...nodes];
+                while (stack.length) {
+                    const node = stack.shift();
+                    if (!node || typeof node !== 'object') {
+                        continue;
+                    }
+
+                    if (node.type === 'file') {
+                        result.push({
+                            name: node.name,
+                            relativePath: node.relativePath,
+                            size: node.size,
+                            updated: node.updated,
+                        });
+                        continue;
+                    }
+
+                    if (node.type === 'directory' && Array.isArray(node.children)) {
+                        stack.unshift(...node.children);
+                    }
+                }
+
+                return result;
+            }
+
+            function buildTreeFromFlatList(flatList) {
+                if (!Array.isArray(flatList) || !flatList.length) {
+                    return [];
+                }
+
+                const root = [];
+                const directoryMap = new Map();
+                directoryMap.set('', root);
+
+                function ensureDirectory(path, name) {
+                    if (directoryMap.has(path)) {
+                        return directoryMap.get(path);
+                    }
+
+                    const parentPath = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+                    const parentChildren = directoryMap.get(parentPath) || root;
+                    const node = {
+                        type: 'directory',
+                        name,
+                        relativePath: path,
+                        children: [],
+                    };
+                    parentChildren.push(node);
+                    directoryMap.set(path, node.children);
+                    return node.children;
+                }
+
+                flatList.forEach((file) => {
+                    if (!file || typeof file.relativePath !== 'string') {
+                        return;
+                    }
+
+                    const segments = file.relativePath.split('/');
+                    const fileName = segments.pop();
+                    let currentPath = '';
+                    segments.forEach((segment) => {
+                        if (!segment) {
+                            return;
+                        }
+                        currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+                        ensureDirectory(currentPath, segment);
+                    });
+
+                    const parentPath = segments.join('/');
+                    const parentChildren = directoryMap.get(parentPath) || root;
+                    parentChildren.push({
+                        type: 'file',
+                        name: fileName,
+                        relativePath: file.relativePath,
+                        size: file.size,
+                        updated: file.updated,
+                    });
+                });
+
+                sortTree(root);
+                return root;
+            }
+
+            function sortTree(nodes) {
+                if (!Array.isArray(nodes)) {
+                    return;
+                }
+                nodes.sort((a, b) => {
+                    if (a.type === b.type) {
+                        return String(a.name || '').localeCompare(String(b.name || ''));
+                    }
+                    return a.type === 'directory' ? -1 : 1;
+                });
+                nodes.forEach((node) => {
+                    if (node.type === 'directory') {
+                        sortTree(node.children);
+                    }
+                });
+            }
+
+            function loadStoredSidebarWidth() {
+                try {
+                    const storedValue = parseFloat(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
+                    return Number.isFinite(storedValue) ? storedValue : NaN;
+                } catch (error) {
+                    return NaN;
+                }
+            }
+
+            function persistSidebarWidth(width) {
+                try {
+                    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+                } catch (error) {
+                    return;
+                }
+            }
+
+            function clampSidebarWidth(width) {
+                if (!Number.isFinite(width)) {
+                    const computed = parseFloat(
+                        getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')
+                    );
+                    width = Number.isFinite(computed) ? computed : 320;
+                }
+                return Math.min(Math.max(width, SIDEBAR_MIN_WIDTH), SIDEBAR_MAX_WIDTH);
+            }
+
+            function applySidebarWidth(width) {
+                const clamped = clampSidebarWidth(width);
+                document.documentElement.style.setProperty('--sidebar-width', `${clamped}px`);
+                return clamped;
+            }
+
+            function initialiseSplitView() {
+                if (!splitter || !sidebar) {
+                    return;
+                }
+
+                sidebarWidth = applySidebarWidth(sidebarWidth);
+
+                splitter.addEventListener('pointerdown', (event) => {
+                    if (window.matchMedia('(max-width: 980px)').matches) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    splitter.classList.add('dragging');
+                    const startX = event.clientX;
+                    const startWidth = sidebar.getBoundingClientRect().width;
+
+                    const handleMove = (moveEvent) => {
+                        const delta = startX - moveEvent.clientX;
+                        sidebarWidth = applySidebarWidth(startWidth + delta);
+                    };
+
+                    const handleStop = () => {
+                        splitter.classList.remove('dragging');
+                        document.removeEventListener('pointermove', handleMove);
+                        document.removeEventListener('pointerup', handleStop);
+                        persistSidebarWidth(sidebarWidth);
+                    };
+
+                    document.addEventListener('pointermove', handleMove);
+                    document.addEventListener('pointerup', handleStop);
+                });
+
+                splitter.addEventListener('keydown', (event) => {
+                    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    const step = event.shiftKey ? 48 : 16;
+                    const direction = event.key === 'ArrowLeft' ? 1 : -1;
+                    sidebarWidth = applySidebarWidth(sidebarWidth + direction * step);
+                    persistSidebarWidth(sidebarWidth);
+                });
+            }
 
             function updateRelativeLinkBase(filePath) {
                 if (typeof filePath !== 'string' || filePath.length === 0) {
@@ -1415,7 +1735,12 @@
             }
             function renderFileList() {
                 fileList.innerHTML = '';
-                if (!files.length) {
+
+                const treeToRender = Array.isArray(fileTree) && fileTree.length
+                    ? fileTree
+                    : buildTreeFromFlatList(files);
+
+                if (!treeToRender.length) {
                     const empty = document.createElement('li');
                     empty.className = 'empty-state';
                     empty.textContent = 'No markdown files yet';
@@ -1423,23 +1748,125 @@
                     return;
                 }
 
-                files.forEach((file) => {
-                    const item = document.createElement('li');
-                    const button = document.createElement('button');
-                    button.className = 'file-button';
-                    button.textContent = file.name;
-                    button.dataset.file = file.relativePath;
-                    if (file.relativePath === currentFile) {
-                        button.classList.add('active');
-                    }
-                    button.addEventListener('click', () => {
-                        if (file.relativePath !== currentFile) {
-                            selectFile(file.relativePath);
-                        }
-                    });
-                    item.appendChild(button);
-                    fileList.appendChild(item);
+                ensureExpandedForCurrentFile(currentFile);
+
+                const visited = new Set();
+                const fragment = document.createDocumentFragment();
+                treeToRender.forEach((node) => {
+                    fragment.appendChild(renderTreeNode(node, 0, visited));
                 });
+                fileList.appendChild(fragment);
+
+                const stale = [];
+                expandedDirectories.forEach((value) => {
+                    if (!visited.has(value)) {
+                        stale.push(value);
+                    }
+                });
+                stale.forEach((value) => expandedDirectories.delete(value));
+
+                knownDirectories.clear();
+                visited.forEach((value) => knownDirectories.add(value));
+
+                updateActiveFileHighlight();
+            }
+
+            function renderTreeNode(node, depth, visited) {
+                const item = document.createElement('li');
+                item.className = `tree-node ${node.type === 'directory' ? 'directory-node' : 'file-node'}`;
+
+                if (node.type === 'directory') {
+                    const pathKey = typeof node.relativePath === 'string' ? node.relativePath : '';
+                    visited.add(pathKey);
+
+                    if (!knownDirectories.has(pathKey) && !expandedDirectories.has(pathKey)) {
+                        expandedDirectories.add(pathKey);
+                    }
+
+                    const row = document.createElement('div');
+                    row.className = 'tree-row directory-row';
+                    row.style.paddingLeft = `${depth * 16}px`;
+
+                    const isExpanded = expandedDirectories.has(pathKey);
+                    const toggle = document.createElement('button');
+                    toggle.type = 'button';
+                    toggle.className = 'tree-toggle';
+                    toggle.setAttribute('aria-expanded', String(isExpanded));
+                    toggle.setAttribute('aria-label', `${isExpanded ? 'Collapse' : 'Expand'} ${node.name}`);
+                    toggle.textContent = isExpanded ? '▾' : '▸';
+                    toggle.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        toggleDirectory(pathKey);
+                    });
+
+                    const label = document.createElement('button');
+                    label.type = 'button';
+                    label.className = 'tree-label directory-label';
+                    label.textContent = node.name;
+                    label.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        toggleDirectory(pathKey);
+                    });
+
+                    row.appendChild(toggle);
+                    row.appendChild(label);
+                    item.appendChild(row);
+
+                    const childrenList = document.createElement('ul');
+                    childrenList.className = 'tree-children';
+                    if (!isExpanded) {
+                        childrenList.classList.add('collapsed');
+                    }
+                    const children = Array.isArray(node.children) ? node.children : [];
+                    children.forEach((child) => {
+                        childrenList.appendChild(renderTreeNode(child, depth + 1, visited));
+                    });
+                    item.appendChild(childrenList);
+                    return item;
+                }
+
+                const button = document.createElement('button');
+                button.className = 'file-button';
+                button.type = 'button';
+                button.textContent = node.name;
+                button.dataset.file = node.relativePath;
+                button.style.paddingLeft = `${depth * 16 + 24}px`;
+                button.addEventListener('click', () => {
+                    if (node.relativePath !== currentFile) {
+                        selectFile(node.relativePath);
+                    }
+                });
+                item.appendChild(button);
+                return item;
+            }
+
+            function ensureExpandedForCurrentFile(filePath) {
+                if (typeof filePath !== 'string' || !filePath.includes('/')) {
+                    return;
+                }
+                const parts = filePath.split('/');
+                parts.pop();
+                let prefix = '';
+                parts.forEach((segment) => {
+                    if (!segment) {
+                        return;
+                    }
+                    prefix = prefix ? `${prefix}/${segment}` : segment;
+                    expandedDirectories.add(prefix);
+                });
+            }
+
+            function toggleDirectory(pathKey) {
+                if (!pathKey && pathKey !== '') {
+                    return;
+                }
+                if (expandedDirectories.has(pathKey)) {
+                    expandedDirectories.delete(pathKey);
+                } else {
+                    expandedDirectories.add(pathKey);
+                }
+                renderFileList();
             }
 
             function updateActiveFileHighlight() {
@@ -1461,7 +1888,9 @@
                 const url = `/api/files${buildQuery({})}`;
                 const data = await fetchJson(url);
                 resolvedRootPath = data.rootPath || resolvedRootPath;
-                files = data.files || [];
+                const updatedIndex = normaliseFileIndex({ filesValue: data.files, treeValue: data.tree });
+                files = updatedIndex.files;
+                fileTree = updatedIndex.tree;
                 renderFileList();
                 if (!files.find((entry) => entry.relativePath === currentFile)) {
                     currentFile = files.length ? files[0].relativePath : null;
@@ -1633,7 +2062,12 @@
                         const payload = JSON.parse(event.data);
                         if (payload.type === 'directory_update') {
                             resolvedRootPath = payload.path || resolvedRootPath;
-                            files = payload.files || [];
+                            const updatedIndex = normaliseFileIndex({
+                                filesValue: payload.files,
+                                treeValue: payload.tree,
+                            });
+                            files = updatedIndex.files;
+                            fileTree = updatedIndex.tree;
                             renderFileList();
                             if (!files.find((entry) => entry.relativePath === currentFile)) {
                                 currentFile = files.length ? files[0].relativePath : null;
@@ -1685,6 +2119,7 @@
 
             function initialise() {
                 const initialFallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
+                initialiseSplitView();
                 renderMarkdown(state.content || initialFallback, { updateCurrent: true });
                 renderFileList();
                 updateHeader();

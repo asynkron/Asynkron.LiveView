@@ -118,7 +118,9 @@ class UnifiedMarkdownServer:
         file_param = request.rel_url.query.get("file")
 
         root, original_path_argument = self.resolve_root(path_param)
-        files = self.file_manager.list_markdown_files(root)
+        index = self.file_manager.build_markdown_index(root)
+        files = index["files"]
+        file_tree = index["tree"]
         selected_file = None
         error_message = None
 
@@ -141,6 +143,7 @@ class UnifiedMarkdownServer:
             "rootPath": str(root),
             "pathArgument": original_path_argument,
             "files": files,
+            "fileTree": file_tree,
             "selectedFile": selected_file,
             "content": content,
             "error": error_message,
@@ -154,13 +157,16 @@ class UnifiedMarkdownServer:
     async def handle_list_files(self, request: web.Request) -> web.Response:
         path_param = request.rel_url.query.get("path")
         root, original = self.resolve_root(path_param)
-        files = self.file_manager.list_markdown_files(root)
+        index = self.file_manager.build_markdown_index(root)
+        files = index["files"]
+        tree = index["tree"]
 
         return web.json_response(
             {
                 "rootPath": str(root),
                 "pathArgument": original,
                 "files": files,
+                "tree": tree,
             }
         )
 
@@ -286,8 +292,15 @@ class UnifiedMarkdownServer:
         self.clients[ws] = str(root)
         await self._ensure_watcher(root)
 
-        files = self.file_manager.list_markdown_files(root)
-        await ws.send_json({"type": "directory_update", "path": str(root), "files": files})
+        index = self.file_manager.build_markdown_index(root)
+        await ws.send_json(
+            {
+                "type": "directory_update",
+                "path": str(root),
+                "files": index["files"],
+                "tree": index["tree"],
+            }
+        )
 
     async def handle_filesystem_event(self, root: Path, kind: str, relative: Optional[str]) -> None:
         if kind in {"created", "deleted", "moved"}:
@@ -296,8 +309,16 @@ class UnifiedMarkdownServer:
             await self.notify_file_changed(root, relative)
 
     async def notify_directory_update(self, root: Path) -> None:
-        files = self.file_manager.list_markdown_files(root)
-        await self._broadcast(root, {"type": "directory_update", "path": str(root), "files": files})
+        index = self.file_manager.build_markdown_index(root)
+        await self._broadcast(
+            root,
+            {
+                "type": "directory_update",
+                "path": str(root),
+                "files": index["files"],
+                "tree": index["tree"],
+            },
+        )
 
     async def notify_file_changed(self, root: Path, relative: str) -> None:
         await self._broadcast(root, {"type": "file_changed", "path": str(root), "file": relative})
@@ -330,7 +351,7 @@ class UnifiedMarkdownServer:
 
         handler = MarkdownDirectoryEventHandler(self, resolved)
         observer = Observer()
-        observer.schedule(handler, str(resolved), recursive=False)
+        observer.schedule(handler, str(resolved), recursive=True)
         observer.start()
         self.watchers[resolved] = observer
 

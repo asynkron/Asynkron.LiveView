@@ -13,41 +13,103 @@ class FileManager:
     """Lightweight wrapper around the filesystem for markdown operations."""
 
     def list_markdown_files(self, root: Path) -> List[Dict[str, Any]]:
-        """Return metadata for every ``*.md`` file directly under ``root``.
+        """Return metadata for every markdown file under ``root``.
 
-        The UI currently only needs the file name, its relative location and a
-        couple of timestamps for display purposes.  We therefore expose just the
-        pieces that the frontend consumes instead of mirroring the full
-        :class:`os.stat_result`.
+        Historically the UI only presented the top-level files.  The recursive
+        tree view introduced for the sidebar still needs a flat collection for
+        tasks such as determining the "first" document.  To keep that logic
+        simple we maintain this helper as a thin wrapper around the richer index
+        builder.
         """
 
+        return self.build_markdown_index(root)["files"]
+
+    def build_markdown_index(self, root: Path) -> Dict[str, Any]:
+        """Return both a recursive tree and a flat list for ``root``.
+
+        The tree keeps directories so the frontend can render an expandable
+        browser, while the flat list retains the existing API contract for
+        callers that only care about files.  Both structures share the same
+        metadata to avoid inconsistencies.
+        """
+
+        tree = self._build_directory_tree(root, root)
         files: List[Dict[str, Any]] = []
-        if not root.exists():
-            return files
+
+        def collect(nodes: List[Dict[str, Any]]) -> None:
+            for node in nodes:
+                if node.get("type") == "file":
+                    files.append(
+                        {
+                            "name": node["name"],
+                            "relativePath": node["relativePath"],
+                            "size": node["size"],
+                            "updated": node["updated"],
+                        }
+                    )
+                elif node.get("type") == "directory":
+                    collect(node.get("children", []))
+
+        collect(tree)
+        return {"tree": tree, "files": files}
+
+    def _build_directory_tree(self, root: Path, current: Path) -> List[Dict[str, Any]]:
+        """Recursively build a directory tree rooted at ``current``."""
+
+        nodes: List[Dict[str, Any]] = []
+        if not current.exists():
+            return nodes
 
         try:
-            for entry in sorted(root.glob("*.md")):
-                try:
-                    stat = entry.stat()
-                except FileNotFoundError:
-                    # The file may disappear between ``glob`` and ``stat`` when
-                    # tests manipulate the directory quickly.  Skip those cases
-                    # silently because the watcher will produce a fresh snapshot
-                    # on the next tick.
-                    continue
+            entries = sorted(
+                current.iterdir(),
+                key=lambda entry: (entry.is_file(), entry.name.lower()),
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Failed to list directory %s: %s", current, exc)
+            return nodes
 
-                files.append(
+        for entry in entries:
+            relative = entry.relative_to(root).as_posix()
+            if entry.is_dir():
+                children = self._build_directory_tree(root, entry)
+                if not children:
+                    # Skip directories that do not contain markdown files so we
+                    # avoid showing empty containers in the UI.
+                    continue
+                nodes.append(
                     {
+                        "type": "directory",
                         "name": entry.name,
-                        "relativePath": entry.name,
-                        "size": stat.st_size,
-                        "updated": stat.st_mtime,
+                        "relativePath": relative,
+                        "children": children,
                     }
                 )
-        except Exception as exc:  # pragma: no cover - defensive logging
-            logger.error("Failed to list markdown files in %s: %s", root, exc)
+                continue
 
-        return files
+            if entry.suffix.lower() != ".md" or not entry.is_file():
+                continue
+
+            try:
+                stat = entry.stat()
+            except FileNotFoundError:
+                # The file may disappear between ``iterdir`` and ``stat`` when
+                # tests manipulate the directory quickly.  Skip those cases
+                # silently because the watcher will produce a fresh snapshot on
+                # the next tick.
+                continue
+
+            nodes.append(
+                {
+                    "type": "file",
+                    "name": entry.name,
+                    "relativePath": relative,
+                    "size": stat.st_size,
+                    "updated": stat.st_mtime,
+                }
+            )
+
+        return nodes
 
     def read_markdown(self, root: Path, relative_path: str) -> str:
         """Return the markdown contents for ``relative_path`` under ``root``."""
