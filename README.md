@@ -502,7 +502,7 @@ Asynkron.LiveView/
 - `aiohttp`: Async HTTP server and WebSocket support
 - `websockets`: WebSocket protocol implementation  
 - `watchdog`: File system monitoring
-- `mcp`: Model Context Protocol for AI integration (**NEW**)
+- `fastmcp`: Fast, Pythonic Model Context Protocol implementation for AI integration (**NEW**)
 
 All dependencies are automatically installed by the setup scripts.
 

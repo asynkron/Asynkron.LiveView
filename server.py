@@ -18,8 +18,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 # Import MCP classes and functionality
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
+from fastmcp import FastMCP
 from mcp.types import (
     CallToolRequest,
     ListToolsRequest,
@@ -103,11 +102,15 @@ class UnifiedMarkdownServer:
         self.request_handlers = RequestHandlers(self.default_markdown_dir)
         self.mcp_tools = MCPTools(self.default_markdown_dir, self.file_manager, self.chat_messages)
         
-        # Initialize MCP server if enabled
+        # Initialize FastMCP server if enabled
         if self.enable_mcp:
-            self.mcp_server = Server("markdown-liveview")
+            self.mcp_server = FastMCP(
+                name="markdown-liveview",
+                version="1.0.0",
+                instructions="MCP server for managing markdown files in the live view system"
+            )
             self._register_mcp_tools()
-            logger.info(f"MCP Server initialized for directory: {self.default_markdown_dir}")
+            logger.info(f"FastMCP Server initialized for directory: {self.default_markdown_dir}")
 
     def _build_tool_definitions(self):
         """Return the shared MCP tool definitions."""
@@ -126,25 +129,22 @@ class UnifiedMarkdownServer:
         self._negotiated_protocol_version = protocol_version
         self._mcp_initialized = False
 
-        init_options = self.mcp_server.create_initialization_options()
+        # FastMCP initialization response
         server_info: Dict[str, Any] = {
-            "name": init_options.server_name,
-            "version": init_options.server_version,
+            "name": self.mcp_server.name,
+            "version": "1.0.0",
         }
-
-        if init_options.website_url:
-            server_info["websiteUrl"] = init_options.website_url
-        if init_options.icons:
-            server_info["icons"] = [icon.model_dump(exclude_none=True) for icon in init_options.icons]
 
         init_result: Dict[str, Any] = {
             "protocolVersion": protocol_version,
-            "capabilities": init_options.capabilities.model_dump(exclude_none=True),
+            "capabilities": {
+                "tools": {}
+            },
             "serverInfo": server_info,
         }
 
-        if init_options.instructions:
-            init_result["instructions"] = init_options.instructions
+        if self.mcp_server.instructions:
+            init_result["instructions"] = self.mcp_server.instructions
 
         logger.info(
             "MCP initialize handshake (protocol=%s, client caps present=%s)",
@@ -155,43 +155,64 @@ class UnifiedMarkdownServer:
         return init_result
 
     def _register_mcp_tools(self):
-        """Register all available MCP tools."""
-
-        @self.mcp_server.list_tools()
-        async def list_tools() -> ListToolsResult:
-            """List all available tools."""
-            return ListToolsResult(tools=self._build_tool_definitions())
+        """Register all available MCP tools with FastMCP."""
         
-        @self.mcp_server.call_tool()
-        async def call_tool(name: str, arguments: Dict[str, Any]):
-            """Handle tool calls."""
-            try:
-                if name == "show_content":
-                    return await self.mcp_tools.show_content(
-                        arguments.get("content", ""),
-                        arguments.get("title")
-                    )
-                elif name == "list_content":
-                    return await self.mcp_tools.list_content()
-                elif name == "view_content":
-                    return await self.mcp_tools.view_content(arguments.get("fileId") or arguments.get("filename", ""))
-                elif name == "update_content":
-                    return await self.mcp_tools.update_content(
-                        arguments.get("fileId") or arguments.get("filename", ""),
-                        arguments.get("content", ""),
-                        arguments.get("mode", "append")
-                    )
-                elif name == "remove_content":
-                    return await self.mcp_tools.remove_content(arguments.get("fileId") or arguments.get("filename", ""))
-                elif name == "subscribe_chat":
-                    return await self.mcp_tools.subscribe_chat()
-                elif name == "get_chat_messages":
-                    return await self.mcp_tools.get_chat_messages(arguments.get("since"))
-                else:
-                    raise JSONRPCError(METHOD_NOT_FOUND, f"Unknown tool: {name}")
-            except Exception as e:
-                logger.error(f"Error in tool call {name}: {e}")
-                raise JSONRPCError(INTERNAL_ERROR, f"Tool execution failed: {e}")
+        @self.mcp_server.tool()
+        async def show_content(content: str, title: str = None) -> str:
+            """Create new markdown content that appears in the live view."""
+            result = await self.mcp_tools.show_content(content, title)
+            # Extract text from CallToolResult
+            if result.content and len(result.content) > 0:
+                return result.content[0].text
+            return "Content created"
+        
+        @self.mcp_server.tool()
+        async def list_content() -> str:
+            """List every markdown entry managed by the server."""
+            result = await self.mcp_tools.list_content()
+            if result.content and len(result.content) > 0:
+                return result.content[0].text
+            return "No content"
+        
+        @self.mcp_server.tool()
+        async def view_content(fileId: str) -> str:
+            """Read markdown content using a File Id."""
+            result = await self.mcp_tools.view_content(fileId)
+            if result.content and len(result.content) > 0:
+                return result.content[0].text
+            return "Content not found"
+        
+        @self.mcp_server.tool()
+        async def update_content(fileId: str, content: str, mode: str = "append") -> str:
+            """Append to or replace existing markdown content."""
+            result = await self.mcp_tools.update_content(fileId, content, mode)
+            if result.content and len(result.content) > 0:
+                return result.content[0].text
+            return "Content updated"
+        
+        @self.mcp_server.tool()
+        async def remove_content(fileId: str) -> str:
+            """Delete markdown content using its File Id."""
+            result = await self.mcp_tools.remove_content(fileId)
+            if result.content and len(result.content) > 0:
+                return result.content[0].text
+            return "Content removed"
+        
+        @self.mcp_server.tool()
+        async def subscribe_chat() -> str:
+            """Subscribe to receive chat messages from the UI."""
+            result = await self.mcp_tools.subscribe_chat()
+            if result.content and len(result.content) > 0:
+                return result.content[0].text
+            return "Subscribed to chat"
+        
+        @self.mcp_server.tool()
+        async def get_chat_messages(since: float = None) -> str:
+            """Get recent chat messages from the UI."""
+            result = await self.mcp_tools.get_chat_messages(since)
+            if result.content and len(result.content) > 0:
+                return result.content[0].text
+            return "No messages"
 
     def _sanitize_file_id(self, file_id: str) -> str:
         """Ensure the provided File Id maps to a safe filename."""
@@ -461,19 +482,20 @@ class UnifiedMarkdownServer:
         if not self.enable_mcp:
             return web.json_response({'error': 'MCP not enabled'}, status=503)
         
-        # Return server information and available tools
+        # Return server information and available tools (using FastMCP)
         tools = self._build_tool_definitions()
-        init_options = self.mcp_server.create_initialization_options()
         
         return web.json_response({
             'protocol': 'MCP (Model Context Protocol)',
-            'version': init_options.server_version,
-            'name': init_options.server_name,
-            'description': 'MCP server for managing markdown files in the live view system',
+            'version': '1.0.0',
+            'name': self.mcp_server.name,
+            'description': 'FastMCP server for managing markdown files in the live view system',
             'transport': 'JSON-RPC 2.0 over HTTP',
             'endpoint': '/mcp',
             'methods': ['POST'],
-            'capabilities': init_options.capabilities.model_dump(exclude_none=True),
+            'capabilities': {
+                'tools': {}
+            },
             'tools': [
                 {
                     'name': tool.name,
@@ -599,29 +621,22 @@ class UnifiedMarkdownServer:
                 return jsonrpc_error(INVALID_PARAMS, "Tool arguments must be an object")
 
             try:
-                if tool_name == "show_content":
-                    result = await self.mcp_tools.show_content(
-                        arguments.get("content", ""),
-                        arguments.get("title")
-                    )
-                elif tool_name == "list_content":
-                    result = await self.mcp_tools.list_content()
-                elif tool_name == "view_content":
-                    result = await self.mcp_tools.view_content(arguments.get("fileId") or arguments.get("filename", ""))
-                elif tool_name == "update_content":
-                    result = await self.mcp_tools.update_content(
-                        arguments.get("fileId") or arguments.get("filename", ""),
-                        arguments.get("content", ""),
-                        arguments.get("mode", "append")
-                    )
-                elif tool_name == "remove_content":
-                    result = await self.mcp_tools.remove_content(arguments.get("fileId") or arguments.get("filename", ""))
-                elif tool_name == "subscribe_chat":
-                    result = await self.mcp_tools.subscribe_chat()
-                elif tool_name == "get_chat_messages":
-                    result = await self.mcp_tools.get_chat_messages(arguments.get("since"))
-                else:
+                # Get FastMCP tools and execute
+                fastmcp_tools = await self.mcp_server.get_tools()
+                
+                if tool_name not in fastmcp_tools:
                     return jsonrpc_error(METHOD_NOT_FOUND, f"Unknown tool: {tool_name}")
+                
+                tool = fastmcp_tools[tool_name]
+                tool_result = await tool.run(arguments)
+                
+                # Convert FastMCP ToolResult to MCP CallToolResult format
+                content_list, metadata = tool_result.to_mcp_result()
+                from mcp.types import CallToolResult
+                result = CallToolResult(
+                    content=content_list,
+                    isError=False
+                )
             except Exception as exc:
                 if hasattr(exc, 'model_dump'):
                     logger.error(f"MCP tool returned JSONRPCError: {exc}")
@@ -784,14 +799,13 @@ class UnifiedMarkdownServer:
             logger.info("File watcher stopped")
     
     async def run_mcp_stdio(self):
-        """Run the MCP server using stdio (for AI assistant integration)."""
+        """Run the FastMCP server using stdio (for AI assistant integration)."""
         if not self.enable_mcp:
             logger.warning("MCP not enabled, skipping stdio server")
             return
         
-        logger.info("Starting MCP stdio server...")
-        async with stdio_server() as streams:
-            await self.mcp_server.run(streams[0], streams[1], self.mcp_server.create_initialization_options())
+        logger.info("Starting FastMCP stdio server...")
+        await self.mcp_server.run_stdio_async()
     
     def create_app(self) -> web.Application:
         """Create the aiohttp application with all registered routes."""
