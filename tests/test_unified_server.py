@@ -3,10 +3,12 @@
 from pathlib import Path
 from typing import Optional
 import sys
+import json
 
 # Ensure the project root is importable when tests run from the repository root.
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+import httpx
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -25,8 +27,17 @@ async def _create_test_client(server: UnifiedMarkdownServer) -> TestClient:
 def _extract_file_id(response_text: str) -> Optional[str]:
     """Helper that pulls the generated File Id out of an MCP response."""
     for line in response_text.splitlines():
-        if line.lower().startswith("file id:"):
-            return line.split(":", 1)[1].strip()
+        lower_line = line.lower()
+        marker = "file id:"
+        if marker in lower_line:
+            idx = lower_line.index(marker) + len(marker)
+            remainder = line[idx:].strip()
+            if not remainder:
+                continue
+            # Remove any trailing metadata such as titles wrapped in parentheses.
+            candidate = remainder.split("(", 1)[0].strip()
+            if candidate:
+                return candidate
     return None
 
 
@@ -54,48 +65,58 @@ async def test_mcp_http_endpoints(tmp_path: Path) -> None:
     """Ensure the MCP-over-HTTP endpoint lists tools and creates content."""
     server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
 
-    client = await _create_test_client(server)
-    try:
-        # Ask the MCP bridge for the available tools.
-        tools_request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list",
-            "params": {},
-        }
-        response = await client.post("/mcp", json=tools_request)
-        assert response.status == 200
+    # Interact with the FastMCP Starlette app directly via httpx's ASGI transport.
+    mcp_app = server.mcp_http_app
+    lifespan = mcp_app.router.lifespan_context(mcp_app)
+    async with lifespan:
+        transport = httpx.ASGITransport(app=mcp_app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as mcp_client:
+            # Ask the MCP bridge for the available tools.
+            tools_request = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {},
+            }
+            response = await mcp_client.post(
+                "/mcp",
+                json=tools_request,
+                headers={"accept": "application/json, text/event-stream"},
+            )
+            assert response.status_code == 200
 
-        payload = await response.json()
-        tools = payload["result"]["tools"]
-        assert any(tool["name"] == "show_content" for tool in tools)
+            payload = response.json()
+            tools = payload["result"]["tools"]
+            assert any(tool["name"] == "show_content" for tool in tools)
 
-        # Create a markdown snippet through MCP and ensure it lands on disk.
-        show_request = {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/call",
-            "params": {
-                "name": "show_content",
-                "arguments": {
-                    "title": "Test Entry",
-                    "content": "# Hello from tests!\n",
+            # Create a markdown snippet through MCP and ensure it lands on disk.
+            show_request = {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "show_content",
+                    "arguments": {
+                        "title": "Test Entry",
+                        "content": "# Hello from tests!\n",
+                    },
                 },
-            },
-        }
-        response = await client.post("/mcp", json=show_request)
-        assert response.status == 200
+            }
+            response = await mcp_client.post(
+                "/mcp",
+                json=show_request,
+                headers={"accept": "application/json, text/event-stream"},
+            )
+            assert response.status_code == 200
 
-        payload = await response.json()
-        text_block = payload["result"]["content"][0]["text"]
-        file_id = _extract_file_id(text_block)
-        assert file_id is not None
+            payload = response.json()
+            text_block = payload["result"]["content"][0]["text"]
+            file_id = _extract_file_id(text_block)
+            assert file_id is not None
 
-        created_path = tmp_path / file_id
-        assert created_path.exists()
-        assert "Hello from tests" in created_path.read_text()
-    finally:
-        await client.close()
+            created_path = tmp_path / file_id
+            assert created_path.exists()
+            assert "Hello from tests" in created_path.read_text()
 
 
 @pytest.mark.asyncio
@@ -270,21 +291,23 @@ async def test_toggle_sticky_endpoint(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sse_chat_subscription(tmp_path: Path) -> None:
-    """Verify that /mcp/chat/subscribe provides SSE stream for chat messages."""
+async def test_stream_chat_subscription(tmp_path: Path) -> None:
+    """Verify that /mcp/stream/chat provides NDJSON streaming for chat messages."""
     server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
     client = await _create_test_client(server)
     try:
-        # Start SSE subscription
-        response = await client.get("/mcp/chat/subscribe")
+        # Start HTTP streaming subscription (no polling allowed).
+        response = await client.post("/mcp/stream/chat")
         assert response.status == 200
-        assert response.headers.get("Content-Type") == "text/event-stream"
-        
-        # Read the initial connection message
-        chunk = await response.content.read(200)
-        assert b"data:" in chunk
-        assert b"connected" in chunk.lower()
-        
+        assert response.headers.get("Content-Type") == "application/x-ndjson"
+
+        # Read the initial subscription confirmation line.
+        line = await response.content.readline()
+        assert line
+        payload = json.loads(line.decode("utf-8"))
+        assert payload["result"].startswith("🔔")
+
     finally:
+        await response.release()
         await client.close()
 

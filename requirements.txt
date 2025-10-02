@@ -3,3 +3,4 @@ watchdog>=3.0.0
 fastmcp>=2.12.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
+uvicorn>=0.24.0
