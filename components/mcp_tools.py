@@ -280,44 +280,5 @@ class MCPTools:
             logger.error(f"Error deleting file: {e}")
             raise JSONRPCError(INTERNAL_ERROR, f"Failed to delete file: {e}")
 
-    async def subscribe_chat(self) -> CallToolResult:
-        """Subscribe to chat messages from the UI."""
-        return CallToolResult(
-            content=[TextContent(
-                type="text",
-                text="Successfully subscribed to chat messages. Use the 'get_chat_messages' tool to poll for new messages from the UI. Messages are stored with timestamps, so you can track which ones you've already processed."
-            )]
-        )
-
-    async def get_chat_messages(self, since: Optional[float] = None) -> CallToolResult:
-        """Get chat messages since a given timestamp."""
-        try:
-            if since is None:
-                messages = self.chat_messages
-            else:
-                messages = [msg for msg in self.chat_messages if msg['timestamp'] > since]
-            
-            if not messages:
-                return CallToolResult(
-                    content=[TextContent(
-                        type="text",
-                        text="No new chat messages."
-                    )]
-                )
-            
-            message_lines = []
-            for msg in messages:
-                timestamp_str = datetime.fromtimestamp(msg['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-                message_lines.append(f"[{timestamp_str}] {msg['message']}")
-            
-            result_text = f"Found {len(messages)} chat message(s):\n\n" + "\n".join(message_lines)
-            
-            return CallToolResult(
-                content=[TextContent(
-                    type="text",
-                    text=result_text
-                )]
-            )
-        except Exception as e:
-            logger.error(f"Error getting chat messages: {e}")
-            raise JSONRPCError(INTERNAL_ERROR, f"Failed to get chat messages: {e}")
+    # POLLING CHAT METHODS REMOVED - STREAMING ONLY APPROACH
+    # See agents.md for the strict no-polling requirement

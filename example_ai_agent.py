@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-Example: How an AI agent would use the HTTP streaming chat endpoint.
-This demonstrates the complete workflow for MCP chat streaming.
+Example: How an AI agent should use HTTP streaming for chat - NO POLLING ALLOWED!
+
+⚠️  CRITICAL: This demonstrates the ONLY acceptable approach for chat messages.
+❌ NEVER use polling-based message retrieval.
+✅ ALWAYS use HTTP streaming as shown here.
+
+See agents.md for the strict no-polling requirement.
 """
 
 import asyncio

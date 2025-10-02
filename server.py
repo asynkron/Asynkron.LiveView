@@ -201,59 +201,36 @@ class UnifiedMarkdownServer:
                 return result.content[0].text
             return "Content removed"
         
-        @self.mcp_server.tool()
-        async def subscribe_chat() -> str:
-            """Subscribe to receive chat messages from the UI."""
-            result = await self.mcp_tools.subscribe_chat()
-            if result.content and len(result.content) > 0:
-                return result.content[0].text
-            return "Subscribed to chat"
-        
-        @self.mcp_server.tool()
-        async def get_chat_messages(since: float = None) -> str:
-            """Get recent chat messages from the UI."""
-            result = await self.mcp_tools.get_chat_messages(since)
-            if result.content and len(result.content) > 0:
-                return result.content[0].text
-            return "No messages"
+        # POLLING CHAT TOOLS REMOVED - STREAMING ONLY APPROACH
 
         @self.mcp_server.tool()
-        async def get_stream_chat_endpoint() -> str:
-            """Get the HTTP streaming endpoint for live chat messages."""
-            return f"Use POST http://localhost:{self.port}/mcp/stream/chat for real-time chat streaming. This endpoint uses chunked transfer encoding to stream JSON-RPC responses as newline-delimited JSON (NDJSON). Each line contains a complete JSON-RPC response with the next chat message."
+        async def get_chat_stream_info() -> str:
+            """Get information about the HTTP streaming endpoint for live chat messages."""
+            return f"""🌊 REAL-TIME CHAT STREAMING ENDPOINT:
 
-        @self.mcp_server.tool()
-        async def subscribe_chat_stream():
-            """Subscribe to live chat messages from the UI using async generator."""
-            # Create a queue for this subscriber
-            queue = asyncio.Queue()
-            self.chat_subscribers.append(queue)
-            
-            try:
-                # Send initial message to confirm subscription
-                yield "🔔 Subscribed to live chat stream. Waiting for messages..."
-                
-                # Stream messages as they arrive
-                while True:
-                    message_data = await queue.get()
-                    yield f"💬 [{message_data['timestamp']:.3f}] {message_data['message']}"
-            except asyncio.CancelledError:
-                # Clean up when the stream is cancelled
-                if queue in self.chat_subscribers:
-                    self.chat_subscribers.remove(queue)
-                yield "🔕 Chat stream subscription ended."
-                raise
-            except Exception as e:
-                # Clean up on error
-                if queue in self.chat_subscribers:
-                    self.chat_subscribers.remove(queue)
-                yield f"❌ Error in chat stream: {str(e)}"
-                raise
+📡 URL: POST http://localhost:{self.port}/mcp/stream/chat
+📋 Protocol: HTTP chunked transfer encoding  
+📦 Format: Newline-delimited JSON (NDJSON)
+🔄 Type: Real-time streaming (NO POLLING)
 
-        @self.mcp_server.tool()
-        async def get_chat_stream_url() -> str:
-            """Get the SSE URL for streaming chat messages in real-time."""
-            return f"http://localhost:{self.port}/mcp/chat/subscribe"
+Each response line contains a JSON-RPC 2.0 message:
+{{"jsonrpc":"2.0","id":1,"result":"🔔 Subscribed to live chat stream. Waiting for messages..."}}
+{{"jsonrpc":"2.0","id":2,"result":"💬 [timestamp] User message here"}}
+
+⚠️  IMPORTANT: This is the ONLY approved method for chat message access.
+❌ Polling approaches are strictly forbidden (see agents.md).
+
+Example usage:
+```python
+async with httpx.AsyncClient() as client:
+    async with client.stream('POST', 'http://localhost:{self.port}/mcp/stream/chat') as response:
+        async for line in response.aiter_lines():
+            if line.strip():
+                data = json.loads(line)
+                print(data['result'])  # Process the message
+```"""
+
+        # HTTP streaming endpoint available at POST /mcp/stream/chat
 
     def _sanitize_file_id(self, file_id: str) -> str:
         """Ensure the provided File Id maps to a safe filename."""

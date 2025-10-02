@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Test script for HTTP streaming chat subscription.
-This demonstrates the new /mcp/stream/chat endpoint that uses chunked transfer encoding.
+Test script for HTTP streaming chat subscription - STREAMING ONLY APPROACH.
+This demonstrates the HTTP streaming endpoint that uses chunked transfer encoding.
+
+⚠️  NO POLLING: This test uses real-time streaming, never polling.
+See agents.md for the strict no-polling requirement.
 """
 
 import asyncio
