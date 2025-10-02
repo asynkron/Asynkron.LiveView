@@ -96,12 +96,11 @@ class UnifiedMarkdownServer:
         self.mcp_host = mcp_host
         self.mcp_port = mcp_port or (port + 1)
         self.clients: set = set()
-        self.sse_clients: set = set()  # Track SSE clients for chat messages
+        # Track CLI host WebSocket connections that should receive chat events
+        self.agent_feed_clients: set[web.WebSocketResponse] = set()
         self.observer = None
         self.enable_mcp = enable_mcp
         self.sticky_files: Dict[str, str] = {}  # Maps directory path to sticky filename
-        self.chat_messages: List[Dict[str, Any]] = []  # Store recent chat messages
-        self.chat_subscribers: List[asyncio.Queue] = []  # Queues for streaming chat to MCP clients
         self._mcp_http_server_task: Optional[asyncio.Task] = None
         self._mcp_uvicorn_server = None
 
@@ -231,51 +230,6 @@ class UnifiedMarkdownServer:
                 return f"✅ Content deleted: {fileId}"
             except Exception as e:
                 return f"❌ Error removing content: {str(e)}"
-        
-        # CHAT TOOLS - HTTP STREAMING ONLY (NO POLLING)
-
-        @self.mcp_server.tool()
-        async def get_chat_stream_info() -> str:
-            """Get information about the HTTP streaming endpoint for live chat messages."""
-            return f"""🌊 REAL-TIME CHAT STREAMING ENDPOINT:
-
-📡 URL: POST http://localhost:{self.port}/mcp/stream/chat
-📋 Protocol: HTTP chunked transfer encoding  
-📦 Format: Newline-delimited JSON (NDJSON)
-🔄 Type: Real-time streaming (NO POLLING)
-
-Each response line contains a JSON-RPC 2.0 message:
-{{"jsonrpc":"2.0","id":1,"result":"🔔 Subscribed to live chat stream. Waiting for messages..."}}
-{{"jsonrpc":"2.0","id":2,"result":"💬 [timestamp] User message here"}}
-
-⚠️  IMPORTANT: This is the ONLY approved method for chat message access.
-❌ Polling approaches are strictly forbidden (see agents.md).
-
-Example usage:
-```python
-async with httpx.AsyncClient() as client:
-    async with client.stream('POST', 'http://localhost:{self.port}/mcp/stream/chat') as response:
-        async for line in response.aiter_lines():
-            if line.strip():
-                data = json.loads(line)
-                print(data['result'])  # Process the message
-```"""
-
-        @self.mcp_server.tool()
-        async def subscribe_chat_stream() -> str:
-            """Explain how to subscribe to the live chat stream."""
-            return (
-                "🌊 Real-time chat streaming is available via the dedicated HTTP "
-                "endpoint.\n\n"
-                "Use POST http://localhost:{self.port}/mcp/stream/chat with an "
-                "HTTP client that supports chunked transfer decoding (for "
-                "example httpx's `client.stream`). Each newline-delimited JSON "
-                "object contains a JSON-RPC result describing the message that "
-                "arrived. No polling, sleeps or repeated tool invocations are "
-                "required."
-            )
-
-        # HTTP streaming endpoint available at POST /mcp/stream/chat
 
     def _sanitize_file_id(self, file_id: str) -> str:
         """Ensure the provided File Id maps to a safe filename."""
@@ -343,7 +297,7 @@ async with httpx.AsyncClient() as client:
                             # Handle chat message from UI
                             chat_message = data.get('message', '')
                             logger.info(f"Received chat message from UI: {chat_message}")
-                            await self.broadcast_chat_to_mcp(chat_message)
+                            await self.broadcast_chat_to_agents(chat_message)
                     except json.JSONDecodeError:
                         logger.warning(f"Received non-JSON message: {msg.data}")
                     except Exception as e:
@@ -578,186 +532,6 @@ async with httpx.AsyncClient() as client:
         except Exception as e:
             logger.error(f"Error notifying clients: {e}")
     
-    async def handle_chat_sse(self, request):
-        """SSE endpoint for chat message subscriptions."""
-        if not self.enable_mcp:
-            return web.json_response({'error': 'MCP not enabled'}, status=503)
-        
-        response = web.StreamResponse(
-            status=200,
-            reason='OK',
-            headers={
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no',  # Disable nginx buffering
-            }
-        )
-        await response.prepare(request)
-        
-        # Add this client to SSE clients
-        self.sse_clients.add(response)
-        logger.info(f"SSE client connected for chat. Total SSE clients: {len(self.sse_clients)}")
-        
-        try:
-            # Send initial connection confirmation
-            await response.write(b'data: {"type":"connected","message":"Successfully subscribed to chat messages"}\n\n')
-            
-            # Keep the connection alive
-            while True:
-                await asyncio.sleep(30)  # Send heartbeat every 30 seconds
-                try:
-                    await response.write(b': heartbeat\n\n')
-                except Exception as e:
-                    logger.debug(f"Failed to send heartbeat, client likely disconnected: {e}")
-                    break
-                    
-        except asyncio.CancelledError:
-            logger.info("SSE connection cancelled")
-        except Exception as e:
-            logger.error(f"SSE error: {e}")
-        finally:
-            self.sse_clients.discard(response)
-            logger.info(f"SSE client disconnected. Total SSE clients: {len(self.sse_clients)}")
-        
-        return response
-    
-    async def broadcast_chat_to_mcp(self, message: str):
-        """Broadcast chat message to all connected MCP clients via SSE."""
-        # Store the message for polling (backward compatibility)
-        chat_entry = {
-            "type": "chat",
-            "message": message,
-            "timestamp": time.time()
-        }
-        self.chat_messages.append(chat_entry)
-        
-        # Keep only last 100 messages
-        if len(self.chat_messages) > 100:
-            self.chat_messages = self.chat_messages[-100:]
-        
-        logger.info(f"Stored chat message for MCP clients: {message[:50]}...")
-        logger.info(f"Total chat messages stored: {len(self.chat_messages)}")
-        
-        # Send via SSE to all connected clients
-        if self.sse_clients:
-            sse_data = json.dumps({
-                "type": "chat",
-                "message": message,
-                "timestamp": chat_entry["timestamp"]
-            })
-            sse_message = f"data: {sse_data}\n\n"
-            
-            disconnected_clients = set()
-            for client in self.sse_clients:
-                try:
-                    await client.write(sse_message.encode('utf-8'))
-                except Exception as e:
-                    logger.warning(f"Failed to send SSE message to client: {e}")
-                    disconnected_clients.add(client)
-            
-            # Remove disconnected clients
-            for client in disconnected_clients:
-                self.sse_clients.discard(client)
-            
-            logger.info(f"Sent chat message via SSE to {len(self.sse_clients)} clients")
-        
-        # Send to streaming chat subscribers (new generator-based functionality)
-        if self.chat_subscribers:
-            message_data = {
-                "message": message,
-                "timestamp": chat_entry["timestamp"]
-            }
-            
-            # Send to all active streaming subscribers
-            disconnected_subscribers = []
-            for i, queue in enumerate(self.chat_subscribers):
-                try:
-                    queue.put_nowait(message_data)
-                except asyncio.QueueFull:
-                    logger.warning(f"Chat subscriber queue {i} is full, skipping message")
-                except Exception as e:
-                    logger.warning(f"Failed to send to chat subscriber {i}: {e}")
-                    disconnected_subscribers.append(queue)
-            
-            # Remove disconnected subscribers
-            for queue in disconnected_subscribers:
-                self.chat_subscribers.remove(queue)
-            
-            logger.info(f"Sent chat message to {len(self.chat_subscribers)} streaming subscribers")
-
-    async def handle_mcp_stream_chat(self, request):
-        """HTTP streaming endpoint for MCP chat subscription using chunked transfer encoding."""
-        if not self.enable_mcp:
-            return web.json_response({'error': 'MCP not enabled'}, status=503)
-        
-        # Set up streaming response
-        response = web.StreamResponse(
-            status=200,
-            headers={
-                'Content-Type': 'application/x-ndjson',  # Newline Delimited JSON
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Transfer-Encoding': 'chunked'
-            }
-        )
-        await response.prepare(request)
-        
-        # Create a queue for this subscriber
-        queue = asyncio.Queue()
-        self.chat_subscribers.append(queue)
-        
-        try:
-            # Send initial subscription confirmation
-            initial_response = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "result": "🔔 Subscribed to live chat stream. Waiting for messages..."
-            }
-            await response.write(f"{json.dumps(initial_response)}\n".encode('utf-8'))
-            
-            # Stream messages as they arrive
-            message_id = 2
-            while True:
-                try:
-                    # Wait for new message
-                    message_data = await queue.get()
-                    
-                    # Format as JSON-RPC response
-                    streaming_response = {
-                        "jsonrpc": "2.0",
-                        "id": message_id,
-                        "result": f"💬 [{message_data['timestamp']:.3f}] {message_data['message']}"
-                    }
-                    
-                    # Send the chunk
-                    chunk = f"{json.dumps(streaming_response)}\n"
-                    await response.write(chunk.encode('utf-8'))
-                    message_id += 1
-                    
-                except asyncio.CancelledError:
-                    logger.info("MCP chat stream cancelled")
-                    break
-                except Exception as e:
-                    logger.error(f"Error in MCP chat stream: {e}")
-                    error_response = {
-                        "jsonrpc": "2.0",
-                        "id": message_id,
-                        "error": {"code": -32000, "message": f"Stream error: {str(e)}"}
-                    }
-                    await response.write(f"{json.dumps(error_response)}\n".encode('utf-8'))
-                    break
-                    
-        except Exception as e:
-            logger.error(f"MCP streaming error: {e}")
-        finally:
-            # Clean up subscriber
-            if queue in self.chat_subscribers:
-                self.chat_subscribers.remove(queue)
-            logger.info(f"MCP chat stream disconnected. Remaining subscribers: {len(self.chat_subscribers)}")
-        
-        return response
-
     def start_file_watcher(self, loop):
         """Start watching the markdown directory for changes."""
         if self.observer is not None:
@@ -775,6 +549,88 @@ async with httpx.AsyncClient() as client:
             self.observer.stop()
             self.observer.join()
             logger.info("File watcher stopped")
+
+    async def broadcast_chat_to_agents(self, message: str) -> None:
+        """Broadcast chat messages to all connected CLI host clients."""
+
+        text = message.strip()
+        if not text:
+            logger.debug("Ignoring empty chat message from UI")
+            return
+
+        payload = {
+            "type": "chat",
+            "text": text,
+            "timestamp": time.time(),
+        }
+
+        stale_clients: List[web.WebSocketResponse] = []
+        for ws in list(self.agent_feed_clients):
+            if ws.closed:
+                stale_clients.append(ws)
+                continue
+
+            try:
+                await ws.send_json(payload)
+            except Exception as exc:
+                logger.warning(f"Failed to push chat message to CLI host: {exc}")
+                stale_clients.append(ws)
+
+        for ws in stale_clients:
+            self.agent_feed_clients.discard(ws)
+
+        if self.agent_feed_clients:
+            logger.info(
+                "Delivered chat message to %d CLI host connection(s)",
+                len(self.agent_feed_clients),
+            )
+
+    async def handle_agent_feed(self, request):
+        """WebSocket endpoint that streams chat events to CLI host processes."""
+
+        ws = web.WebSocketResponse(heartbeat=30)
+        await ws.prepare(request)
+
+        self.agent_feed_clients.add(ws)
+        logger.info(
+            "CLI host connected for chat feed. Total hosts: %d",
+            len(self.agent_feed_clients),
+        )
+
+        # Send a small handshake so hosts know the channel is live.
+        try:
+            await ws.send_json({
+                "type": "hello",
+                "message": "Connected to markdown-liveview agent feed",
+                "timestamp": time.time(),
+            })
+        except Exception as exc:
+            logger.error(f"Failed to send handshake to CLI host: {exc}")
+
+        try:
+            async for msg in ws:
+                if msg.type == WSMsgType.TEXT:
+                    try:
+                        data = json.loads(msg.data)
+                        logger.debug(f"Received message from CLI host: {data}")
+                    except json.JSONDecodeError:
+                        logger.debug(f"Ignoring non-JSON payload from CLI host: {msg.data!r}")
+                elif msg.type == WSMsgType.ERROR:
+                    logger.error(f"Agent feed WebSocket error: {ws.exception()}")
+                    break
+        except asyncio.CancelledError:
+            logger.debug("Agent feed handler cancelled")
+            raise
+        except Exception as exc:
+            logger.error(f"Agent feed failure: {exc}")
+        finally:
+            self.agent_feed_clients.discard(ws)
+            logger.info(
+                "CLI host disconnected from chat feed. Total hosts: %d",
+                len(self.agent_feed_clients),
+            )
+
+        return ws
 
     async def start_mcp_http_server(self):
         """Run the FastMCP HTTP transport on its own port using Uvicorn."""
@@ -853,12 +709,7 @@ async with httpx.AsyncClient() as client:
         app.router.add_post('/api/delete', self.handle_delete_file)
         app.router.add_post('/api/toggle-sticky', self.handle_toggle_sticky)
         app.router.add_get('/raw', self.handle_raw_markdown)
-        
-        # FastMCP HTTP integration
-        if self.enable_mcp:
-            # Chat streaming endpoint remains part of the web server because it
-            # bridges UI events directly to connected MCP agents.
-            app.router.add_post('/mcp/stream/chat', self.handle_mcp_stream_chat)
+        app.router.add_get('/agent-feed', self.handle_agent_feed)
 
         return app
 

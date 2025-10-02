@@ -3,7 +3,6 @@
 from pathlib import Path
 from typing import Optional
 import sys
-import json
 
 # Ensure the project root is importable when tests run from the repository root.
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -291,23 +290,23 @@ async def test_toggle_sticky_endpoint(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_stream_chat_subscription(tmp_path: Path) -> None:
-    """Verify that /mcp/stream/chat provides NDJSON streaming for chat messages."""
+async def test_agent_feed_websocket(tmp_path: Path) -> None:
+    """Ensure chat messages are pushed to connected CLI host feeds."""
+
     server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
     client = await _create_test_client(server)
     try:
-        # Start HTTP streaming subscription (no polling allowed).
-        response = await client.post("/mcp/stream/chat")
-        assert response.status == 200
-        assert response.headers.get("Content-Type") == "application/x-ndjson"
+        ws = await client.ws_connect("/agent-feed")
+        try:
+            hello = await ws.receive_json()
+            assert hello["type"] == "hello"
 
-        # Read the initial subscription confirmation line.
-        line = await response.content.readline()
-        assert line
-        payload = json.loads(line.decode("utf-8"))
-        assert payload["result"].startswith("🔔")
-
+            await server.broadcast_chat_to_agents("Hello from tests")
+            event = await ws.receive_json()
+            assert event["type"] == "chat"
+            assert event["text"] == "Hello from tests"
+        finally:
+            await ws.close()
     finally:
-        await response.release()
         await client.close()
 
