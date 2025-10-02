@@ -7,11 +7,13 @@ Provides both web interface for viewing markdown files and MCP protocol support 
 """
 
 import asyncio
+import argparse
 import json
 import logging
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 from aiohttp import web, WSMsgType
 from aiohttp.web_response import Response
 from watchdog.observers import Observer
@@ -93,6 +95,7 @@ class UnifiedMarkdownServer:
         self._negotiated_protocol_version: str | int = DEFAULT_NEGOTIATED_VERSION
         self.sticky_files: Dict[str, str] = {}  # Maps directory path to sticky filename
         self.chat_messages: List[Dict[str, Any]] = []  # Store recent chat messages
+        self.chat_subscribers: List[asyncio.Queue] = []  # Queues for streaming chat to MCP clients
         
         # Initialize component modules (pass sticky_files reference to FileManager)
         self.file_manager = FileManager(self.default_markdown_dir, self.sticky_files)
@@ -213,6 +216,44 @@ class UnifiedMarkdownServer:
             if result.content and len(result.content) > 0:
                 return result.content[0].text
             return "No messages"
+
+        @self.mcp_server.tool()
+        async def get_stream_chat_endpoint() -> str:
+            """Get the HTTP streaming endpoint for live chat messages."""
+            return f"Use POST http://localhost:{self.port}/mcp/stream/chat for real-time chat streaming. This endpoint uses chunked transfer encoding to stream JSON-RPC responses as newline-delimited JSON (NDJSON). Each line contains a complete JSON-RPC response with the next chat message."
+
+        @self.mcp_server.tool()
+        async def subscribe_chat_stream():
+            """Subscribe to live chat messages from the UI using async generator."""
+            # Create a queue for this subscriber
+            queue = asyncio.Queue()
+            self.chat_subscribers.append(queue)
+            
+            try:
+                # Send initial message to confirm subscription
+                yield "🔔 Subscribed to live chat stream. Waiting for messages..."
+                
+                # Stream messages as they arrive
+                while True:
+                    message_data = await queue.get()
+                    yield f"💬 [{message_data['timestamp']:.3f}] {message_data['message']}"
+            except asyncio.CancelledError:
+                # Clean up when the stream is cancelled
+                if queue in self.chat_subscribers:
+                    self.chat_subscribers.remove(queue)
+                yield "🔕 Chat stream subscription ended."
+                raise
+            except Exception as e:
+                # Clean up on error
+                if queue in self.chat_subscribers:
+                    self.chat_subscribers.remove(queue)
+                yield f"❌ Error in chat stream: {str(e)}"
+                raise
+
+        @self.mcp_server.tool()
+        async def get_chat_stream_url() -> str:
+            """Get the SSE URL for streaming chat messages in real-time."""
+            return f"http://localhost:{self.port}/mcp/chat/subscribe"
 
     def _sanitize_file_id(self, file_id: str) -> str:
         """Ensure the provided File Id maps to a safe filename."""
@@ -779,7 +820,103 @@ class UnifiedMarkdownServer:
                 self.sse_clients.discard(client)
             
             logger.info(f"Sent chat message via SSE to {len(self.sse_clients)} clients")
-    
+        
+        # Send to streaming chat subscribers (new generator-based functionality)
+        if self.chat_subscribers:
+            message_data = {
+                "message": message,
+                "timestamp": chat_entry["timestamp"]
+            }
+            
+            # Send to all active streaming subscribers
+            disconnected_subscribers = []
+            for i, queue in enumerate(self.chat_subscribers):
+                try:
+                    queue.put_nowait(message_data)
+                except asyncio.QueueFull:
+                    logger.warning(f"Chat subscriber queue {i} is full, skipping message")
+                except Exception as e:
+                    logger.warning(f"Failed to send to chat subscriber {i}: {e}")
+                    disconnected_subscribers.append(queue)
+            
+            # Remove disconnected subscribers
+            for queue in disconnected_subscribers:
+                self.chat_subscribers.remove(queue)
+            
+            logger.info(f"Sent chat message to {len(self.chat_subscribers)} streaming subscribers")
+
+    async def handle_mcp_stream_chat(self, request):
+        """HTTP streaming endpoint for MCP chat subscription using chunked transfer encoding."""
+        if not self.enable_mcp:
+            return web.json_response({'error': 'MCP not enabled'}, status=503)
+        
+        # Set up streaming response
+        response = web.StreamResponse(
+            status=200,
+            headers={
+                'Content-Type': 'application/x-ndjson',  # Newline Delimited JSON
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Transfer-Encoding': 'chunked'
+            }
+        )
+        await response.prepare(request)
+        
+        # Create a queue for this subscriber
+        queue = asyncio.Queue()
+        self.chat_subscribers.append(queue)
+        
+        try:
+            # Send initial subscription confirmation
+            initial_response = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": "🔔 Subscribed to live chat stream. Waiting for messages..."
+            }
+            await response.write(f"{json.dumps(initial_response)}\n".encode('utf-8'))
+            
+            # Stream messages as they arrive
+            message_id = 2
+            while True:
+                try:
+                    # Wait for new message
+                    message_data = await queue.get()
+                    
+                    # Format as JSON-RPC response
+                    streaming_response = {
+                        "jsonrpc": "2.0",
+                        "id": message_id,
+                        "result": f"💬 [{message_data['timestamp']:.3f}] {message_data['message']}"
+                    }
+                    
+                    # Send the chunk
+                    chunk = f"{json.dumps(streaming_response)}\n"
+                    await response.write(chunk.encode('utf-8'))
+                    message_id += 1
+                    
+                except asyncio.CancelledError:
+                    logger.info("MCP chat stream cancelled")
+                    break
+                except Exception as e:
+                    logger.error(f"Error in MCP chat stream: {e}")
+                    error_response = {
+                        "jsonrpc": "2.0",
+                        "id": message_id,
+                        "error": {"code": -32000, "message": f"Stream error: {str(e)}"}
+                    }
+                    await response.write(f"{json.dumps(error_response)}\n".encode('utf-8'))
+                    break
+                    
+        except Exception as e:
+            logger.error(f"MCP streaming error: {e}")
+        finally:
+            # Clean up subscriber
+            if queue in self.chat_subscribers:
+                self.chat_subscribers.remove(queue)
+            logger.info(f"MCP chat stream disconnected. Remaining subscribers: {len(self.chat_subscribers)}")
+        
+        return response
+
     def start_file_watcher(self, loop):
         """Start watching the markdown directory for changes."""
         if self.observer is not None:
@@ -823,6 +960,7 @@ class UnifiedMarkdownServer:
             app.router.add_get('/mcp', self.handle_mcp_info)  # Discovery endpoint
             app.router.add_post('/mcp', self.handle_mcp_http)
             app.router.add_get('/mcp/chat/subscribe', self.handle_chat_sse)
+            app.router.add_post('/mcp/stream/chat', self.handle_mcp_stream_chat)  # HTTP streaming for chat
 
         return app
 
