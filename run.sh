@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# run.sh - Start the unified LiveView + MCP server.
+# run.sh - Start the Markdown Live View server.
 
 set -euo pipefail
 
 PORT="${PORT:-8080}"
 MARKDOWN_DIR="${MARKDOWN_DIR:-markdown}"
-ENABLE_STDIO="${ENABLE_STDIO:-false}"
 
 choose_python() {
   # Check if virtual environment exists and use it
@@ -24,7 +23,7 @@ choose_python() {
 PYTHON_CMD="${PYTHON_CMD:-$(choose_python)}"
 
 ensure_deps() {
-  if ! "$PYTHON_CMD" -c "import aiohttp, watchdog, fastmcp" >/dev/null 2>&1; then
+  if ! "$PYTHON_CMD" -c "import aiohttp, watchdog" >/dev/null 2>&1; then
     echo "Installing required Python packages..."
     if [[ "$PYTHON_CMD" == "venv/bin/python" ]]; then
       # Use virtual environment pip
@@ -42,20 +41,15 @@ prepare_markdown_dir() {
 }
 
 main() {
-  echo "🚀 Starting unified LiveView + MCP server"
+  echo "🚀 Starting Markdown Live View server"
   echo "   Port:         $PORT"
   echo "   Markdown dir: $MARKDOWN_DIR"
-  echo "   MCP stdio:    $ENABLE_STDIO"
   echo
 
   ensure_deps
   prepare_markdown_dir
 
   cmd=("$PYTHON_CMD" "server.py" "--port" "$PORT" "--dir" "$MARKDOWN_DIR")
-  if [[ "$ENABLE_STDIO" == "true" ]]; then
-    cmd+=("--mcp-stdio")
-  fi
-
   exec "${cmd[@]}"
 }
 
