@@ -196,18 +196,25 @@
 
         .content-area .vega-diagram,
         .content-area .excalidraw-diagram {
-            background: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            padding: 16px;
             margin: 24px 0;
             position: relative;
             min-height: 120px;
+            overflow: hidden;
         }
 
         .content-area .excalidraw-wrapper {
             width: 100%;
-            height: 520px;
+            min-height: 320px;
+            height: clamp(320px, 65vh, 640px);
+            pointer-events: none;
+        }
+
+        .content-area .excalidraw-wrapper canvas {
+            pointer-events: none !important;
+        }
+
+        .content-area .excalidraw-wrapper .layer-ui__wrapper {
+            display: none !important;
         }
 
         .editor-container {
@@ -442,6 +449,8 @@
             let vegaIdCounter = 0;
             let excalidrawIdCounter = 0;
             const excalidrawRoots = new Map();
+            let excalidrawResizeHandlerAttached = false;
+            let excalidrawFitFailureLogged = false;
             let librariesReadyPromise = null;
             let pendingMarkdown = null;
             let relativeLinksEnabled = false;
@@ -750,6 +759,31 @@
                 return decodeDiagramSource(encoded, 'Excalidraw');
             }
 
+            function createExcalidrawViewerUiOptions() {
+                return {
+                    canvasActions: {
+                        changeViewBackgroundColor: false,
+                        clearCanvas: false,
+                        export: false,
+                        loadScene: false,
+                        saveAsImage: false,
+                        saveScene: false,
+                        saveToActiveFile: false,
+                        toggleTheme: false,
+                        toggleShortcuts: false,
+                        zoomIn: false,
+                        zoomOut: false,
+                        zoomToFit: false,
+                        resetZoom: false,
+                        pan: false,
+                        viewMode: false,
+                        zenMode: false,
+                        gridMode: false,
+                        stats: false,
+                    },
+                };
+            }
+
             function waitForCoreLibraries(maxRetries = 80, interval = 100) {
                 if (librariesReadyPromise) {
                     return librariesReadyPromise;
@@ -805,10 +839,12 @@
             }
 
             function cleanupExcalidrawRoots() {
-                excalidrawRoots.forEach((root) => {
+                excalidrawRoots.forEach((record) => {
                     try {
-                        if (root && typeof root.unmount === 'function') {
-                            root.unmount();
+                        if (record && typeof record.unmount === 'function') {
+                            record.unmount();
+                        } else if (record && record.root && typeof record.root.unmount === 'function') {
+                            record.root.unmount();
                         }
                     } catch (error) {
                         console.warn('Failed to unmount Excalidraw root', error);
@@ -845,6 +881,69 @@
                     excalidrawRetryTimer = null;
                     renderExcalidrawDiagrams();
                 }, 400);
+            }
+
+            function handleExcalidrawResize() {
+                excalidrawRoots.forEach((record) => {
+                    if (record && record.api) {
+                        fitExcalidrawToViewport(record.api);
+                    }
+                });
+            }
+
+            function ensureExcalidrawResizeHandler() {
+                if (excalidrawResizeHandlerAttached) {
+                    return;
+                }
+                if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+                    return;
+                }
+                window.addEventListener('resize', handleExcalidrawResize);
+                excalidrawResizeHandlerAttached = true;
+            }
+
+            function fitExcalidrawToViewport(api) {
+                if (!api || typeof api.getSceneElements !== 'function' || typeof api.scrollToContent !== 'function') {
+                    return;
+                }
+
+                let elements;
+                try {
+                    elements = api.getSceneElements();
+                } catch (error) {
+                    console.warn('Failed to read Excalidraw scene elements', error);
+                    return;
+                }
+
+                if (!Array.isArray(elements) || !elements.length) {
+                    return;
+                }
+
+                const visibleElements = elements.filter((item) => item && !item.isDeleted);
+                if (!visibleElements.length) {
+                    return;
+                }
+
+                const executeFit = () => {
+                    try {
+                        api.scrollToContent(visibleElements, { fitToViewport: true, animate: false });
+                    } catch (error) {
+                        if (!excalidrawFitFailureLogged) {
+                            console.warn('Failed to fit Excalidraw content', error);
+                            excalidrawFitFailureLogged = true;
+                        }
+                    }
+                };
+
+                if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+                    window.requestAnimationFrame(executeFit);
+                } else {
+                    executeFit();
+                }
+
+                if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+                    window.setTimeout(executeFit, 150);
+                }
             }
 
             function renderMermaidDiagrams() {
@@ -983,15 +1082,52 @@
                     element.innerHTML = '';
                     const wrapper = document.createElement('div');
                     wrapper.className = 'excalidraw-wrapper';
+                    wrapper.tabIndex = -1;
                     element.appendChild(wrapper);
 
+                    const record = {
+                        root: null,
+                        api: null,
+                        wrapper,
+                        unmount() {
+                            record.api = null;
+                            if (record.root && typeof record.root.unmount === 'function') {
+                                record.root.unmount();
+                            } else if (
+                                typeof window.ReactDOM !== 'undefined' &&
+                                typeof window.ReactDOM.unmountComponentAtNode === 'function'
+                            ) {
+                                try {
+                                    window.ReactDOM.unmountComponentAtNode(wrapper);
+                                } catch (error) {
+                                    console.warn('Failed to unmount Excalidraw instance', error);
+                                }
+                            }
+                        },
+                    };
+
                     try {
+                        const viewerUiOptions = createExcalidrawViewerUiOptions();
                         const excalidrawElement = window.React.createElement(window.ExcalidrawLib.Excalidraw, {
                             initialData: sceneData,
                             viewModeEnabled: true,
                             zenModeEnabled: false,
                             gridModeEnabled: false,
                             theme: 'dark',
+                            autoFocus: false,
+                            UIOptions: viewerUiOptions,
+                            handleKeyboardEvent: () => false,
+                            ref: (api) => {
+                                record.api = api || null;
+                                if (api) {
+                                    excalidrawFitFailureLogged = false;
+                                    ensureExcalidrawResizeHandler();
+                                    fitExcalidrawToViewport(api);
+                                    if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+                                        window.setTimeout(() => fitExcalidrawToViewport(api), 250);
+                                    }
+                                }
+                            },
                         });
 
                         let root;
@@ -1011,8 +1147,10 @@
                             throw new Error('ReactDOM renderer is unavailable');
                         }
 
-                        excalidrawRoots.set(element, root);
+                        record.root = root;
+                        excalidrawRoots.set(element, record);
                     } catch (error) {
+                        record.api = null;
                         console.error('Excalidraw rendering error', error);
                         showDiagramError(element, 'Excalidraw', error.message, source);
                     }
