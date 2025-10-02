@@ -70,6 +70,10 @@ class FileManager:
             return nodes
 
         for entry in entries:
+            # Skip hidden directories (starting with a dot) like .git, .github, .vscode, etc.
+            if entry.is_dir() and entry.name.startswith('.'):
+                continue
+                
             relative = entry.relative_to(root).as_posix()
             if entry.is_dir():
                 children = self._build_directory_tree(root, entry)
