@@ -45,6 +45,7 @@ class MarkdownMCPServer:
                 "markdown, Mermaid, Excalidraw, or Vega payloads. Avoid stray Mermaid "
                 "characters such as '{' or '(' and reserved names like 'node' unless "
                 "they are valid syntax. If you color Mermaid nodes, pick white or black "
+                "e.g style Response fill:#c8e6c9,color:#000000, vs fill:#003010,color:#FFFFFF"
                 "text based on the background brightness so labels stay readable."
             )
         )
