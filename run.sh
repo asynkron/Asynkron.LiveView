@@ -8,7 +8,10 @@ MARKDOWN_DIR="${MARKDOWN_DIR:-markdown}"
 ENABLE_STDIO="${ENABLE_STDIO:-false}"
 
 choose_python() {
-  if command -v python3 >/dev/null 2>&1; then
+  # Check if virtual environment exists and use it
+  if [[ -f "venv/bin/python" ]]; then
+    printf '%s' "venv/bin/python"
+  elif command -v python3 >/dev/null 2>&1; then
     printf '%s' "python3"
   elif command -v python >/dev/null 2>&1; then
     printf '%s' "python"
@@ -21,9 +24,12 @@ choose_python() {
 PYTHON_CMD="${PYTHON_CMD:-$(choose_python)}"
 
 ensure_deps() {
-  if ! "$PYTHON_CMD" -c "import aiohttp, watchdog, mcp" >/dev/null 2>&1; then
-    echo "Installing required Python packages (non-destructive)..."
-    if ! "$PYTHON_CMD" -m pip install --user -r requirements.txt; then
+  if ! "$PYTHON_CMD" -c "import aiohttp, watchdog, fastmcp" >/dev/null 2>&1; then
+    echo "Installing required Python packages..."
+    if [[ "$PYTHON_CMD" == "venv/bin/python" ]]; then
+      # Use virtual environment pip
+      venv/bin/pip install -r requirements.txt
+    elif ! "$PYTHON_CMD" -m pip install --user -r requirements.txt; then
       "$PYTHON_CMD" -m pip install --break-system-packages -r requirements.txt
     fi
   fi
