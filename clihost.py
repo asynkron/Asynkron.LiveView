@@ -78,6 +78,8 @@ def parse_args(argv: List[str]) -> tuple[argparse.Namespace, List[str]]:
 async def create_child(child_cmd: List[str]) -> asyncio.subprocess.Process:
     """Spawn the agent process whose stdin/stdout we proxy."""
 
+    print(f"[clihost] launching child: {' '.join(child_cmd)}")
+    sys.stdout.flush()
     return await asyncio.create_subprocess_exec(
         *child_cmd,
         stdin=asyncio.subprocess.PIPE,
@@ -273,8 +275,10 @@ async def ws_consumer(
 async def main() -> None:
     args, child_cmd = parse_args(sys.argv)
 
+    print("[clihost] awaiting child process creation...")
+    sys.stdout.flush()
     proc = await create_child(child_cmd)
-    print(f"[clihost] spawned child PID {proc.pid}: {' '.join(child_cmd)}")
+    print(f"[clihost] started child PID {proc.pid}: {' '.join(child_cmd)}")
     sys.stdout.flush()
     joined_cmd = " ".join(child_cmd)
     print(f"[clihost] started child PID {proc.pid}: {joined_cmd}")
@@ -310,10 +314,12 @@ async def main() -> None:
     def _handle_signal(signum: int, _frame) -> None:
         if proc.returncode is None:
             try:
+                print(f"[clihost] forwarding signal {signum} to child {proc.pid}")
                 proc.send_signal(signum)
             except ProcessLookupError:
-                pass
-            except Exception:
+                print("[clihost] child already exited before signal forwarding")
+            except Exception as exc:
+                print(f"[clihost] failed to forward signal ({exc}); falling back to terminate()")
                 proc.terminate()
         stop_event.set()
 
@@ -339,6 +345,7 @@ async def main() -> None:
             pass
 
     if proc.returncode is None:
+        print("[clihost] child still running during shutdown; terminating")
         await _terminate_child(proc)
 
 
