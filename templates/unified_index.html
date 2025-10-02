@@ -6,11 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Markdown Viewer</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
-        integrity="sha512-P02it93yHqdNK0qi6ixkmKuuNH5hMgFBhbv7FLnTvF3z4r3nWxdcQN9l8QNX6h/c0e97/8lCxJ6zIS95/JoSuA=="
+        integrity="sha512-rO+olRTkcf304DQBxSWxln8JXCzTHlKnIdnMUwYvQa9/Jd4cQaNkItIUj6Z4nvW1dqK0SKXLbn9h4KwZTNtAyw=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
         :root {
             color-scheme: dark;
+        }
+
+        .cluster rect {
+            fill: #80808020 !important;
         }
 
         * {
@@ -324,29 +328,31 @@
         window.__INITIAL_STATE__ = __INITIAL_STATE_JSON__;
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/14.1.2/marked.min.js"
-        integrity="sha512-NHkNVzjoZWU7FZrc4KCgDtvlW+14ZduU7/r/GOr1d6dN3clcjx4zYSF/1O6B3lCm2jNyinAlkL4evdu+Td5Vew=="
+        integrity="sha512-bXyBT2/sYjZg1D7ykDS6eJSE4DFDVPJHvbRAfdfYKr6IusrCz7wAmSm36vz9G8zMob25Rvqu90vft3JI71ygcQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
-        integrity="sha512-WDSA6k+zHblAWd3q3RtCoX6q4me7jaFtnVnefQ4btYWhYqNe3oCzUF3pKwafKYpUBSChMkAIFbFx3v8GQAOG1A=="
+        integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"
-        integrity="sha512-XJIOzEi9xdyD4qEfPXbI0k24AU6swswhsCce1sQsOhTIycFhGLhbVLsoP1ZaqhojaG6OcP7d3gi8wTY07EL3nw=="
+        integrity="sha512-gx05X612uoaolzJ5Ee/786b3th+qzAm90TOvRwZJwnE8yr0sHQG8eLxdR0/Hbqc2IFh2mWHzzXk79g3atNSwsQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.4/dist/excalidraw.min.css"
-        crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"
-        integrity="sha512-/4wNP1GRHXCZ7p0Qg4d2Enn7Um+704T0iAHzvjv6RkIYV8dmuBMdQiCVAEGXkhO/CC0GwVZsIoXN5923Cw0yJQ=="
+        integrity="sha512-8Q6Y9XnTbOE+JNvjBQwJ2H8S+UV4uA6hiRykhdtIyDYZ2TprdNmWOUaKdGzOhyr4dCyk287OejbPvwl7lrfqrQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"
-        integrity="sha512-SzlrxWUlpfuzQ+pcUCosxcglQRNAq/DgcFuuIaL5z42FHi1Oy5h9nFdlxe8U+10Y73cMsomF+7RMG57JyOc3gA=="
+        integrity="sha512-MOCpqoRoisCTwJ8vQQiciZv0qcpROCidek3GTFS6KTk2+y7munJIlKCVkFCYY+p3ErYFXCjmFjnfTTRSC1OHWQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.4/dist/excalidraw.production.min.js"
+        integrity="sha512-E2QYnMiPwJ0lKE9t8V7Ef/KcFgi/7LjV7LN9a9vavP2t1/mE9NfyANrt1imXfutaCK4jQo2ZhBPZbVCCqnvyYw=="
         crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/vega@5.25.0/build/vega.min.js" crossorigin="anonymous"
+        integrity="sha512-XX9YBZNtGu/Bz3d3zstE6vcEf4coHTGyxTwzU+0DNR7kHoD37krFcyWnqKTdzV6yWS9a5g3H3a71bM4ctzE1kA=="
         referrerpolicy="no-referrer" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/vega-lite@5.15.0/build/vega-lite.min.js" crossorigin="anonymous"
+        integrity="sha512-DFhjyQTRTao5MOf11Mxt3sft6Iamu6u7FlaarEW6VhIsN2flUUk30OZ5byOrxV3HCawL+YLalR2ZhKf2kBiLDw=="
         referrerpolicy="no-referrer" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.22.2/build/vega-embed.min.js" crossorigin="anonymous"
+        integrity="sha512-XGkG4fTLMPA3Lp9FUGv7MFNvzpAzC/QgC//cOSxjfhmj8fZjF8iyqn9rgXjwHiY1xqWFzn+BnH8R0oGClEIPvw=="
         referrerpolicy="no-referrer" defer></script>
     <script defer>
         (function () {
@@ -370,6 +376,7 @@
 
             const originalPathArgument = state.pathArgument || '';
             let resolvedRootPath = state.rootPath || '';
+            const initialFileFromLocation = fileFromSearch(window.location.search);
             const textEncoder = new TextEncoder();
             const textDecoder = new TextDecoder();
             let markedConfigured = false;
@@ -381,6 +388,8 @@
             let vegaIdCounter = 0;
             let excalidrawIdCounter = 0;
             const excalidrawRoots = new Map();
+            let librariesReadyPromise = null;
+            let pendingMarkdown = null;
 
             function configureMarked() {
                 if (typeof marked === 'undefined' || markedConfigured) {
@@ -505,6 +514,33 @@
 
             function decodeExcalidrawSource(encoded) {
                 return decodeDiagramSource(encoded, 'Excalidraw');
+            }
+
+            function waitForCoreLibraries(maxRetries = 80, interval = 100) {
+                if (librariesReadyPromise) {
+                    return librariesReadyPromise;
+                }
+
+                librariesReadyPromise = new Promise((resolve) => {
+                    let attempts = 0;
+                    const check = () => {
+                        if (typeof marked !== 'undefined') {
+                            resolve();
+                            return;
+                        }
+
+                        if (attempts++ >= maxRetries) {
+                            resolve();
+                            return;
+                        }
+
+                        window.setTimeout(check, interval);
+                    };
+
+                    check();
+                });
+
+                return librariesReadyPromise;
             }
 
             const DIAGRAM_ICONS = {
@@ -786,9 +822,27 @@
                 return queryString ? `?${queryString}` : '';
             }
 
-            function updateLocation(file) {
+            function updateLocation(file, { replace = false } = {}) {
                 const newQuery = buildQuery({ file });
-                window.history.replaceState({ file }, '', `${window.location.pathname}${newQuery}`);
+                const newUrl = `${window.location.pathname}${newQuery}`;
+                const currentUrl = `${window.location.pathname}${window.location.search}`;
+                const stateData = { file };
+
+                if (replace || newUrl === currentUrl) {
+                    window.history.replaceState(stateData, '', newUrl);
+                } else {
+                    window.history.pushState(stateData, '', newUrl);
+                }
+            }
+
+            function fileFromSearch(search) {
+                const params = new URLSearchParams(search || '');
+                const value = params.get('file');
+                if (typeof value !== 'string') {
+                    return '';
+                }
+                const trimmed = value.trim();
+                return trimmed === '' ? '' : trimmed;
             }
 
             function renderMarkdown(markdownText) {
@@ -798,11 +852,24 @@
                 vegaIdCounter = 0;
                 excalidrawIdCounter = 0;
 
-                if (typeof marked !== 'undefined') {
-                    content.innerHTML = marked.parse(markdownText || '');
-                } else {
-                    content.textContent = markdownText || '';
+                const sourceText = markdownText || '';
+
+                if (typeof marked === 'undefined') {
+                    pendingMarkdown = sourceText;
+                    content.textContent = sourceText;
+                    waitForCoreLibraries().then(() => {
+                        if (pendingMarkdown !== null) {
+                            const textToRender = pendingMarkdown;
+                            pendingMarkdown = null;
+                            renderMarkdown(textToRender);
+                        }
+                    });
+                    rawView.textContent = sourceText;
+                    return;
                 }
+
+                content.innerHTML = marked.parse(sourceText);
+                pendingMarkdown = null;
 
                 if (typeof hljs !== 'undefined') {
                     content.querySelectorAll('pre code').forEach((block) => {
@@ -818,9 +885,24 @@
                 }
 
                 renderAllDiagrams();
-                rawView.textContent = markdownText || '';
+                rawView.textContent = sourceText;
             }
 
+
+            function resetViewToFallback(options = {}) {
+                const { skipHistory = false } = options;
+                currentFile = null;
+                const fallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
+                renderMarkdown(fallback);
+                updateActiveFileHighlight();
+                updateHeader();
+                rawVisible = false;
+                rawView.classList.remove('visible');
+                rawButton.textContent = 'Show Raw';
+                if (!skipHistory) {
+                    updateLocation('', { replace: true });
+                }
+            }
             function renderFileList() {
                 fileList.innerHTML = '';
                 if (!files.length) {
@@ -874,11 +956,11 @@
                 if (!files.find((entry) => entry.relativePath === currentFile)) {
                     currentFile = files.length ? files[0].relativePath : null;
                     if (currentFile) {
-                        await loadFile(currentFile);
+                        await loadFile(currentFile, { replaceHistory: true });
                     } else {
                         currentFile = null;
                         renderMarkdown(fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'));
-                        updateLocation('');
+                        updateLocation('', { replace: true });
                         rawVisible = false;
                         rawView.classList.remove('visible');
                         rawButton.textContent = 'Show Raw';
@@ -894,7 +976,8 @@
                 return `# No markdown files found\n\nThe directory \`${path}\` does not contain any markdown files yet.`;
             }
 
-            async function loadFile(file) {
+            async function loadFile(file, options = {}) {
+                const { skipHistory = false, replaceHistory = false } = options;
                 setStatus('');
                 const url = `/api/file${buildQuery({ file })}`;
                 try {
@@ -904,7 +987,7 @@
                     renderMarkdown(data.content || '');
                     updateActiveFileHighlight();
                     updateHeader();
-                    updateLocation(currentFile);
+                    updateLocation(currentFile, { replace: replaceHistory || skipHistory });
                     rawVisible = false;
                     rawView.classList.remove('visible');
                     rawButton.textContent = 'Show Raw';
@@ -991,11 +1074,11 @@
                             if (!files.find((entry) => entry.relativePath === currentFile)) {
                                 currentFile = files.length ? files[0].relativePath : null;
                                 if (currentFile) {
-                                    await loadFile(currentFile);
+                                    await loadFile(currentFile, { replaceHistory: true });
                                 } else {
                                     currentFile = null;
                                     renderMarkdown(fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'));
-                                    updateLocation('');
+                                    updateLocation('', { replace: true });
                                     rawVisible = false;
                                     rawView.classList.remove('visible');
                                     rawButton.textContent = 'Show Raw';
@@ -1007,7 +1090,7 @@
                             }
                         } else if (payload.type === 'file_changed') {
                             if (payload.file && payload.file === currentFile) {
-                                await loadFile(currentFile);
+                                await loadFile(currentFile, { replaceHistory: true });
                             }
                         }
                     } catch (err) {
@@ -1047,11 +1130,29 @@
                 connectWebSocket();
                 if (!currentFile && files.length) {
                     currentFile = files[0].relativePath;
-                    loadFile(currentFile);
+                }
+
+                if (!initialFileFromLocation && currentFile) {
+                    loadFile(currentFile, { replaceHistory: true });
                 }
             }
 
+            window.addEventListener('popstate', () => {
+                const targetFile = fileFromSearch(window.location.search);
+                if (targetFile) {
+                    if (targetFile !== currentFile) {
+                        loadFile(targetFile, { skipHistory: true, replaceHistory: true });
+                    }
+                } else {
+                    resetViewToFallback({ skipHistory: true });
+                }
+            });
+
             initialise();
+
+            if (initialFileFromLocation) {
+                loadFile(initialFileFromLocation, { replaceHistory: true });
+            }
         })();
     </script>
 </body>
