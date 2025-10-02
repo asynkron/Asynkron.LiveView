@@ -278,15 +278,17 @@ python server.py --dir /path/to/my/docs --port 3000
 ### MCP Endpoints
 
 - `POST /mcp`: JSON-RPC endpoint for MCP protocol
-  - Supports MCP tools: `show_content`, `list_content`, `view_content`, `update_content`, `remove_content`, `get_chat_stream_info`, `subscribe_chat_stream`
-- `POST /mcp/stream/chat`: HTTP streaming endpoint for live chat messages
-  - Uses chunked transfer encoding with newline-delimited JSON payloads
-  - Designed for long-lived connections (no polling or repeated requests)
-  - Example:
-    ```bash
-    curl -N -X POST http://localhost:8080/mcp/stream/chat
-    # Output: NDJSON stream with chat events
+  - Supports MCP tools: `show_content`, `list_content`, `view_content`, `update_content`, `remove_content`
+
+### Agent Feed WebSocket
+
+- `GET /agent-feed`: WebSocket endpoint that streams chat activity to CLI hosts
+  - Messages are newline-delimited JSON with a minimal schema:
+    ```json
+    {"type": "chat", "text": "message contents", "timestamp": 1710000000.123}
+    {"type": "control", "cmd": "quit"}
     ```
+  - The [`clihost.py`](./clihost.py) helper connects here, injects chat lines into a child agent, and keeps the local terminal interactive.
 
 ## MCP Server Integration 🤖
 
@@ -312,26 +314,22 @@ The new unified server provides:
 
 ```mermaid
 graph TD
-    A[AI Assistant] --> B[HTTP MCP Endpoint]
-    A --> H[HTTP Chat Stream]
-    B --> C[Unified Server]
-    H --> C
-    C --> D[File System]
-    C --> E[File Watcher]
-    E --> F[WebSocket]
-    F --> G[Browser Auto-Update]
-    F --> I[Chat Messages]
-    I --> H
-    
-    style A fill:#e1f5fe
-    style C fill:#fff3e0
-    style G fill:#c8e6c9
-    style H fill:#fff9c4
+    Browser[Browser UI] -->|Chat WS| Server
+    Server -->|Markdown Updates| Browser
+    Server -->|MCP Tools| MCP
+    MCP -->|File Actions| Server
+    Server -->|Agent Feed WS| Host
+    Host -->|stdin/stdout| Agent[CLI Agent]
+    Server --> Files[Markdown Files]
+
+    style Browser fill:#c8e6c9
+    style Server fill:#fff3e0
+    style Host fill:#fff9c4
+    style MCP fill:#e1f5fe
+    style Files fill:#f1f8e9
 ```
 
-**Chat Integration**: When users send chat messages from the browser, they are:
-1. Sent via WebSocket to the server
-2. Broadcast to AI assistants via the streaming endpoint (`POST /mcp/stream/chat`)
+**Chat Integration**: When users send chat messages from the browser, they are pushed over the UI WebSocket and forwarded to any connected CLI hosts through `/agent-feed`. The host injects each message into the running CLI agent as if the user had typed it locally.
 
 ### Legacy MCP Setup (Still Supported)
 
@@ -352,42 +350,37 @@ The MCP server provides conversationally named tools for AI assistants:
 - **`update_content`**: Append to or completely replace an existing entry by supplying its File Id.
 - **`remove_content`**: Delete an entry using its File Id when it is no longer needed.
 
-#### Chat Integration Tools
+#### CLI Host Bridge
 
-- **`get_chat_stream_info`**: Detailed instructions for connecting to the streaming HTTP endpoint.
-- **`subscribe_chat_stream`**: Explains how to connect to the live chat HTTP stream. Use this instead of polling-based approaches.
-- **Streaming Endpoint** (Recommended): Connect to `POST /mcp/stream/chat` for push-based chat notifications.
+- [`clihost.py`](./clihost.py) runs the CLI agent as a subprocess, keeps your terminal interactive, and injects chat lines pushed by the server.
+- Connect with: `python clihost.py --url ws://localhost:8080/agent-feed -- python example_ai_agent.py`
+- The host automatically reconnects to the server if the WebSocket drops.
 
-**Example: Subscribing to Chat via SSE**
+**Example: Run the CLI host bridge**
 
 ```bash
-# Connect to SSE endpoint for real-time chat messages
-curl -N http://localhost:8080/mcp/chat/subscribe
-
-# Output (Server-Sent Events):
-# data: {"type":"connected","message":"Successfully subscribed to chat messages"}
-# 
-# : heartbeat
-# 
-# data: {"type": "chat", "message": "Hello from user!", "timestamp": 1234567890.123}
+python clihost.py --url ws://localhost:8080/agent-feed -- python example_ai_agent.py
 ```
 
-**Example: Using Python to receive chat messages**
+**Example: Receiving chat events directly with Python**
 
 ```python
-import aiohttp
 import asyncio
+import json
+import websockets
 
-async def listen_to_chat():
-    async with aiohttp.ClientSession() as session:
-        async with session.get('http://localhost:8080/mcp/chat/subscribe') as resp:
-            async for line in resp.content:
-                if line.startswith(b'data: '):
-                    data = json.loads(line[6:])
-                    if data['type'] == 'chat':
-                        print(f"Received: {data['message']}")
 
-asyncio.run(listen_to_chat())
+async def main():
+    async with websockets.connect("ws://localhost:8080/agent-feed") as ws:
+        hello = await ws.recv()
+        print(f"Handshake: {hello}")
+        async for raw in ws:
+            msg = json.loads(raw)
+            if msg.get("type") == "chat":
+                print(f"🗨️  {msg['text']}")
+
+
+asyncio.run(main())
 ```
 
 ### AI Assistant Setup

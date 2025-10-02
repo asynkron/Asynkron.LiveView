@@ -21,29 +21,13 @@ def test_mcp_tools():
             print("✅ MCP Server is responding!")
             
             if "result" in result and "tools" in result["result"]:
-                chat_tools = [
-                    tool for tool in result["result"]["tools"] 
-                    if "chat" in tool.get("name", "").lower()
-                ]
-                
-                print(f"\n📋 Found {len(chat_tools)} chat-related tools:")
-                for tool in chat_tools:
+                tools = result["result"]["tools"]
+
+                print(f"\n📋 Found {len(tools)} MCP tools:")
+                for tool in tools:
                     name = tool.get("name", "unknown")
                     desc = tool.get("description", "no description")
                     print(f"  🔧 {name}: {desc}")
-                
-                # Test the stream URL tool if available
-                stream_tools = [
-                    tool for tool in result["result"]["tools"] 
-                    if "stream" in tool.get("name", "").lower()
-                ]
-                
-                if stream_tools:
-                    print(f"\n🌊 Found {len(stream_tools)} streaming tools:")
-                    for tool in stream_tools:
-                        name = tool.get("name", "unknown")
-                        desc = tool.get("description", "no description")
-                        print(f"  🔧 {name}: {desc}")
             
             return True
         else:

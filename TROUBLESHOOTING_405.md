@@ -82,12 +82,13 @@ This is the standard approach for JSON-RPC over HTTP and aligns with the MCP spe
 
 ## Code Reference
 
-From `unified_server.py` lines 788-791:
+From `server.py`:
 
 ```python
 if self.enable_mcp:
     app.router.add_post('/mcp', self.handle_mcp_http)
-    app.router.add_get('/mcp/chat/subscribe', self.handle_chat_sse)
+
+app.router.add_get('/agent-feed', self.handle_agent_feed)
 ```
 
 The route is explicitly registered as **POST only** using `add_post()`, not `add_get()`.
