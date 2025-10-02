@@ -330,6 +330,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/14.1.2/marked.min.js"
         integrity="sha512-bXyBT2/sYjZg1D7ykDS6eJSE4DFDVPJHvbRAfdfYKr6IusrCz7wAmSm36vz9G8zMob25Rvqu90vft3JI71ygcQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked-base-url@1.1.7/lib/index.umd.js"
+        integrity="sha512-vBt/Loem3LzFY7GzyW5LjD/RsH3CGU4ORjvDOiqEJDzPWCsCL6yKzCKid0oYSKyPAvH5j9RiwLs1L7QjKbgxEw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
         integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
@@ -390,6 +393,181 @@
             const excalidrawRoots = new Map();
             let librariesReadyPromise = null;
             let pendingMarkdown = null;
+            let relativeLinksEnabled = false;
+            let relativeLinkBasePath = '';
+            let relativeLinkBaseWalker = null;
+            let relativeLinkExtensionRegistered = false;
+            const relativeLinkDummyOrigin = 'http://__dummy__/';
+            const relativeLinkSchemePattern = /^[a-zA-Z][\w+.-]*:/;
+            const relativeLinkProtocolRelativePattern = /^\/\//;
+
+            function updateRelativeLinkBase(filePath) {
+                if (typeof filePath !== 'string' || filePath.length === 0) {
+                    relativeLinksEnabled = false;
+                    relativeLinkBasePath = '';
+                    relativeLinkBaseWalker = null;
+                    return;
+                }
+
+                relativeLinksEnabled = true;
+                const lastSlashIndex = filePath.lastIndexOf('/');
+                relativeLinkBasePath = lastSlashIndex === -1 ? '' : filePath.slice(0, lastSlashIndex + 1);
+
+                if (typeof markedBaseUrl !== 'undefined' && markedBaseUrl && typeof markedBaseUrl.baseUrl === 'function') {
+                    const baseCandidate = relativeLinkBasePath || './';
+                    try {
+                        relativeLinkBaseWalker = markedBaseUrl.baseUrl(baseCandidate);
+                    } catch (error) {
+                        console.warn('Failed to initialise marked-base-url', error);
+                        relativeLinkBaseWalker = null;
+                    }
+                } else {
+                    relativeLinkBaseWalker = null;
+                }
+            }
+
+            function decodePathSegments(path) {
+                if (!path) {
+                    return '';
+                }
+                return path
+                    .split('/')
+                    .map((segment) => {
+                        try {
+                            return decodeURIComponent(segment);
+                        } catch {
+                            return segment;
+                        }
+                    })
+                    .join('/');
+            }
+
+            function encodePathSegments(path) {
+                if (!path) {
+                    return '';
+                }
+                return path
+                    .split('/')
+                    .map((segment) => encodeURIComponent(segment))
+                    .join('/');
+            }
+
+            function fallbackResolveRelativeHref(href) {
+                try {
+                    const baseReference = relativeLinkBasePath ? relativeLinkBasePath : '.';
+                    const baseUrl = new URL(baseReference, relativeLinkDummyOrigin);
+                    const resolvedUrl = new URL(href, baseUrl);
+                    const normalisedPath = resolvedUrl.pathname.replace(/^\/+/u, '');
+                    const decodedPath = decodePathSegments(normalisedPath);
+                    return `${decodedPath}${resolvedUrl.search}${resolvedUrl.hash}`;
+                } catch (error) {
+                    console.warn('Relative link fallback failed', error);
+                    return href;
+                }
+            }
+
+            function splitResolvedHref(resolvedHref) {
+                if (typeof resolvedHref !== 'string' || resolvedHref.length === 0) {
+                    return { filePath: '', search: '', hash: '' };
+                }
+
+                let working = resolvedHref;
+                let hash = '';
+                const hashIndex = working.indexOf('#');
+                if (hashIndex !== -1) {
+                    hash = working.slice(hashIndex);
+                    working = working.slice(0, hashIndex);
+                }
+
+                let search = '';
+                const searchIndex = working.indexOf('?');
+                if (searchIndex !== -1) {
+                    search = working.slice(searchIndex);
+                    working = working.slice(0, searchIndex);
+                }
+
+                const cleaned = working.replace(/^\.\//, '').replace(/^\/+/u, '');
+                const filePath = decodePathSegments(cleaned);
+                return { filePath, search, hash };
+            }
+
+            function transformRelativeAsset(rawHref, tokenType) {
+                if (!relativeLinksEnabled || typeof rawHref !== 'string') {
+                    return null;
+                }
+
+                const trimmedHref = rawHref.trim();
+                if (
+                    !trimmedHref ||
+                    trimmedHref.startsWith('#') ||
+                    relativeLinkProtocolRelativePattern.test(trimmedHref) ||
+                    relativeLinkSchemePattern.test(trimmedHref) ||
+                    trimmedHref.startsWith('/')
+                ) {
+                    return null;
+                }
+
+                let resolvedHref = trimmedHref;
+                const walker = relativeLinkBaseWalker;
+
+                if (walker && typeof walker.walkTokens === 'function') {
+                    const tempToken = { type: tokenType, href: trimmedHref };
+                    try {
+                        walker.walkTokens(tempToken);
+                        resolvedHref = tempToken.href;
+                    } catch (error) {
+                        console.warn('marked-base-url resolution failed', error);
+                        resolvedHref = fallbackResolveRelativeHref(trimmedHref);
+                    }
+                } else {
+                    resolvedHref = fallbackResolveRelativeHref(trimmedHref);
+                }
+
+                const parts = splitResolvedHref(resolvedHref);
+                if (!parts.filePath) {
+                    return null;
+                }
+
+                if (tokenType === 'image') {
+                    return {
+                        assetHref: `${encodePathSegments(parts.filePath)}${parts.search}${parts.hash}`,
+                    };
+                }
+
+                return {
+                    fileTarget: `${parts.filePath}${parts.search}`,
+                    hash: parts.hash,
+                };
+            }
+
+            const relativeLinkExtension = {
+                walkTokens(token) {
+                    if (!token || typeof token.href !== 'string') {
+                        return;
+                    }
+
+                    if (token.type === 'image') {
+                        const asset = transformRelativeAsset(token.href, 'image');
+                        if (asset && asset.assetHref) {
+                            token.href = asset.assetHref;
+                        }
+                        return;
+                    }
+
+                    if (token.type !== 'link') {
+                        return;
+                    }
+
+                    const result = transformRelativeAsset(token.href, 'link');
+                    if (!result || !result.fileTarget) {
+                        return;
+                    }
+
+                    const basePathname = typeof window !== 'undefined' && window.location ? window.location.pathname : '';
+                    const query = buildQuery({ file: result.fileTarget });
+                    token.href = `${basePathname}${query}${result.hash || ''}`;
+                },
+            };
 
             function configureMarked() {
                 if (typeof marked === 'undefined' || markedConfigured) {
@@ -454,6 +632,11 @@
                         }
                     },
                 });
+
+                if (!relativeLinkExtensionRegistered) {
+                    marked.use(relativeLinkExtension);
+                    relativeLinkExtensionRegistered = true;
+                }
 
                 markedConfigured = true;
             }
@@ -848,6 +1031,7 @@
             function renderMarkdown(markdownText) {
                 cleanupExcalidrawRoots();
                 configureMarked();
+                updateRelativeLinkBase(currentFile);
                 mermaidIdCounter = 0;
                 vegaIdCounter = 0;
                 excalidrawIdCounter = 0;
