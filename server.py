@@ -70,10 +70,19 @@ class MarkdownFileHandler(FileSystemEventHandler):
 class UnifiedMarkdownServer:
     """Unified server class combining LiveView and MCP functionality."""
     
-    def __init__(self, markdown_dir: str = "markdown", port: int = 8080, enable_mcp: bool = True):
+    def __init__(
+        self,
+        markdown_dir: str = "markdown",
+        port: int = 8080,
+        enable_mcp: bool = True,
+        mcp_host: str = "127.0.0.1",
+        mcp_port: Optional[int] = None,
+    ):
         self.default_markdown_dir = Path(markdown_dir)
         self.markdown_dir = self.default_markdown_dir  # Current active directory
         self.port = port
+        self.mcp_host = mcp_host
+        self.mcp_port = mcp_port or (port + 1)
         self.clients: set = set()
         self.sse_clients: set = set()  # Track SSE clients for chat messages
         self.observer = None
@@ -81,7 +90,9 @@ class UnifiedMarkdownServer:
         self.sticky_files: Dict[str, str] = {}  # Maps directory path to sticky filename
         self.chat_messages: List[Dict[str, Any]] = []  # Store recent chat messages
         self.chat_subscribers: List[asyncio.Queue] = []  # Queues for streaming chat to MCP clients
-        
+        self._mcp_http_server_task: Optional[asyncio.Task] = None
+        self._mcp_uvicorn_server = None
+
         # Initialize component modules (pass sticky_files reference to FileManager)
         self.file_manager = FileManager(self.default_markdown_dir, self.sticky_files)
         self.template_handler = TemplateHandler(
@@ -97,7 +108,19 @@ class UnifiedMarkdownServer:
                 instructions="MCP server for managing markdown files in the live view system"
             )
             self._register_mcp_tools()
+            # Create the reusable ASGI application that FastMCP exposes for HTTP transport.
+            # We keep a reference so we don't need to recreate the Starlette app per request.
+            self._mcp_http_app = self.mcp_server.http_app(
+                transport='http',
+                json_response=True,
+                stateless_http=True,
+            )
             logger.info(f"FastMCP Server initialized for directory: {self.default_markdown_dir}")
+
+    @property
+    def mcp_http_app(self):
+        """Expose the FastMCP Starlette application for testing utilities."""
+        return getattr(self, "_mcp_http_app", None)
 
     def _register_mcp_tools(self):
         """Register all available MCP tools with FastMCP."""
@@ -762,7 +785,63 @@ See get_chat_stream_info() for complete implementation."""
             self.observer.stop()
             self.observer.join()
             logger.info("File watcher stopped")
-    
+
+    async def start_mcp_http_server(self):
+        """Run the FastMCP HTTP transport on its own port using Uvicorn."""
+        if not self.enable_mcp:
+            return
+
+        if self._mcp_http_server_task is not None:
+            return
+
+        if not hasattr(self, "_mcp_http_app") or self._mcp_http_app is None:
+            raise RuntimeError("FastMCP HTTP app not initialized")
+
+        try:
+            import uvicorn
+        except ImportError as exc:  # pragma: no cover - guarded by requirements
+            raise RuntimeError("uvicorn is required for HTTP MCP transport") from exc
+
+        config = uvicorn.Config(
+            self._mcp_http_app,
+            host=self.mcp_host,
+            port=self.mcp_port,
+            log_level="info",
+            lifespan="on",
+            access_log=False,
+        )
+        self._mcp_uvicorn_server = uvicorn.Server(config)
+
+        async def _serve():
+            try:
+                await self._mcp_uvicorn_server.serve()
+            finally:
+                self._mcp_http_server_task = None
+                self._mcp_uvicorn_server = None
+
+        self._mcp_http_server_task = asyncio.create_task(_serve())
+
+        # Wait for the server to finish its startup sequence before returning.
+        while True:
+            if self._mcp_uvicorn_server is None:
+                raise RuntimeError("FastMCP HTTP server failed to start")
+            if getattr(self._mcp_uvicorn_server, "started", False):
+                break
+            if self._mcp_http_server_task.done():
+                # Surface startup exceptions immediately.
+                await self._mcp_http_server_task
+                raise RuntimeError("FastMCP HTTP server exited during startup")
+            await asyncio.sleep(0.05)
+
+    async def stop_mcp_http_server(self):
+        """Shut down the FastMCP HTTP transport server if it is running."""
+        if self._mcp_uvicorn_server is not None:
+            self._mcp_uvicorn_server.should_exit = True
+
+        if self._mcp_http_server_task is not None:
+            await self._mcp_http_server_task
+            self._mcp_http_server_task = None
+
     async def run_mcp_stdio(self):
         """Run the FastMCP server using stdio (for AI assistant integration)."""
         if not self.enable_mcp:
@@ -787,210 +866,8 @@ See get_chat_stream_info() for complete implementation."""
         
         # FastMCP HTTP integration
         if self.enable_mcp:
-            # Create FastMCP HTTP handler
-            async def fastmcp_handler(request):
-                """Handle MCP requests using FastMCP's HTTP transport."""
-                # Convert aiohttp request to a format FastMCP can handle
-                try:
-                    # Get the request body
-                    if request.method == 'POST':
-                        body = await request.read()
-                        
-                        # Create a simple mock request object for FastMCP
-                        from starlette.requests import Request
-                        from starlette.responses import JSONResponse
-                        
-                        # Create a minimal ASGI scope for Starlette Request
-                        scope = {
-                            'type': 'http',
-                            'method': request.method,
-                            'path': request.path_qs,
-                            'headers': [(k.encode(), v.encode()) for k, v in request.headers.items()],
-                            'query_string': request.query_string.encode() if hasattr(request, 'query_string') else b'',
-                        }
-                        
-                        # Use FastMCP's HTTP app to handle the request
-                        fastmcp_app = self.mcp_server.http_app(transport='http')
-                        
-                        # Create a simple ASGI interface
-                        import asyncio
-                        import json as json_module
-                        
-                        # Parse the JSON-RPC request
-                        try:
-                            json_data = json_module.loads(body.decode('utf-8'))
-                        except:
-                            return web.json_response({
-                                "jsonrpc": "2.0",
-                                "id": None,
-                                "error": {"code": -32700, "message": "Parse error"}
-                            }, status=400)
-                        
-                        # Handle MCP requests directly through FastMCP
-                        method = json_data.get('method')
-                        params = json_data.get('params', {})
-                        request_id = json_data.get('id')
-                        
-                        if method == 'initialize':
-                            # Initialize response - declare server capabilities
-                            result = {
-                                "protocolVersion": "2024-11-05",
-                                "capabilities": {
-                                    "tools": {
-                                     #//TODO: fucking put the right shit here
-                                    }
-                                },
-                                "serverInfo": {
-                                    "name": self.mcp_server.name,
-                                    "version": "1.0.0"
-                                }
-                            }
-                            return web.json_response({
-                                "jsonrpc": "2.0",
-                                "id": request_id,
-                                "result": result
-                            })
-                        
-                        elif method == 'tools/list':
-                            # Get tools from FastMCP
-                            tools = await self.mcp_server.get_tools()
-                            tool_list = []
-                            for name, tool in tools.items():
-                                tool_list.append({
-                                    "name": name,
-                                    "description": tool.description or f"Tool: {name}",
-                                    "inputSchema": {
-                                        "type": "object",
-                                        "properties": {},
-                                        "additionalProperties": True
-                                    }
-                                })
-                            
-                            return web.json_response({
-                                "jsonrpc": "2.0", 
-                                "id": request_id,
-                                "result": {"tools": tool_list}
-                            })
-                        
-                        elif method == 'tools/call':
-                            # Call FastMCP tool
-                            tool_name = params.get('name')
-                            arguments = params.get('arguments', {})
-                            
-                            if not tool_name:
-                                return web.json_response({
-                                    "jsonrpc": "2.0",
-                                    "id": request_id,
-                                    "error": {"code": -32602, "message": "Invalid params"}
-                                }, status=400)
-                            
-                            try:
-                                tools = await self.mcp_server.get_tools()
-                                if tool_name not in tools:
-                                    return web.json_response({
-                                        "jsonrpc": "2.0",
-                                        "id": request_id,
-                                        "error": {"code": -32601, "message": f"Unknown tool: {tool_name}"}
-                                    }, status=400)
-                                
-                                tool = tools[tool_name]
-                                result = await tool.run(arguments)
-                                
-                                # Convert result to MCP format - FastMCP returns ToolResult objects
-                                try:
-                                    # Handle different types of FastMCP ToolResult objects
-                                    if hasattr(result, 'content') and result.content:
-                                        # For ToolResult with content array
-                                        if isinstance(result.content, list) and len(result.content) > 0:
-                                            first_content = result.content[0]
-                                            if hasattr(first_content, 'text'):
-                                                text_content = first_content.text
-                                            else:
-                                                text_content = str(first_content)
-                                        else:
-                                            text_content = str(result.content)
-                                    elif hasattr(result, 'value'):
-                                        # For ToolResult with value attribute
-                                        text_content = str(result.value)
-                                    elif hasattr(result, 'text'):
-                                        # For ToolResult with direct text attribute
-                                        text_content = result.text
-                                    elif isinstance(result, str):
-                                        # If it's already a string
-                                        text_content = result
-                                    else:
-                                        # Try to get the actual return value from the function
-                                        # FastMCP often wraps the actual result
-                                        if hasattr(result, '__dict__'):
-                                            # Look for common attributes that contain the actual result
-                                            for attr in ['value', 'text', 'content', 'result', 'data']:
-                                                if hasattr(result, attr):
-                                                    attr_value = getattr(result, attr)
-                                                    if isinstance(attr_value, str):
-                                                        text_content = attr_value
-                                                        break
-                                                    elif isinstance(attr_value, list) and attr_value:
-                                                        if hasattr(attr_value[0], 'text'):
-                                                            text_content = attr_value[0].text
-                                                            break
-                                            else:
-                                                # Fallback: use string representation
-                                                text_content = str(result)
-                                        else:
-                                            text_content = str(result)
-                                except Exception as e:
-                                    logger.error(f"Error extracting tool result: {e}", exc_info=True)
-                                    text_content = str(result)
-                                
-                                return web.json_response({
-                                    "jsonrpc": "2.0",
-                                    "id": request_id,
-                                    "result": {
-                                        "content": [
-                                            {
-                                                "type": "text",
-                                                "text": text_content
-                                            }
-                                        ]
-                                    }
-                                })
-                            
-                            except Exception as e:
-                                return web.json_response({
-                                    "jsonrpc": "2.0",
-                                    "id": request_id,
-                                    "error": {"code": -32603, "message": f"Tool execution failed: {str(e)}"}
-                                }, status=500)
-                        
-                        else:
-                            return web.json_response({
-                                "jsonrpc": "2.0",
-                                "id": request_id,
-                                "error": {"code": -32601, "message": f"Unknown method: {method}"}
-                            }, status=400)
-                    
-                    else:
-                        # GET request - return server info
-                        return web.json_response({
-                            "name": self.mcp_server.name,
-                            "version": "1.0.0",
-                            "transport": "http",
-                            "capabilities": {"tools": {}}
-                        })
-                        
-                except Exception as e:
-                    logger.error(f"FastMCP HTTP handler error: {e}")
-                    return web.json_response({
-                        "jsonrpc": "2.0",
-                        "id": None,
-                        "error": {"code": -32603, "message": "Internal error"}
-                    }, status=500)
-            
-            # Add MCP HTTP endpoints
-            app.router.add_post('/mcp', fastmcp_handler)
-            app.router.add_get('/mcp', fastmcp_handler)
-            
-            # Chat streaming endpoint
+            # Chat streaming endpoint remains part of the web server because it
+            # bridges UI events directly to connected MCP agents.
             app.router.add_post('/mcp/stream/chat', self.handle_mcp_stream_chat)
 
         return app
@@ -998,42 +875,51 @@ See get_chat_stream_info() for complete implementation."""
     async def run(self, enable_stdio_mcp: bool = False):
         """Run the unified server."""
         app = self.create_app()
-        
+
         # Get the current event loop
         loop = asyncio.get_event_loop()
-        
+
         # Start file watcher
         self.start_file_watcher(loop)
-        
+
         try:
             logger.info(f"Starting unified server on http://localhost:{self.port}")
             if self.enable_mcp:
                 logger.info("MCP functionality enabled:")
-                logger.info("  - HTTP endpoint: POST /mcp")
+                logger.info(f"  - HTTP endpoint: http://{self.mcp_host}:{self.mcp_port}/mcp")
                 if enable_stdio_mcp:
                     logger.info("  - stdio server: will start after HTTP server")
-            
+
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, 'localhost', self.port)
             await site.start()
-            
+
             logger.info(f"Server running at http://localhost:{self.port}")
             logger.info(f"Watching markdown files in: {self.default_markdown_dir.absolute()}")
-            
+
+            if self.enable_mcp:
+                await self.start_mcp_http_server()
+                logger.info("FastMCP HTTP server started on separate port")
+
             # Optionally start stdio MCP server in parallel
             if enable_stdio_mcp and self.enable_mcp:
                 # Create a task for the stdio MCP server
                 stdio_task = asyncio.create_task(self.run_mcp_stdio())
-            
+
             # Keep the server running
             while True:
                 await asyncio.sleep(1)
-                
+
         except KeyboardInterrupt:
             logger.info("Server shutting down...")
+        except asyncio.CancelledError:
+            logger.info("Server task cancelled")
+            raise
         finally:
             self.stop_file_watcher()
+            if self.enable_mcp:
+                await self.stop_mcp_http_server()
 
 def main():
     """Main entry point."""
@@ -1043,11 +929,19 @@ def main():
     parser.add_argument('--dir', default='markdown', help='Directory to watch for markdown files')
     parser.add_argument('--port', type=int, default=8080, help='Port to run server on')
     parser.add_argument('--disable-mcp', action='store_true', help='Disable MCP functionality')
+    parser.add_argument('--mcp-host', default='127.0.0.1', help='Host for the FastMCP HTTP server')
+    parser.add_argument('--mcp-port', type=int, help='Port for the FastMCP HTTP server (defaults to web port + 1)')
     parser.add_argument('--mcp-stdio', action='store_true', help='Enable MCP stdio server alongside HTTP server')
     
     args = parser.parse_args()
     
-    server = UnifiedMarkdownServer(args.dir, args.port, enable_mcp=not args.disable_mcp)
+    server = UnifiedMarkdownServer(
+        args.dir,
+        args.port,
+        enable_mcp=not args.disable_mcp,
+        mcp_host=args.mcp_host,
+        mcp_port=args.mcp_port,
+    )
     
     try:
         asyncio.run(server.run(enable_stdio_mcp=args.mcp_stdio))
