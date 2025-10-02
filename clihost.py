@@ -197,9 +197,13 @@ async def _terminate_child(proc: asyncio.subprocess.Process, *, timeout: float =
     """Gracefully terminate the child process, escalating if needed."""
 
     if proc.returncode is not None:
+        print(f"[clihost] child already exited with code {proc.returncode}")
+        sys.stdout.flush()
         return
 
     try:
+        print(f"[clihost] terminating child PID {proc.pid}")
+        sys.stdout.flush()
         proc.send_signal(signal.SIGTERM)
     except ProcessLookupError:
         return
@@ -207,9 +211,13 @@ async def _terminate_child(proc: asyncio.subprocess.Process, *, timeout: float =
         proc.terminate()
     try:
         await asyncio.wait_for(proc.wait(), timeout=timeout)
+        print(f"[clihost] child exited with code {proc.returncode}")
+        sys.stdout.flush()
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
+        print(f"[clihost] child killed after timeout (code {proc.returncode})")
+        sys.stdout.flush()
 
 
 async def ws_consumer(

@@ -19,7 +19,7 @@ import logging
 import signal
 import sys
 import time
-from typing import Set
+from typing import Iterable, Set
 
 import websockets
 
@@ -70,7 +70,13 @@ class SimulatedServer:
         await asyncio.gather(*[client.send(payload) for client in list(self._clients)])
 
 
-async def _interactive(server: SimulatedServer) -> None:
+async def _interactive(
+    server: SimulatedServer,
+    *,
+    scripted_messages: Iterable[str],
+    interval: float,
+    auto_stop: bool,
+) -> None:
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
@@ -78,17 +84,32 @@ async def _interactive(server: SimulatedServer) -> None:
         logger.info("received interrupt, shutting down")
         stop_event.set()
 
-    loop.add_signal_handler(signal.SIGINT, handle_sigint)
-    loop.add_signal_handler(signal.SIGTERM, handle_sigint)
+    try:
+        loop.add_signal_handler(signal.SIGINT, handle_sigint)
+        loop.add_signal_handler(signal.SIGTERM, handle_sigint)
+    except NotImplementedError:
+        # Signals not available (e.g., on Windows) when run in background threads
+        pass
 
     await server.start()
 
     async def broadcaster() -> None:
-        idx = 1
-        while not stop_event.is_set():
-            await server.broadcast_chat(f"ping #{idx}")
-            idx += 1
-            await asyncio.sleep(1.0)
+        if scripted_messages:
+            # Allow clients to connect before the first scripted message.
+            await asyncio.sleep(interval)
+            for idx, msg in enumerate(scripted_messages):
+                logger.info("broadcasting scripted message %d: %s", idx + 1, msg)
+                await server.broadcast_chat(msg)
+                if idx < len(scripted_messages) - 1:
+                    await asyncio.sleep(interval)
+            if auto_stop:
+                stop_event.set()
+        else:
+            idx = 1
+            while not stop_event.is_set():
+                await server.broadcast_chat(f"ping #{idx}")
+                idx += 1
+                await asyncio.sleep(interval)
 
     broadcaster_task = asyncio.create_task(broadcaster())
     await stop_event.wait()
@@ -105,13 +126,33 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--log-level", default="INFO")
+    parser.add_argument(
+        "--message",
+        action="append",
+        dest="messages",
+        default=None,
+        help="Scripted chat message to broadcast (can be supplied multiple times)",
+    )
+    parser.add_argument("--interval", type=float, default=1.0, help="Seconds between broadcasts")
+    parser.add_argument(
+        "--auto-stop",
+        action="store_true",
+        help="Stop the server automatically after scripted messages are sent",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
     server = SimulatedServer(args.host, args.port)
 
     try:
-        asyncio.run(_interactive(server))
+        asyncio.run(
+            _interactive(
+                server,
+                scripted_messages=args.messages or [],
+                interval=max(args.interval, 0.05),
+                auto_stop=args.auto_stop,
+            )
+        )
     except KeyboardInterrupt:
         print("Interrupted", file=sys.stderr)
 
