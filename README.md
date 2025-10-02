@@ -93,8 +93,8 @@ Example log file: `log{unixtimestamp}.md` - always use the current unix timestam
 - 📄 **Unified Markdown View**: Reads `.md` files from a folder and displays them as a single, unified document  
 - ⏰ **Chronological Ordering**: Files are automatically ordered by creation timestamp  
 - 🔄 **Live Updates**: Real-time detection of new markdown files with WebSocket streaming  
-- 🎨 **Rich Rendering**: Full support for markdown syntax and Mermaid diagrams  
-- 🌐 **Web Interface**: Clean, responsive HTML interface with marked.js and mermaid.js  
+- 🎨 **Rich Rendering**: Full support for markdown syntax and Mermaid diagrams
+- 🌐 **Web Interface**: Clean, responsive HTML interface with marked.js and mermaid.js
 
 ---
 
