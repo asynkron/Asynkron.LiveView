@@ -93,6 +93,15 @@ def parse_args(argv: List[str]) -> tuple[argparse.Namespace, List[str]]:
         default=True,
         help="Always print chat messages received from the server (use --no-echo-chat to suppress)",
     )
+    parser.add_argument(
+        "--capture-output",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Capture child stdout/stderr and relay through clihost (disabled by default; "
+            "pass --capture-output to enable, --no-capture-output to keep inheriting the parent console)"
+        ),
+    )
 
     args = parser.parse_args(host_args)
     if not child_cmd:
@@ -100,7 +109,7 @@ def parse_args(argv: List[str]) -> tuple[argparse.Namespace, List[str]]:
     return args, child_cmd
 
 
-async def create_child(child_cmd: List[str]) -> asyncio.subprocess.Process:
+async def create_child(child_cmd: List[str], *, capture_output: bool) -> asyncio.subprocess.Process:
     """Spawn the agent process whose stdin/stdout we proxy."""
 
     print(f"[clihost] launching child command: {' '.join(child_cmd)}")
@@ -108,8 +117,8 @@ async def create_child(child_cmd: List[str]) -> asyncio.subprocess.Process:
     return await asyncio.create_subprocess_exec(
         *child_cmd,
         stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE if capture_output else None,
+        stderr=asyncio.subprocess.PIPE if capture_output else None,
     )
 
 
@@ -329,16 +338,21 @@ async def main() -> None:
         ]
         print(f"[clihost] wrapping child with pseudo-terminal: {' '.join(child_cmd_to_run)}")
         sys.stdout.flush()
-    proc = await create_child(child_cmd_to_run)
+    proc = await create_child(child_cmd_to_run, capture_output=args.capture_output)
     print(f"[clihost] started child PID {proc.pid}: {' '.join(child_cmd_to_run)}")
     sys.stdout.flush()
 
-    tasks = [
-        asyncio.create_task(pump_stream(proc.stdout, sys.stdout, timeout=10.0, proc=proc)),
-        asyncio.create_task(pump_stream(proc.stderr, sys.stderr, timeout=10.0, proc=proc)),
-    ]
-    if args.verbose:
-        print("[clihost] stdout/stderr pump tasks started")
+    tasks = []
+    if args.capture_output:
+        if proc.stdout is not None:
+            tasks.append(asyncio.create_task(pump_stream(proc.stdout, sys.stdout, timeout=10.0, proc=proc)))
+        if proc.stderr is not None:
+            tasks.append(asyncio.create_task(pump_stream(proc.stderr, sys.stderr, timeout=10.0, proc=proc)))
+        if args.verbose:
+            print("[clihost] stdout/stderr pump tasks started")
+            sys.stdout.flush()
+    elif args.verbose:
+        print("[clihost] child stdout/stderr will flow directly to parent console")
         sys.stdout.flush()
 
     stdin_q: "queue.Queue[Optional[str]]" = queue.Queue()
