@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""
-Unified Server for Markdown Live View with MCP Integration
+"""Unified server for the Markdown Live View experience.
 
-Combines both the HTTP LiveView server and MCP server functionality into a single application.
-Provides both web interface for viewing markdown files and MCP protocol support for AI assistants.
+The previous implementation exposed MCP tooling and an HTTP streaming bridge for
+chat messages. That path turned out to be brittle, so the server now focuses on
+the Live View UI and a lightweight WebSocket feed that can push chat messages to
+external host processes.
 """
 
 import asyncio
@@ -13,17 +14,13 @@ import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Set
 from urllib.parse import quote
-from aiohttp import web, WSMsgType
+
+from aiohttp import WSMsgType, web
 from aiohttp.web_response import Response
-from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-
-import anyio
-
-# Import FastMCP functionality
-from fastmcp import FastMCP
+from watchdog.observers import Observer
 
 # Import component modules
 from components.file_manager import FileManager
@@ -34,15 +31,6 @@ from components.request_handlers import RequestHandlers
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-
-class _ClosedResourceFilter(logging.Filter):
-    """Ignore benign ClosedResourceError exceptions from FastMCP."""
-
-    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - simple guard
-        if not record.exc_info:
-            return True
-        exc = record.exc_info[1]
-        return not isinstance(exc, anyio.ClosedResourceError)
 
 class MarkdownFileHandler(FileSystemEventHandler):
     """Handles file system events for markdown files."""
@@ -80,30 +68,20 @@ class MarkdownFileHandler(FileSystemEventHandler):
             )
 
 class UnifiedMarkdownServer:
-    """Unified server class combining LiveView and MCP functionality."""
+    """Live View server with WebSocket chat fan-out for CLI agent hosts."""
     
     def __init__(
         self,
         markdown_dir: str = "markdown",
         port: int = 8080,
-        enable_mcp: bool = True,
-        mcp_host: str = "127.0.0.1",
-        mcp_port: Optional[int] = None,
     ):
         self.default_markdown_dir = Path(markdown_dir)
         self.markdown_dir = self.default_markdown_dir  # Current active directory
         self.port = port
-        self.mcp_host = mcp_host
-        self.mcp_port = mcp_port or (port + 1)
         self.clients: set = set()
-        self.sse_clients: set = set()  # Track SSE clients for chat messages
+        self.agent_feed_clients: Set[web.WebSocketResponse] = set()
         self.observer = None
-        self.enable_mcp = enable_mcp
         self.sticky_files: Dict[str, str] = {}  # Maps directory path to sticky filename
-        self.chat_messages: List[Dict[str, Any]] = []  # Store recent chat messages
-        self.chat_subscribers: List[asyncio.Queue] = []  # Queues for streaming chat to MCP clients
-        self._mcp_http_server_task: Optional[asyncio.Task] = None
-        self._mcp_uvicorn_server = None
 
         # Initialize component modules (pass sticky_files reference to FileManager)
         self.file_manager = FileManager(self.default_markdown_dir, self.sticky_files)
@@ -111,171 +89,6 @@ class UnifiedMarkdownServer:
             Path(__file__).resolve().parent / "templates" / "unified_index.html"
         )
         self.request_handlers = RequestHandlers(self.default_markdown_dir)
-        
-        # Initialize FastMCP server if enabled
-        if self.enable_mcp:
-            self.mcp_server = FastMCP(
-                name="markdown-liveview",
-                version="1.0.0",
-                instructions="MCP server for managing markdown files in the live view system"
-            )
-            self._register_mcp_tools()
-            # Create the reusable ASGI application that FastMCP exposes for HTTP transport.
-            # We keep a reference so we don't need to recreate the Starlette app per request.
-            self._mcp_http_app = self.mcp_server.http_app(
-                transport='http',
-                json_response=True,
-                stateless_http=True,
-            )
-            self._install_closed_resource_filter()
-            logger.info(f"FastMCP Server initialized for directory: {self.default_markdown_dir}")
-
-    @property
-    def mcp_http_app(self):
-        """Expose the FastMCP Starlette application for testing utilities."""
-        return getattr(self, "_mcp_http_app", None)
-
-    def _install_closed_resource_filter(self) -> None:
-        """Suppress benign ClosedResourceError logs from FastMCP's router."""
-
-        transport_logger = logging.getLogger("mcp.server.streamable_http")
-
-        # Avoid stacking duplicate filters when multiple server instances are created.
-        if not any(isinstance(f, _ClosedResourceFilter) for f in transport_logger.filters):
-            transport_logger.addFilter(_ClosedResourceFilter())
-
-    def _register_mcp_tools(self):
-        """Register all available MCP tools with FastMCP."""
-        
-        @self.mcp_server.tool()
-        async def show_content(content: str, title: str = None) -> str:
-            """Create new markdown content that appears in the live view."""
-            if not content:
-                return "Error: Content cannot be empty"
-
-            file_id = self.file_manager.generate_file_id()
-            file_path = self.default_markdown_dir / file_id
-
-            try:
-                file_path.write_text(content, encoding='utf-8')
-                result_msg = f"✅ Content created with File Id: {file_id}"
-                if title:
-                    result_msg += f" (Title: {title})"
-                return result_msg
-            except Exception as e:
-                return f"❌ Error creating content: {str(e)}"
-        
-        @self.mcp_server.tool()
-        async def list_content() -> str:
-            """List every markdown entry managed by the server."""
-            try:
-                files = self.file_manager.get_markdown_files()
-                if not files:
-                    return "📁 No markdown files found"
-                
-                result = "📋 **Markdown Files:**\n\n"
-                for file_info in files:
-                    modified_time = datetime.fromtimestamp(file_info['updated']).strftime('%Y-%m-%d %H:%M:%S')
-                    result += f"- **{file_info['name']}** ({file_info['size']} bytes, modified: {modified_time})\n"
-                return result
-            except Exception as e:
-                return f"❌ Error listing content: {str(e)}"
-        
-        @self.mcp_server.tool()
-        async def view_content(fileId: str) -> str:
-            """Read markdown content using a File Id."""
-            try:
-                sanitized_id = self.file_manager.sanitize_file_id(fileId)
-                file_path = self.default_markdown_dir / sanitized_id
-                
-                if not file_path.exists():
-                    return f"❌ File not found: {fileId}"
-                
-                content = file_path.read_text(encoding='utf-8')
-                return f"📄 **Content of {fileId}:**\n\n{content}"
-            except Exception as e:
-                return f"❌ Error reading content: {str(e)}"
-        
-        @self.mcp_server.tool()
-        async def update_content(fileId: str, content: str, mode: str = "append") -> str:
-            """Append to or replace existing markdown content."""
-            try:
-                sanitized_id = self.file_manager.sanitize_file_id(fileId)
-                file_path = self.default_markdown_dir / sanitized_id
-                
-                if not file_path.exists():
-                    return f"❌ File not found: {fileId}"
-                
-                if mode == "replace":
-                    file_path.write_text(content, encoding='utf-8')
-                    return f"✅ Content replaced in {fileId}"
-                else:  # append mode
-                    existing_content = file_path.read_text(encoding='utf-8')
-                    new_content = existing_content + "\n" + content
-                    file_path.write_text(new_content, encoding='utf-8')
-                    return f"✅ Content appended to {fileId}"
-            except Exception as e:
-                return f"❌ Error updating content: {str(e)}"
-        
-        @self.mcp_server.tool()
-        async def remove_content(fileId: str) -> str:
-            """Delete markdown content using its File Id."""
-            try:
-                sanitized_id = self.file_manager.sanitize_file_id(fileId)
-                file_path = self.default_markdown_dir / sanitized_id
-                
-                if not file_path.exists():
-                    return f"❌ File not found: {fileId}"
-                
-                file_path.unlink()
-                return f"✅ Content deleted: {fileId}"
-            except Exception as e:
-                return f"❌ Error removing content: {str(e)}"
-        
-        # CHAT TOOLS - HTTP STREAMING ONLY (NO POLLING)
-
-        @self.mcp_server.tool()
-        async def get_chat_stream_info() -> str:
-            """Get information about the HTTP streaming endpoint for live chat messages."""
-            return f"""🌊 REAL-TIME CHAT STREAMING ENDPOINT:
-
-📡 URL: POST http://localhost:{self.port}/mcp/stream/chat
-📋 Protocol: HTTP chunked transfer encoding  
-📦 Format: Newline-delimited JSON (NDJSON)
-🔄 Type: Real-time streaming (NO POLLING)
-
-Each response line contains a JSON-RPC 2.0 message:
-{{"jsonrpc":"2.0","id":1,"result":"🔔 Subscribed to live chat stream. Waiting for messages..."}}
-{{"jsonrpc":"2.0","id":2,"result":"💬 [timestamp] User message here"}}
-
-⚠️  IMPORTANT: This is the ONLY approved method for chat message access.
-❌ Polling approaches are strictly forbidden (see agents.md).
-
-Example usage:
-```python
-async with httpx.AsyncClient() as client:
-    async with client.stream('POST', 'http://localhost:{self.port}/mcp/stream/chat') as response:
-        async for line in response.aiter_lines():
-            if line.strip():
-                data = json.loads(line)
-                print(data['result'])  # Process the message
-```"""
-
-        @self.mcp_server.tool()
-        async def subscribe_chat_stream() -> str:
-            """Explain how to subscribe to the live chat stream."""
-            return (
-                "🌊 Real-time chat streaming is available via the dedicated HTTP "
-                "endpoint.\n\n"
-                "Use POST http://localhost:{self.port}/mcp/stream/chat with an "
-                "HTTP client that supports chunked transfer decoding (for "
-                "example httpx's `client.stream`). Each newline-delimited JSON "
-                "object contains a JSON-RPC result describing the message that "
-                "arrived. No polling, sleeps or repeated tool invocations are "
-                "required."
-            )
-
-        # HTTP streaming endpoint available at POST /mcp/stream/chat
 
     def _sanitize_file_id(self, file_id: str) -> str:
         """Ensure the provided File Id maps to a safe filename."""
@@ -343,7 +156,7 @@ async with httpx.AsyncClient() as client:
                             # Handle chat message from UI
                             chat_message = data.get('message', '')
                             logger.info(f"Received chat message from UI: {chat_message}")
-                            await self.broadcast_chat_to_mcp(chat_message)
+                            await self.broadcast_chat_to_hosts(chat_message)
                     except json.JSONDecodeError:
                         logger.warning(f"Received non-JSON message: {msg.data}")
                     except Exception as e:
@@ -540,10 +353,6 @@ async with httpx.AsyncClient() as client:
                 'error': str(e)
             }, status=500)
     
-    # MCP functionality handled by FastMCP
-    
-    # MCP functionality handled by FastMCP
-    
     async def notify_clients_file_change(self, file_path: str):
         """Notify all connected clients about file changes."""
         if not self.clients:
@@ -578,185 +387,55 @@ async with httpx.AsyncClient() as client:
         except Exception as e:
             logger.error(f"Error notifying clients: {e}")
     
-    async def handle_chat_sse(self, request):
-        """SSE endpoint for chat message subscriptions."""
-        if not self.enable_mcp:
-            return web.json_response({'error': 'MCP not enabled'}, status=503)
-        
-        response = web.StreamResponse(
-            status=200,
-            reason='OK',
-            headers={
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no',  # Disable nginx buffering
-            }
-        )
-        await response.prepare(request)
-        
-        # Add this client to SSE clients
-        self.sse_clients.add(response)
-        logger.info(f"SSE client connected for chat. Total SSE clients: {len(self.sse_clients)}")
-        
-        try:
-            # Send initial connection confirmation
-            await response.write(b'data: {"type":"connected","message":"Successfully subscribed to chat messages"}\n\n')
-            
-            # Keep the connection alive
-            while True:
-                await asyncio.sleep(30)  # Send heartbeat every 30 seconds
-                try:
-                    await response.write(b': heartbeat\n\n')
-                except Exception as e:
-                    logger.debug(f"Failed to send heartbeat, client likely disconnected: {e}")
-                    break
-                    
-        except asyncio.CancelledError:
-            logger.info("SSE connection cancelled")
-        except Exception as e:
-            logger.error(f"SSE error: {e}")
-        finally:
-            self.sse_clients.discard(response)
-            logger.info(f"SSE client disconnected. Total SSE clients: {len(self.sse_clients)}")
-        
-        return response
-    
-    async def broadcast_chat_to_mcp(self, message: str):
-        """Broadcast chat message to all connected MCP clients via SSE."""
-        # Store the message for polling (backward compatibility)
-        chat_entry = {
-            "type": "chat",
-            "message": message,
-            "timestamp": time.time()
-        }
-        self.chat_messages.append(chat_entry)
-        
-        # Keep only last 100 messages
-        if len(self.chat_messages) > 100:
-            self.chat_messages = self.chat_messages[-100:]
-        
-        logger.info(f"Stored chat message for MCP clients: {message[:50]}...")
-        logger.info(f"Total chat messages stored: {len(self.chat_messages)}")
-        
-        # Send via SSE to all connected clients
-        if self.sse_clients:
-            sse_data = json.dumps({
-                "type": "chat",
-                "message": message,
-                "timestamp": chat_entry["timestamp"]
-            })
-            sse_message = f"data: {sse_data}\n\n"
-            
-            disconnected_clients = set()
-            for client in self.sse_clients:
-                try:
-                    await client.write(sse_message.encode('utf-8'))
-                except Exception as e:
-                    logger.warning(f"Failed to send SSE message to client: {e}")
-                    disconnected_clients.add(client)
-            
-            # Remove disconnected clients
-            for client in disconnected_clients:
-                self.sse_clients.discard(client)
-            
-            logger.info(f"Sent chat message via SSE to {len(self.sse_clients)} clients")
-        
-        # Send to streaming chat subscribers (new generator-based functionality)
-        if self.chat_subscribers:
-            message_data = {
-                "message": message,
-                "timestamp": chat_entry["timestamp"]
-            }
-            
-            # Send to all active streaming subscribers
-            disconnected_subscribers = []
-            for i, queue in enumerate(self.chat_subscribers):
-                try:
-                    queue.put_nowait(message_data)
-                except asyncio.QueueFull:
-                    logger.warning(f"Chat subscriber queue {i} is full, skipping message")
-                except Exception as e:
-                    logger.warning(f"Failed to send to chat subscriber {i}: {e}")
-                    disconnected_subscribers.append(queue)
-            
-            # Remove disconnected subscribers
-            for queue in disconnected_subscribers:
-                self.chat_subscribers.remove(queue)
-            
-            logger.info(f"Sent chat message to {len(self.chat_subscribers)} streaming subscribers")
+    async def broadcast_chat_to_hosts(self, message: str) -> None:
+        """Send chat messages from the UI to every connected agent host."""
 
-    async def handle_mcp_stream_chat(self, request):
-        """HTTP streaming endpoint for MCP chat subscription using chunked transfer encoding."""
-        if not self.enable_mcp:
-            return web.json_response({'error': 'MCP not enabled'}, status=503)
-        
-        # Set up streaming response
-        response = web.StreamResponse(
-            status=200,
-            headers={
-                'Content-Type': 'application/x-ndjson',  # Newline Delimited JSON
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Transfer-Encoding': 'chunked'
-            }
+        if not self.agent_feed_clients:
+            logger.info("No agent hosts connected; skipping broadcast")
+            return
+
+        payload = json.dumps({"type": "chat", "text": message, "timestamp": time.time()})
+
+        disconnected: Set[web.WebSocketResponse] = set()
+        for ws in list(self.agent_feed_clients):
+            try:
+                await ws.send_str(payload)
+            except ConnectionResetError:
+                disconnected.add(ws)
+            except Exception as exc:  # pragma: no cover - guard rail
+                logger.error(f"Failed to send chat message to agent host: {exc}")
+                disconnected.add(ws)
+
+        for ws in disconnected:
+            self.agent_feed_clients.discard(ws)
+
+        logger.info(
+            "Broadcast chat message to %d agent host(s)",
+            len(self.agent_feed_clients),
         )
-        await response.prepare(request)
-        
-        # Create a queue for this subscriber
-        queue = asyncio.Queue()
-        self.chat_subscribers.append(queue)
-        
+
+    async def handle_agent_feed(self, request: web.Request) -> web.WebSocketResponse:
+        """Accept WebSocket connections from CLI host processes."""
+
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+
+        self.agent_feed_clients.add(ws)
+        logger.info("Agent host connected. Total hosts: %d", len(self.agent_feed_clients))
+
         try:
-            # Send initial subscription confirmation
-            initial_response = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "result": "🔔 Subscribed to live chat stream. Waiting for messages..."
-            }
-            await response.write(f"{json.dumps(initial_response)}\n".encode('utf-8'))
-            
-            # Stream messages as they arrive
-            message_id = 2
-            while True:
-                try:
-                    # Wait for new message
-                    message_data = await queue.get()
-                    
-                    # Format as JSON-RPC response
-                    streaming_response = {
-                        "jsonrpc": "2.0",
-                        "id": message_id,
-                        "result": f"💬 [{message_data['timestamp']:.3f}] {message_data['message']}"
-                    }
-                    
-                    # Send the chunk
-                    chunk = f"{json.dumps(streaming_response)}\n"
-                    await response.write(chunk.encode('utf-8'))
-                    message_id += 1
-                    
-                except asyncio.CancelledError:
-                    logger.info("MCP chat stream cancelled")
+            async for msg in ws:
+                if msg.type == WSMsgType.TEXT:
+                    logger.debug("Received message from agent host: %s", msg.data)
+                elif msg.type == WSMsgType.ERROR:
+                    logger.error("Agent host websocket error: %s", ws.exception())
                     break
-                except Exception as e:
-                    logger.error(f"Error in MCP chat stream: {e}")
-                    error_response = {
-                        "jsonrpc": "2.0",
-                        "id": message_id,
-                        "error": {"code": -32000, "message": f"Stream error: {str(e)}"}
-                    }
-                    await response.write(f"{json.dumps(error_response)}\n".encode('utf-8'))
-                    break
-                    
-        except Exception as e:
-            logger.error(f"MCP streaming error: {e}")
         finally:
-            # Clean up subscriber
-            if queue in self.chat_subscribers:
-                self.chat_subscribers.remove(queue)
-            logger.info(f"MCP chat stream disconnected. Remaining subscribers: {len(self.chat_subscribers)}")
-        
-        return response
+            self.agent_feed_clients.discard(ws)
+            logger.info("Agent host disconnected. Total hosts: %d", len(self.agent_feed_clients))
+
+        return ws
+    
 
     def start_file_watcher(self, loop):
         """Start watching the markdown directory for changes."""
@@ -776,71 +455,6 @@ async with httpx.AsyncClient() as client:
             self.observer.join()
             logger.info("File watcher stopped")
 
-    async def start_mcp_http_server(self):
-        """Run the FastMCP HTTP transport on its own port using Uvicorn."""
-        if not self.enable_mcp:
-            return
-
-        if self._mcp_http_server_task is not None:
-            return
-
-        if not hasattr(self, "_mcp_http_app") or self._mcp_http_app is None:
-            raise RuntimeError("FastMCP HTTP app not initialized")
-
-        try:
-            import uvicorn
-        except ImportError as exc:  # pragma: no cover - guarded by requirements
-            raise RuntimeError("uvicorn is required for HTTP MCP transport") from exc
-
-        config = uvicorn.Config(
-            self._mcp_http_app,
-            host=self.mcp_host,
-            port=self.mcp_port,
-            log_level="info",
-            lifespan="on",
-            access_log=False,
-        )
-        self._mcp_uvicorn_server = uvicorn.Server(config)
-
-        async def _serve():
-            try:
-                await self._mcp_uvicorn_server.serve()
-            finally:
-                self._mcp_http_server_task = None
-                self._mcp_uvicorn_server = None
-
-        self._mcp_http_server_task = asyncio.create_task(_serve())
-
-        # Wait for the server to finish its startup sequence before returning.
-        while True:
-            if self._mcp_uvicorn_server is None:
-                raise RuntimeError("FastMCP HTTP server failed to start")
-            if getattr(self._mcp_uvicorn_server, "started", False):
-                break
-            if self._mcp_http_server_task.done():
-                # Surface startup exceptions immediately.
-                await self._mcp_http_server_task
-                raise RuntimeError("FastMCP HTTP server exited during startup")
-            await asyncio.sleep(0.05)
-
-    async def stop_mcp_http_server(self):
-        """Shut down the FastMCP HTTP transport server if it is running."""
-        if self._mcp_uvicorn_server is not None:
-            self._mcp_uvicorn_server.should_exit = True
-
-        if self._mcp_http_server_task is not None:
-            await self._mcp_http_server_task
-            self._mcp_http_server_task = None
-
-    async def run_mcp_stdio(self):
-        """Run the FastMCP server using stdio (for AI assistant integration)."""
-        if not self.enable_mcp:
-            logger.warning("MCP not enabled, skipping stdio server")
-            return
-        
-        logger.info("Starting FastMCP stdio server...")
-        await self.mcp_server.run_stdio_async()
-    
     def create_app(self) -> web.Application:
         """Create the aiohttp application with all registered routes."""
         app = web.Application()
@@ -853,17 +467,15 @@ async with httpx.AsyncClient() as client:
         app.router.add_post('/api/delete', self.handle_delete_file)
         app.router.add_post('/api/toggle-sticky', self.handle_toggle_sticky)
         app.router.add_get('/raw', self.handle_raw_markdown)
-        
-        # FastMCP HTTP integration
-        if self.enable_mcp:
-            # Chat streaming endpoint remains part of the web server because it
-            # bridges UI events directly to connected MCP agents.
-            app.router.add_post('/mcp/stream/chat', self.handle_mcp_stream_chat)
+
+        # Agent feed for external CLI hosts
+        app.router.add_get('/agent-feed', self.handle_agent_feed)
 
         return app
 
-    async def run(self, enable_stdio_mcp: bool = False):
-        """Run the unified server."""
+    async def run(self) -> None:
+        """Run the Live View server."""
+
         app = self.create_app()
 
         # Get the current event loop
@@ -873,13 +485,7 @@ async with httpx.AsyncClient() as client:
         self.start_file_watcher(loop)
 
         try:
-            logger.info(f"Starting unified server on http://localhost:{self.port}")
-            if self.enable_mcp:
-                logger.info("MCP functionality enabled:")
-                logger.info(f"  - HTTP endpoint: http://{self.mcp_host}:{self.mcp_port}/mcp")
-                if enable_stdio_mcp:
-                    logger.info("  - stdio server: will start after HTTP server")
-
+            logger.info(f"Starting server on http://localhost:{self.port}")
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, 'localhost', self.port)
@@ -887,15 +493,6 @@ async with httpx.AsyncClient() as client:
 
             logger.info(f"Server running at http://localhost:{self.port}")
             logger.info(f"Watching markdown files in: {self.default_markdown_dir.absolute()}")
-
-            if self.enable_mcp:
-                await self.start_mcp_http_server()
-                logger.info("FastMCP HTTP server started on separate port")
-
-            # Optionally start stdio MCP server in parallel
-            if enable_stdio_mcp and self.enable_mcp:
-                # Create a task for the stdio MCP server
-                stdio_task = asyncio.create_task(self.run_mcp_stdio())
 
             # Keep the server running
             while True:
@@ -908,33 +505,24 @@ async with httpx.AsyncClient() as client:
             raise
         finally:
             self.stop_file_watcher()
-            if self.enable_mcp:
-                await self.stop_mcp_http_server()
 
 def main():
     """Main entry point."""
     import argparse
-    
-    parser = argparse.ArgumentParser(description='Unified Markdown Live View Server with MCP Integration')
+
+    parser = argparse.ArgumentParser(description='Markdown Live View Server')
     parser.add_argument('--dir', default='markdown', help='Directory to watch for markdown files')
     parser.add_argument('--port', type=int, default=8080, help='Port to run server on')
-    parser.add_argument('--disable-mcp', action='store_true', help='Disable MCP functionality')
-    parser.add_argument('--mcp-host', default='127.0.0.1', help='Host for the FastMCP HTTP server')
-    parser.add_argument('--mcp-port', type=int, help='Port for the FastMCP HTTP server (defaults to web port + 1)')
-    parser.add_argument('--mcp-stdio', action='store_true', help='Enable MCP stdio server alongside HTTP server')
-    
+
     args = parser.parse_args()
-    
+
     server = UnifiedMarkdownServer(
         args.dir,
         args.port,
-        enable_mcp=not args.disable_mcp,
-        mcp_host=args.mcp_host,
-        mcp_port=args.mcp_port,
     )
-    
+
     try:
-        asyncio.run(server.run(enable_stdio_mcp=args.mcp_stdio))
+        asyncio.run(server.run())
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
 

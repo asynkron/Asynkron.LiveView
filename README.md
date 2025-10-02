@@ -1,549 +1,143 @@
-# Asynkron.LiveView -  CLI AI Companion
-
-![Live View](live.png)
-
-A live view system for markdown files that automatically detects, orders, and displays markdown content with real-time updates via WebSocket.
-
----
-
-## Why This Matters
-
-When working with CLI-based AI agents such as **Codex CLI** or **CoPilot CLI**, you often get streams of progress, design discussions, reasoning, and plans logged as markdown into a folder (for example `/logs`).  
-
-**Asynkron.LiveView** connects to that folder and instantly visualizes the evolving state of the agent’s thoughts. This gives you a **real-time debugging and mental model helper**:  
-
-- See the agent’s reasoning unfold as structured markdown  
-- Follow design decisions as they develop  
-- Inspect progress logs in chronological order  
-- Visualize system diagrams and flows directly with **Mermaid.js**  
-- Keep context without digging through scattered files  
-
-Instead of reading static logs or scrolling endlessly in a terminal, you get a **clear, dynamic, and live view** of what your AI agent is doing.
-
-## How to
-
-- Open a browser to: `http://localhost:8080/?path={path-to-your-markdown-logs}`.
-- Example: `http://localhost:8080/?path=~/git/asynkron/Asynkron.DurableFunctions/Logs`
-
-### Inside your own project repository
-
-Create a folder for your markdown logs, e.g. `/logs`.<br/>
-You can decide if you want to keep the logs as part of your git history, a form of architectural records.<br/>
-Or simply .gitignore the contents.<br/>
-
-Update your `agents.md` (or similar file depending on agent) to something similar to this:
-
-```
-## CLI
-- when working using in the CLI, I want you to place markdown files into a /logs directory. we have a special viewer that display any new content there. we can show mermaid diagrams, code diffs, code snippets, architectural plans etc.
-
-Example log file: `log{unixtimestamp}.md` - always use the current unix timestamp to ensure unique filenames.
-
- Boring activities:
- ### 2025-09-27 17:20 CEST — MultiHost Soak Test Initiated
- * ✅ Goal: repeat Category=MultiHost suite for 5 consecutive passes.
- * ✅ Loop cadence: sequential runs, capturing per-iteration duration & status.
- * ✅ Environment: local Testcontainers PostgreSQL (auto-provisioned per run).
- * ⚠️ Something broke a bit.
- * ❌ Something terrible happened
- 
- Infographics / Examples
- // Mermaid diagrams - use often, class, sequence and flow charts. make sure to escpae { ( node and other reserved chars in mermaid syntax
- // Relevant Code blocks
- // Test result table + summary
- // Log snippets.
- 
- Success stories, we completed some larger work
- ### 2025-09-27 17:20 CEST — VICTORY!
- * ⭐️ We did it! All tests passed!
- * ⭐️ Everything is awesome!
- * 🎉 5/5 passes of Category=MultiHost suite.
-
----
-
-### Always add log files when:
-
-1. building the project
-- report build success or failure
-- include any relevant build errors
-2. running tests
-   - report test success or failure
-   - include test summary and any relevant test failures 
-3. making any code changes
-   - include code diffs or snippets of the changes made, whichever makes most sense
-4. completing any significant task
-   - include a summary of what was accomplished
-   - highlight any important details or next steps 
-5. every 15 minutes if nothing else has happened
-   - provide a brief status update
-   - mention any ongoing tasks or upcoming milestones
-6. whenever you make a plan or change a plan
-   - outline the new plan or changes made
-   - explain the reasoning behind the changes
-   - confirm with user that the plan aligns with their goals
-7. whenever you think the user would benefit from an update
-   - use your judgment to determine when an update is warranted
-- consider the user's perspective and what information would be most helpful
-```
-
----
-
-## Features
-
-- 📄 **Unified Markdown View**: Reads `.md` files from a folder and displays them as a single, unified document  
-- ⏰ **Chronological Ordering**: Files are automatically ordered by creation timestamp  
-- 🔄 **Live Updates**: Real-time detection of new markdown files with WebSocket streaming  
-- 🎨 **Rich Rendering**: Full support for markdown syntax and Mermaid diagrams  
-- 🌐 **Web Interface**: Clean, responsive HTML interface with marked.js and mermaid.js  
-
----
-
-## Installation & Quick Start
-
-### ⚡ One-Command Setup (Recommended)
-
-```bash
-./run.sh
-```
-
-That's it! The script will automatically:
-- ✅ Detect your Python installation
-- ✅ Set up a virtual environment 
-- ✅ Install all dependencies
-- ✅ Create the markdown directory
-- ✅ Start the server at `http://localhost:8080`
-
-### 🔧 **Manual Setup**
-
-If you prefer manual setup:
-
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Run the Server**:
-   ```bash
-   python start.py
-   ```
-   
-   Or directly:
-   ```bash
-   python server.py
-   ```
-
-3. **Open Your Browser**:
-   Navigate to `http://localhost:8080`
-
-4. **Add Markdown Files**:
-   Drop `.md` files into the `markdown/` directory and watch them appear automatically!
-
-### 🛠️ **Script Options**
-
-The `run.sh` script supports several options for different environments:
-
-```bash
-# Full automated setup (creates virtual environment)
-./run.sh
-
-# Skip virtual environment, use system Python
-./run.sh --system
-
-# Skip virtual environment setup entirely  
-./run.sh --no-venv
-
-# Use custom port
-PORT=3000 ./run.sh
-
-# Watch different directory
-MARKDOWN_DIR=docs ./run.sh
-
-# Show help
-./run.sh --help
-```
-
-The script automatically handles:
-- 🐍 **Python Detection**: Finds Python 3.7+ automatically
-- 📦 **Dependency Management**: Tries multiple installation strategies
-- 🏠 **Environment Setup**: Creates isolated virtual environment
-- 🔧 **Error Recovery**: Graceful fallbacks for different system configurations
-- 🍎 **Cross-Platform**: Works on Linux, macOS, and WSL
-
-## Usage
-
-### Unified Server (Recommended)
-
-The new unified server combines both LiveView and MCP functionality in a single process:
-
-```bash
-# Quick start with unified server
-./run_unified.sh
-
-# Or run directly
-python server.py --help
-```
-
-**Unified Server Options:**
-- `--dir DIRECTORY`: Specify the directory to watch for markdown files (default: `markdown`)
-- `--port PORT`: Set the server port (default: `8080`)
-- `--disable-mcp`: Disable MCP functionality (LiveView only)
-- `--mcp-stdio`: Enable MCP stdio server alongside HTTP server
-
-### Legacy Command Line Options
-
-```bash
-python server.py --help
-```
-
-- `--dir DIRECTORY`: Specify the directory to watch for markdown files (default: `markdown`)
-- `--port PORT`: Set the server port (default: `8080`)
-
-### Dynamic Path Support
-
-The server now supports pointing to different directories in multiple ways:
-
-#### 1. Query Parameter (Highest Priority)
-
-Navigate to any directory using the `path` query parameter:
-
-```bash
-# Point to a specific directory
-http://localhost:8080/?path=/path/to/your/markdown/files
-
-# Use tilde expansion for home directory  
-http://localhost:8080/?path=~/Documents/notes
-
-# Example from the original request
-http://localhost:8080/?path=~/git/asynkron/Asynkron.DurableFunctions/Logs
-```
-
-#### 2. Environment Variable (Fallback)
-
-Set the `LIVEVIEW_PATH` environment variable:
-
-```bash
-# Using the script
-LIVEVIEW_PATH=~/git/project/docs ./run.sh
-
-# Using the server directly
-LIVEVIEW_PATH=/path/to/markdown python server.py
-```
-
-#### 3. Command Line Argument (Default)
-
-Use the traditional `--dir` argument:
-
-```bash
-python server.py --dir /path/to/markdown --port 3000
-```
-
-### Priority Order
-
-1. Query parameter (`?path=...`)
-2. Environment variable (`LIVEVIEW_PATH`)  
-3. Command line argument (`--dir`)
-4. Default (`markdown/`)
-
-### Fallback Behavior
-
-When the specified directory is missing or empty, the server displays helpful markdown content explaining:
-- What went wrong
-- How to fix the issue
-- Usage examples
-- Alternative methods to specify paths
-
-### Example
-
-```bash
-python server.py --dir /path/to/my/docs --port 3000
-```
-
-## How It Works
-
-1. **File Monitoring**: Uses `watchdog` to monitor the markdown directory for new `.md` files
-2. **Content Merging**: Reads all markdown files and orders them by creation timestamp
-3. **WebSocket Updates**: Pushes real-time updates to all connected browser clients
-4. **Client Rendering**: Browser renders unified content using marked.js for markdown and mermaid.js for diagrams
-
-## API Endpoints
-
-- `GET /`: Main web interface
-  - Query parameter: `?path=/path/to/directory` - Specify custom directory
-- `GET /ws`: WebSocket endpoint for live updates
-  - Query parameter: `?path=/path/to/directory` - Specify custom directory for WebSocket connection  
-- `GET /api/content`: JSON API returning unified markdown content
-  - Query parameter: `?path=/path/to/directory` - Specify custom directory
-  - Returns: `{content, files, timestamp, directory}`
-
-### MCP Endpoints
-
-- `POST /mcp`: JSON-RPC endpoint for MCP protocol
-  - Supports MCP tools: `show_content`, `list_content`, `view_content`, `update_content`, `remove_content`, `get_chat_stream_info`, `subscribe_chat_stream`
-- `POST /mcp/stream/chat`: HTTP streaming endpoint for live chat messages
-  - Uses chunked transfer encoding with newline-delimited JSON payloads
-  - Designed for long-lived connections (no polling or repeated requests)
-  - Example:
-    ```bash
-    curl -N -X POST http://localhost:8080/mcp/stream/chat
-    # Output: NDJSON stream with chat events
-    ```
-
-## MCP Server Integration 🤖
-
-**UPDATED**: The system now features a unified server that combines both LiveView and MCP functionality in a single process!
-
-### Unified Server Architecture
-
-The new unified server provides:
-- **Single Process**: No need to manage separate servers
-- **HTTP MCP Endpoint**: AI assistants can use `POST /mcp` for JSON-RPC communication
-- **Shared Resources**: Common file watching and directory management  
-- **Real-time Integration**: MCP-created files immediately appear in LiveView
-- **Simplified Deployment**: One server to start and stop
-
-### Quick Start with Unified Server
-
-```bash
-# Start the unified server (recommended)
-./run_unified.sh
-```
-
-### MCP Integration Flow
-
-```mermaid
-graph TD
-    A[AI Assistant] --> B[HTTP MCP Endpoint]
-    A --> H[HTTP Chat Stream]
-    B --> C[Unified Server]
-    H --> C
-    C --> D[File System]
-    C --> E[File Watcher]
-    E --> F[WebSocket]
-    F --> G[Browser Auto-Update]
-    F --> I[Chat Messages]
-    I --> H
-    
-    style A fill:#e1f5fe
-    style C fill:#fff3e0
-    style G fill:#c8e6c9
-    style H fill:#fff9c4
-```
-
-**Chat Integration**: When users send chat messages from the browser, they are:
-1. Sent via WebSocket to the server
-2. Broadcast to AI assistants via the streaming endpoint (`POST /mcp/stream/chat`)
-
-### Legacy MCP Setup (Still Supported)
-
-For backwards compatibility, the original separate MCP server is still available:
-
-```bash
-# Start both LiveView and make MCP server available
-./run_with_mcp.sh
-```
-
-### MCP Server Tools
-
-The MCP server provides conversationally named tools for AI assistants:
-
-- **`show_content`**: Generate new markdown content. The server picks a random File Id ending in `.md`, stores the content, and returns the identifier so the assistant can reference it later.
-- **`list_content`**: List every markdown entry currently available along with helpful metadata.
-- **`view_content`**: Retrieve the content for a specific File Id that was previously returned by `show_content`.
-- **`update_content`**: Append to or completely replace an existing entry by supplying its File Id.
-- **`remove_content`**: Delete an entry using its File Id when it is no longer needed.
-
-#### Chat Integration Tools
-
-- **`get_chat_stream_info`**: Detailed instructions for connecting to the streaming HTTP endpoint.
-- **`subscribe_chat_stream`**: Explains how to connect to the live chat HTTP stream. Use this instead of polling-based approaches.
-- **Streaming Endpoint** (Recommended): Connect to `POST /mcp/stream/chat` for push-based chat notifications.
-
-**Example: Subscribing to Chat via SSE**
-
-```bash
-# Connect to SSE endpoint for real-time chat messages
-curl -N http://localhost:8080/mcp/chat/subscribe
-
-# Output (Server-Sent Events):
-# data: {"type":"connected","message":"Successfully subscribed to chat messages"}
-# 
-# : heartbeat
-# 
-# data: {"type": "chat", "message": "Hello from user!", "timestamp": 1234567890.123}
-```
-
-**Example: Using Python to receive chat messages**
-
-```python
-import aiohttp
-import asyncio
-
-async def listen_to_chat():
-    async with aiohttp.ClientSession() as session:
-        async with session.get('http://localhost:8080/mcp/chat/subscribe') as resp:
-            async for line in resp.content:
-                if line.startswith(b'data: '):
-                    data = json.loads(line[6:])
-                    if data['type'] == 'chat':
-                        print(f"Received: {data['message']}")
-
-asyncio.run(listen_to_chat())
-```
-
-### AI Assistant Setup
-
-#### Using Unified Server (Recommended)
-
-1. **Start the unified server**: `./run_unified.sh`
-2. **Configure your AI assistant** to use HTTP MCP endpoint
-3. **Point to the MCP endpoint**: `POST http://localhost:8080/mcp`
-4. **Use JSON-RPC 2.0 protocol** for communication
-5. **Start creating markdown files** using the MCP tools
-6. **View results instantly** in the LiveView at `http://localhost:8080`
-
-#### Using Legacy MCP Server
-
-1. **Configure MCP in your AI assistant** using the provided `mcp_config.json`
-2. **Point to the MCP server**: `python mcp_server.py` 
-3. **Start creating markdown files** using the MCP tools
-4. **View results instantly** in the LiveView at `http://localhost:8080`
-
-### MCP Integration Flow
-
-```mermaid
-graph TD
-    A[AI Assistant] --> B[MCP Server]
-    B --> C[Create/Update Markdown Files]
-    C --> D[File Watcher]
-    D --> E[LiveView Server]
-    E --> F[WebSocket Update]
-    F --> G[Browser Auto-Refresh]
-```
-
-Files created by AI assistants via MCP automatically appear in the live view with real-time updates!
-
-### Benefits of Unified Architecture
-
-- **Simplified Deployment**: Single process instead of managing two separate servers
-- **Better Resource Management**: Shared file watching and directory management
-- **Improved Performance**: Direct communication between LiveView and MCP components
-- **Easier Configuration**: One port, one process, one configuration
-- **Real-time Integration**: MCP file operations immediately trigger LiveView updates
-- **Reduced Complexity**: Fewer moving parts to manage and debug
-
-### Testing
-
-```bash
-# Test unified server functionality
-python test_unified.py
-
-# Test legacy MCP server
-python test_mcp.py
-```
-
-### Usage Examples
-
-```bash
-# Start unified server (recommended)
-./run_unified.sh
-
-# Start unified server with custom settings
-PORT=3000 MARKDOWN_DIR=docs ./run_unified.sh
-
-# Start server with default directory
-./run.sh
-
-# Start server with MCP integration (legacy)
-./run_with_mcp.sh
-
-# Start server with environment variable
-LIVEVIEW_PATH=~/Documents/notes ./run.sh
-
-# Start server on custom port with custom directory
-LIVEVIEW_PATH=/var/log/markdown PORT=3000 ./run.sh
-
-# Access different directories via URL
-curl "http://localhost:8080/api/content?path=~/git/project/docs"
-
-# Test unified server functionality
-python test_unified.py
-
-# Test MCP server functionality (legacy)
-python test_mcp.py
-
-# Run MCP server standalone for AI assistants (legacy)
-python mcp_server.py --dir markdown
-
-# Run unified server with MCP HTTP endpoint
-python server.py --port 8080 --dir markdown
-```
-
-## File Structure
+# Markdown Live View
+
+Markdown Live View renders markdown files in real time, keeps the browser in sync
+with file system changes, and now delivers chat prompts to local CLI agents
+through a lightweight host process.
+
+## What's new?
+
+* ❌ **No MCP dependency** – the chat bridge no longer relies on MCP or the
+  `/mcp/stream/chat` HTTP endpoint.
+* 🌐 **WebSocket agent feed** – CLI host processes connect to
+  `ws://localhost:8080/agent-feed` and receive chat lines pushed by the server.
+* 🖥️ **Terminal-friendly agent host** – the new `clihost.py` wrapper keeps the
+  user's terminal interactive while piping server messages into the child agent's
+  stdin.
+
+## Project layout
 
 ```
 Asynkron.LiveView/
-├── server.py              # Main LiveView server implementation
-├── mcp_server.py           # MCP server for AI integration (NEW)
-├── start.py               # Simple startup script
-├── run.sh                 # Automated setup script
-├── run_with_mcp.sh        # Setup script with MCP integration (NEW)
-├── test_mcp.py            # MCP server test script (NEW)
-├── mcp_config.json        # MCP server configuration (NEW)
-├── requirements.txt       # Python dependencies (includes MCP)
-├── markdown/              # Directory for markdown files
-│   ├── 01-intro.md       # Sample files (ordered by timestamp)
-│   └── 02-diagram.md
-└── README.md
+├── components/              # Shared modules for file handling and templates
+├── markdown/                # Sample markdown files used by the UI
+├── templates/unified_index.html  # The Live View HTML shell
+├── server.py                # aiohttp server (Live View + agent feed)
+├── clihost.py               # CLI agent host helper
+└── tests/                   # pytest suite for the web server
 ```
 
-## Dependencies
+## Requirements
 
-- `aiohttp`: Async HTTP server and WebSocket support
-- `websockets`: WebSocket protocol implementation  
-- `watchdog`: File system monitoring
-- `fastmcp`: Fast, Pythonic Model Context Protocol implementation for AI integration (**NEW**)
+* Python 3.9+
+* `pip install -r requirements.txt`
 
-All dependencies are automatically installed by the setup scripts.
+The dependency list is short: aiohttp for HTTP/WebSocket handling, watchdog for
+file change notifications, and websockets for the CLI host utility.
 
-## Installation Troubleshooting
+## Running the server
 
-**🚀 The easiest way to avoid all setup issues is to use the automated script:**
 ```bash
-./run.sh
+python server.py --dir markdown --port 8080
 ```
 
-If you encounter dependency installation issues with manual setup:
+Key flags:
 
-### Externally-Managed Environment (e.g., Homebrew Python)
+* `--dir` – directory to watch for markdown content (defaults to `markdown/`).
+* `--port` – HTTP port for the Live View UI and agent feed (defaults to `8080`).
+
+### Switching directories at runtime
+
+The server can watch a different directory without restarting:
+
+1. **Query parameter** – `http://localhost:8080/?path=/tmp/notes`
+2. **Environment variable** – `LIVEVIEW_PATH=/tmp/notes python server.py`
+3. **`--dir` argument** – `python server.py --dir /tmp/notes`
+
+If a directory is empty or missing, the UI shows a helpful placeholder
+explaining how to point it at real content.
+
+## Hosting a CLI agent
+
+Run the new host wrapper to keep your agent interactive:
+
 ```bash
-# Use virtual environment (recommended)
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# Or install to user directory
-pip install --user -r requirements.txt
+python clihost.py --url ws://localhost:8080/agent-feed -- python my_agent.py
 ```
 
-### System Installation Issues
+How it works:
+
+1. The host launches `python my_agent.py` as a child process with stdin/stdout
+   pipes.
+2. Keyboard input from the user is forwarded directly to the child.
+3. Messages pushed by the server are displayed with a prefix (optional) and then
+   injected into the child's stdin as if the user had typed them.
+4. The host automatically reconnects to the WebSocket feed if the connection is
+   interrupted.
+
+Useful host flags:
+
+* `--url` – WebSocket endpoint (defaults to `ws://localhost:8080/agent-feed`).
+* `--echo-injections` – show a prefix (default `[server] `) before injected
+  lines so humans can tell they came from the server.
+* `--no-user-stdin` – disable forwarding of keyboard input, turning the host
+  into a one-way injector.
+* `--newline` – override the newline appended to chat messages before they are
+  written to stdin.
+
+## Chat message flow
+
+1. The Live View UI posts chat messages over the existing `/ws` WebSocket.
+2. `server.py` fans each message out to every connected CLI host via
+   `/agent-feed`.
+3. `clihost.py` writes the message to the agent's stdin, preserving the normal
+   interactive terminal feel.
+
+There is no polling and no MCP transport in the loop. If you extend the system,
+keep chat delivery push-based so agents remain responsive.
+
+## Development workflow
+
+### Install dependencies
+
 ```bash
-# For systems that require explicit permission
-pip install --break-system-packages -r requirements.txt
-
-# Or use system package manager (Ubuntu/Debian)
-sudo apt install python3-aiohttp python3-watchdog
+python -m pip install -r requirements.txt
 ```
 
-The `start.py` script and `run.sh` script both automatically handle most installation scenarios and provide helpful guidance.
+### Run the server during development
 
-## Browser Support
+```bash
+python server.py --dir markdown --port 8080
+```
 
-The web interface uses modern JavaScript and should work in all current browsers. The system loads:
+### Run the agent host (optional)
 
-- **marked.js**: For markdown parsing and rendering
-- **mermaid.js**: For diagram rendering
-- **WebSocket API**: For real-time updates
+```bash
+python clihost.py --url ws://localhost:8080/agent-feed -- your-agent --flag
+```
+
+### Run tests
+
+```bash
+pytest
+```
+
+The test suite focuses on the aiohttp routes and the new agent feed to ensure
+chat messages reach connected hosts.
+
+## Troubleshooting
+
+* **WebSocket disconnects** – `clihost.py` automatically reconnects. Use
+  `--no-reconnect` if you prefer it to fail fast.
+* **Agent requires a TTY** – enable PTY mode inside `clihost.py` (see the inline
+  comments) if your agent depends on terminal detection.
+* **No chat delivery** – confirm the browser is sending chat messages, and check
+  the server logs to ensure a host is connected. The log lines include host
+  counts whenever a connection joins or leaves.
 
 ## Contributing
 
-Feel free to submit issues and pull requests to improve the system!
+* Keep comments informative but brief.
+* Do not reintroduce the old MCP endpoints.
+* Prefer async, push-based communication for anything related to chat.
+
+Enjoy building against the streamlined Live View stack! 🚀
