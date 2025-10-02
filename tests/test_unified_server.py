@@ -101,6 +101,30 @@ async def test_delete_endpoint_removes_files(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_update_endpoint_persists_changes(tmp_path: Path) -> None:
+    """Saving through the API should write the markdown content to disk."""
+
+    file_path = tmp_path / "update-me.md"
+    file_path.write_text("# Original\n")
+
+    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    client = await _create_test_client(server)
+
+    try:
+        response = await client.put(
+            f"/api/file?path={tmp_path}&file=update-me.md",
+            json={"content": "# Updated\nNew body"},
+        )
+        assert response.status == 200
+        payload = await response.json()
+        assert payload["success"] is True
+        assert payload["file"] == "update-me.md"
+        assert file_path.read_text() == "# Updated\nNew body"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_missing_file_returns_404(tmp_path: Path) -> None:
     """Missing files should yield a clear HTTP 404 response."""
 

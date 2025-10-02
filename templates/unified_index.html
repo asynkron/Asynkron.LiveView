@@ -8,6 +8,12 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
         integrity="sha512-rO+olRTkcf304DQBxSWxln8JXCzTHlKnIdnMUwYvQa9/Jd4cQaNkItIUj6Z4nvW1dqK0SKXLbn9h4KwZTNtAyw=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css"
+        integrity="sha512-PPNX3F7S3w7Dtw3aQzUIkA9TC6lowKGllXznsu0TpNGGb+jUpqGMoPF2XsOyIyfl4RXAMDDVW5V9TR0NC2zs7A=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/github-dark.min.css"
+        integrity="sha512-umDRCc3rr6u/wCWsuH0A0k6L38LzA6GiSygpmIY83PHgjI7PIP/WmY6B5W9wItmWR6CQBx5YmXkPUwUjZ3iAnQ=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
         :root {
             color-scheme: dark;
@@ -19,6 +25,10 @@
 
         * {
             box-sizing: border-box;
+        }
+
+        .hidden {
+            display: none !important;
         }
 
         body {
@@ -132,6 +142,10 @@
             flex: 1;
         }
 
+        .content-area.hidden {
+            display: none;
+        }
+
         .content-area h1,
         .content-area h2,
         .content-area h3,
@@ -210,6 +224,42 @@
 
         .raw-view.visible {
             display: block;
+        }
+
+        .editor-container {
+            display: none;
+            flex: 1;
+            padding: 24px;
+            overflow: hidden;
+            min-height: 320px;
+        }
+
+        .editor-container.visible {
+            display: block;
+        }
+
+        .editor-container .CodeMirror {
+            height: 100%;
+            font-size: 0.95rem;
+            background: #0d1117;
+            color: #c9d1d9;
+        }
+
+        .editor-container .CodeMirror-scroll {
+            max-height: 100%;
+        }
+
+        .editor-container .CodeMirror-gutters {
+            background: #0d1117;
+            border-right: 1px solid #30363d;
+        }
+
+        .editor-container .CodeMirror-cursor {
+            border-left: 1px solid #58a6ff;
+        }
+
+        .editor-container .CodeMirror-selected {
+            background: rgba(88, 166, 255, 0.2);
         }
 
         .sidebar {
@@ -307,12 +357,17 @@
                     <span id="status-message" class="status-message"></span>
                 </div>
                 <div class="file-actions">
+                    <button id="edit-button" class="secondary" title="Edit the current file">Edit</button>
+                    <button id="preview-button" class="secondary hidden" title="Preview the pending changes">Preview</button>
+                    <button id="save-button" class="hidden" title="Save your changes">Save</button>
+                    <button id="cancel-button" class="secondary hidden" title="Cancel editing">Cancel</button>
                     <button id="download-button" title="Download the current file">Download</button>
                     <button id="raw-button" class="secondary" title="Toggle raw markdown view">Show Raw</button>
                     <button id="delete-button" class="danger" title="Delete the current file">Delete</button>
                 </div>
             </header>
             <div id="content" class="content-area"></div>
+            <div id="editor-container" class="editor-container"></div>
             <pre id="raw-view" class="raw-view"></pre>
         </section>
         <aside class="sidebar">
@@ -357,6 +412,12 @@
     <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.22.2/build/vega-embed.min.js" crossorigin="anonymous"
         integrity="sha512-XGkG4fTLMPA3Lp9FUGv7MFNvzpAzC/QgC//cOSxjfhmj8fZjF8iyqn9rgXjwHiY1xqWFzn+BnH8R0oGClEIPvw=="
         referrerpolicy="no-referrer" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"
+        integrity="sha512-zA8xL7zJHG6G+wVsqtYEnD4y6PfeWS9CM9Yd8ly3khkWyTkzPHgCw58ypcZwK2tQZ+yAYiuTxFCMXdufYjjL8w=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"
+        integrity="sha512-PfUyEmhu5CEbVvOf8YPhjk6AKQy56ORgGqesdcju6V1+cIO6XcOOapL+sH0qdYFZs/OSCL3D9cGAx1deNb2G5A=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
     <script defer>
         (function () {
             const state = window.__INITIAL_STATE__ || {};
@@ -369,6 +430,11 @@
             const downloadButton = document.getElementById('download-button');
             const rawButton = document.getElementById('raw-button');
             const deleteButton = document.getElementById('delete-button');
+            const editButton = document.getElementById('edit-button');
+            const previewButton = document.getElementById('preview-button');
+            const saveButton = document.getElementById('save-button');
+            const cancelButton = document.getElementById('cancel-button');
+            const editorContainer = document.getElementById('editor-container');
             const indicator = document.getElementById('connection-indicator');
 
             let currentFile = state.selectedFile || null;
@@ -376,6 +442,11 @@
             let websocket = null;
             let reconnectTimer = null;
             let rawVisible = false;
+            let isEditing = false;
+            let isPreviewing = false;
+            let editorInstance = null;
+            let draftContent = '';
+            let currentContent = typeof state.content === 'string' ? state.content : '';
 
             const originalPathArgument = state.pathArgument || '';
             let resolvedRootPath = state.rootPath || '';
@@ -986,9 +1057,26 @@
             function updateHeader() {
                 fileName.textContent = currentFile || 'No file selected';
                 directoryPath.textContent = resolvedRootPath || originalPathArgument || 'Unknown';
-                downloadButton.disabled = !currentFile;
-                rawButton.disabled = !currentFile;
-                deleteButton.disabled = !currentFile;
+                const hasFile = Boolean(currentFile);
+                downloadButton.disabled = !hasFile;
+                rawButton.disabled = !hasFile || isEditing;
+                deleteButton.disabled = !hasFile;
+                editButton.disabled = !hasFile && !isEditing;
+                previewButton.disabled = !hasFile;
+                saveButton.disabled = !hasFile;
+                cancelButton.disabled = false;
+                updateActionVisibility();
+            }
+
+            function updateActionVisibility() {
+                const hasFile = Boolean(currentFile);
+                editButton.classList.toggle('hidden', !hasFile || (isEditing && !isPreviewing));
+                previewButton.classList.toggle('hidden', !isEditing || isPreviewing);
+                saveButton.classList.toggle('hidden', !isEditing);
+                cancelButton.classList.toggle('hidden', !isEditing);
+                downloadButton.classList.toggle('hidden', isEditing);
+                rawButton.classList.toggle('hidden', isEditing);
+                deleteButton.classList.toggle('hidden', isEditing);
             }
 
             function buildQuery(params) {
@@ -1028,7 +1116,7 @@
                 return trimmed === '' ? '' : trimmed;
             }
 
-            function renderMarkdown(markdownText) {
+            function renderMarkdown(markdownText, options = {}) {
                 cleanupExcalidrawRoots();
                 configureMarked();
                 updateRelativeLinkBase(currentFile);
@@ -1037,6 +1125,7 @@
                 excalidrawIdCounter = 0;
 
                 const sourceText = markdownText || '';
+                const updateCurrent = Boolean(options.updateCurrent);
 
                 if (typeof marked === 'undefined') {
                     pendingMarkdown = sourceText;
@@ -1045,10 +1134,13 @@
                         if (pendingMarkdown !== null) {
                             const textToRender = pendingMarkdown;
                             pendingMarkdown = null;
-                            renderMarkdown(textToRender);
+                            renderMarkdown(textToRender, { updateCurrent });
                         }
                     });
                     rawView.textContent = sourceText;
+                    if (updateCurrent) {
+                        currentContent = sourceText;
+                    }
                     return;
                 }
 
@@ -1070,14 +1162,132 @@
 
                 renderAllDiagrams();
                 rawView.textContent = sourceText;
+                if (updateCurrent) {
+                    currentContent = sourceText;
+                }
+            }
+
+            // ------------------------------------------------------------------
+            // Markdown editing helpers
+            // ------------------------------------------------------------------
+            function ensureEditorInstance() {
+                if (editorInstance) {
+                    return editorInstance;
+                }
+                if (typeof window.CodeMirror === 'undefined') {
+                    return null;
+                }
+
+                editorContainer.innerHTML = '';
+                editorInstance = window.CodeMirror(editorContainer, {
+                    value: draftContent,
+                    mode: 'markdown',
+                    theme: 'github-dark',
+                    lineNumbers: true,
+                    lineWrapping: true,
+                    autofocus: true,
+                });
+                editorInstance.setSize('100%', '100%');
+                return editorInstance;
+            }
+
+            function enterEditMode() {
+                if (!currentFile) {
+                    return;
+                }
+                if (typeof window.CodeMirror === 'undefined') {
+                    setStatus('Editor resources are still loading. Please try again in a moment.');
+                    return;
+                }
+
+                isEditing = true;
+                isPreviewing = false;
+                draftContent = currentContent;
+                const editor = ensureEditorInstance();
+                if (!editor) {
+                    isEditing = false;
+                    setStatus('Editor resources are still loading. Please try again in a moment.');
+                    updateActionVisibility();
+                    return;
+                }
+
+                editor.setValue(draftContent);
+                window.setTimeout(() => {
+                    editor.refresh();
+                    editor.focus();
+                }, 0);
+
+                content.classList.add('hidden');
+                editorContainer.classList.add('visible');
+                rawVisible = false;
+                rawView.classList.remove('visible');
+                rawButton.textContent = 'Show Raw';
+                updateHeader();
+                setStatus('Editing markdown…');
+            }
+
+            function enterPreviewMode() {
+                if (!isEditing) {
+                    return;
+                }
+                const editor = ensureEditorInstance();
+                if (editor) {
+                    draftContent = editor.getValue();
+                }
+                isPreviewing = true;
+                renderMarkdown(draftContent, { updateCurrent: false });
+                editorContainer.classList.remove('visible');
+                content.classList.remove('hidden');
+                updateHeader();
+                setStatus('Previewing changes.');
+            }
+
+            function returnToCodeMode() {
+                if (!isPreviewing) {
+                    return;
+                }
+                isPreviewing = false;
+                renderMarkdown(currentContent, { updateCurrent: true });
+                content.classList.add('hidden');
+                editorContainer.classList.add('visible');
+                const editor = ensureEditorInstance();
+                if (editor) {
+                    window.setTimeout(() => {
+                        editor.refresh();
+                        editor.focus();
+                    }, 0);
+                }
+                updateHeader();
+                setStatus('Editing markdown…');
+            }
+
+            function exitEditMode(options = {}) {
+                const { restoreContent = true } = options;
+                if (!isEditing && !isPreviewing) {
+                    updateHeader();
+                    return;
+                }
+                isEditing = false;
+                isPreviewing = false;
+                draftContent = '';
+                content.classList.remove('hidden');
+                editorContainer.classList.remove('visible');
+                if (restoreContent) {
+                    renderMarkdown(currentContent, { updateCurrent: true });
+                }
+                rawVisible = false;
+                rawView.classList.remove('visible');
+                rawButton.textContent = 'Show Raw';
+                updateHeader();
             }
 
 
             function resetViewToFallback(options = {}) {
                 const { skipHistory = false } = options;
+                exitEditMode({ restoreContent: false });
                 currentFile = null;
                 const fallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
-                renderMarkdown(fallback);
+                renderMarkdown(fallback, { updateCurrent: true });
                 updateActiveFileHighlight();
                 updateHeader();
                 rawVisible = false;
@@ -1143,7 +1353,11 @@
                         await loadFile(currentFile, { replaceHistory: true });
                     } else {
                         currentFile = null;
-                        renderMarkdown(fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'));
+                        exitEditMode({ restoreContent: false });
+                        renderMarkdown(
+                            fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'),
+                            { updateCurrent: true }
+                        );
                         updateLocation('', { replace: true });
                         rawVisible = false;
                         rawView.classList.remove('visible');
@@ -1162,13 +1376,18 @@
 
             async function loadFile(file, options = {}) {
                 const { skipHistory = false, replaceHistory = false } = options;
-                setStatus('');
+                if (isEditing || isPreviewing) {
+                    setStatus('Editing session closed because the file was reloaded.');
+                    exitEditMode();
+                } else {
+                    setStatus('');
+                }
                 const url = `/api/file${buildQuery({ file })}`;
                 try {
                     const data = await fetchJson(url);
                     resolvedRootPath = data.rootPath || resolvedRootPath;
                     currentFile = data.file || file;
-                    renderMarkdown(data.content || '');
+                    renderMarkdown(data.content || '', { updateCurrent: true });
                     updateActiveFileHighlight();
                     updateHeader();
                     updateLocation(currentFile, { replace: replaceHistory || skipHistory });
@@ -1182,10 +1401,70 @@
             }
 
             async function selectFile(file) {
+                if (isEditing || isPreviewing) {
+                    const discard = window.confirm('Discard unsaved changes?');
+                    if (!discard) {
+                        return;
+                    }
+                    exitEditMode();
+                }
                 await loadFile(file);
             }
 
             function setupActions() {
+                editButton.addEventListener('click', () => {
+                    if (isEditing && isPreviewing) {
+                        returnToCodeMode();
+                        return;
+                    }
+                    if (!isEditing) {
+                        enterEditMode();
+                    }
+                });
+
+                previewButton.addEventListener('click', () => {
+                    if (!currentFile) {
+                        return;
+                    }
+                    enterPreviewMode();
+                });
+
+                cancelButton.addEventListener('click', () => {
+                    if (!isEditing && !isPreviewing) {
+                        return;
+                    }
+                    exitEditMode();
+                    setStatus('Edits cancelled.');
+                });
+
+                saveButton.addEventListener('click', async () => {
+                    if (!isEditing || !currentFile) {
+                        return;
+                    }
+                    const editor = ensureEditorInstance();
+                    if (editor && !isPreviewing) {
+                        draftContent = editor.getValue();
+                    }
+                    const contentToSave = isPreviewing ? draftContent : draftContent || (editor ? editor.getValue() : '');
+
+                    setStatus('Saving changes…');
+                    try {
+                        await fetchJson(`/api/file${buildQuery({ file: currentFile })}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ content: contentToSave }),
+                        });
+                        currentContent = contentToSave;
+                        exitEditMode();
+                        setStatus('Changes saved.');
+                        updateActiveFileHighlight();
+                        updateHeader();
+                    } catch (err) {
+                        setStatus(err.message);
+                        console.error('Save failed', err);
+                    }
+                });
+
                 downloadButton.addEventListener('click', async () => {
                     if (!currentFile) {
                         return;
@@ -1261,7 +1540,11 @@
                                     await loadFile(currentFile, { replaceHistory: true });
                                 } else {
                                     currentFile = null;
-                                    renderMarkdown(fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'));
+                                    exitEditMode({ restoreContent: false });
+                                    renderMarkdown(
+                                        fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'),
+                                        { updateCurrent: true }
+                                    );
                                     updateLocation('', { replace: true });
                                     rawVisible = false;
                                     rawView.classList.remove('visible');
@@ -1304,7 +1587,7 @@
 
             function initialise() {
                 const initialFallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
-                renderMarkdown(state.content || initialFallback);
+                renderMarkdown(state.content || initialFallback, { updateCurrent: true });
                 renderFileList();
                 updateHeader();
                 if (state.error) {
