@@ -278,14 +278,14 @@ python server.py --dir /path/to/my/docs --port 3000
 ### MCP Endpoints
 
 - `POST /mcp`: JSON-RPC endpoint for MCP protocol
-  - Supports MCP tools: `show_content`, `list_content`, `view_content`, `update_content`, `remove_content`, `subscribe_chat`, `get_chat_messages`
-- `GET /mcp/chat/subscribe`: **SSE (Server-Sent Events)** endpoint for real-time chat messages
-  - Returns `text/event-stream` for push-based chat notifications
-  - Alternative to polling with `get_chat_messages`
+  - Supports MCP tools: `show_content`, `list_content`, `view_content`, `update_content`, `remove_content`, `get_chat_stream_info`, `subscribe_chat_stream`
+- `POST /mcp/stream/chat`: HTTP streaming endpoint for live chat messages
+  - Uses chunked transfer encoding with newline-delimited JSON payloads
+  - Designed for long-lived connections (no polling or repeated requests)
   - Example:
     ```bash
-    curl -N http://localhost:8080/mcp/chat/subscribe
-    # Output: Server-Sent Events stream with chat messages
+    curl -N -X POST http://localhost:8080/mcp/stream/chat
+    # Output: NDJSON stream with chat events
     ```
 
 ## MCP Server Integration 🤖
@@ -313,7 +313,7 @@ The new unified server provides:
 ```mermaid
 graph TD
     A[AI Assistant] --> B[HTTP MCP Endpoint]
-    A --> H[SSE Chat Subscribe]
+    A --> H[HTTP Chat Stream]
     B --> C[Unified Server]
     H --> C
     C --> D[File System]
@@ -331,8 +331,7 @@ graph TD
 
 **Chat Integration**: When users send chat messages from the browser, they are:
 1. Sent via WebSocket to the server
-2. Pushed to AI assistants via SSE (`/mcp/chat/subscribe`)
-3. Also available via polling (`get_chat_messages` tool)
+2. Broadcast to AI assistants via the streaming endpoint (`POST /mcp/stream/chat`)
 
 ### Legacy MCP Setup (Still Supported)
 
@@ -355,9 +354,9 @@ The MCP server provides conversationally named tools for AI assistants:
 
 #### Chat Integration Tools
 
-- **`subscribe_chat`**: Subscribe to receive chat messages from the UI. Returns confirmation message.
-- **`get_chat_messages`**: Poll for chat messages since a given timestamp (legacy/fallback method).
-- **SSE Chat Stream** (Recommended): Connect to `GET /mcp/chat/subscribe` for push-based chat notifications.
+- **`get_chat_stream_info`**: Detailed instructions for connecting to the streaming HTTP endpoint.
+- **`subscribe_chat_stream`**: Explains how to connect to the live chat HTTP stream. Use this instead of polling-based approaches.
+- **Streaming Endpoint** (Recommended): Connect to `POST /mcp/stream/chat` for push-based chat notifications.
 
 **Example: Subscribing to Chat via SSE**
 
