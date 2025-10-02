@@ -152,7 +152,7 @@
         .header {
             text-align: center;
             margin-bottom: 30px;
-            padding: 20px;
+            padding: 8px;
             background: linear-gradient(135deg, #1f2a33 0%, #253548 100%);
         }
 
@@ -178,7 +178,7 @@
         }
 
         .directory-info {
-            margin-bottom: 20px;
+            margin-bottom: 8px;
             display: flex;
             flex-wrap: wrap;
             align-items: center;
@@ -199,7 +199,7 @@
 
         /* Chat input styles */
         .chat-container {
-            margin-bottom: 20px;
+            margin-bottom: 8px;
             display: flex;
             gap: 10px;
             align-items: center;
@@ -411,18 +411,10 @@
             display: flex;
             gap: 10px;
             align-items: center;
-            margin: 20px 0;
+            margin: 8px 0;
             padding: 10px;
             border-radius: 8px;
-            opacity: 0;
             pointer-events: none;
-            transition: opacity 0.2s ease;
-        }
-
-        .file-block:hover .file-actions,
-        .file-actions:focus-within {
-            opacity: 1;
-            pointer-events: auto;
         }
 
         .file-name {
@@ -1291,15 +1283,16 @@
     <div class="container">
         <div class="directory-info surface-panel">
             <div class="directory-details">
-                <strong>📁 Directory:</strong> __CURRENT_DIRECTORY__ | <strong>📄 Files:</strong> Loading... | <strong>🕒
-                Last Updated:</strong> Loading...
+                <strong>📁 Directory:</strong> __CURRENT_DIRECTORY__ | <strong>📄 Files:</strong> Loading... |
+                <strong>🕒
+                    Last Updated:</strong> Loading...
             </div>
             <div class="status connection-status">Connecting...</div>
         </div>
 
         <div class="chat-container surface-panel">
-            <input type="text" id="chat-input" class="chat-input"
-                placeholder="Send a message to connected AI agents..." onkeypress="handleChatKeyPress(event)" />
+            <input type="text" id="chat-input" class="chat-input" placeholder="Send a message to connected AI agents..."
+                onkeypress="handleChatKeyPress(event)" />
             <button class="chat-send-btn" onclick="sendChatMessage()">
                 Send
             </button>
