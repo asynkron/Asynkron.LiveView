@@ -968,7 +968,7 @@
                     console.log('Received WebSocket message:', event.data);
                     const data = JSON.parse(event.data);
                     if (data.type === 'content_update') {
-                        updateContent(data.content);
+                        updateContent(data);
                     }
                 };
 
@@ -1002,7 +1002,7 @@
                     // Store file list globally for later use
                     window.fileList = data.fileList || [];
 
-                    updateContent(data.content);
+                    updateContent(data);
 
                     // Update directory info
                     const directoryDetails = document.querySelector('.directory-details');
@@ -1015,7 +1015,7 @@
                 }
             }
 
-            function updateContent(markdownContent) {
+            function updateContent(payload) {
                 if (typeof marked === 'undefined') {
                     document.getElementById('content').innerHTML = '<div class="loading">⏳ Loading markdown renderer...</div>';
                     return;
@@ -1026,13 +1026,32 @@
                     vegaIdCounter = 0;
                     excalidrawIdCounter = 0;
 
-                    // Split content by file separators (---)
-                    const sections = markdownContent.split('\n\n---\n\n');
+                    // Prefer the server-provided blobs to keep each file intact.
+                    let unifiedContent = '';
+                    let sections = [];
+
+                    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+                        if (Array.isArray(payload.contentParts)) {
+                            sections = payload.contentParts.slice();
+                        }
+                        if (typeof payload.content === 'string') {
+                            unifiedContent = payload.content;
+                        }
+                    } else if (typeof payload === 'string') {
+                        unifiedContent = payload;
+                    }
+
+                    if (!sections.length && typeof unifiedContent === 'string') {
+                        sections = unifiedContent.split('\n\n---\n\n');
+                    }
+
                     const contentDiv = document.getElementById('content');
                     contentDiv.innerHTML = '';
 
                     sections.forEach((section, index) => {
-                        if (!section.trim()) return;
+                        if (typeof section !== 'string' || !section.trim()) {
+                            return;
+                        }
 
                         // Create a file block container
                         const fileBlock = document.createElement('div');

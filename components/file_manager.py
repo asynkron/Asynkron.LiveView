@@ -94,22 +94,24 @@ class FileManager:
             logger.error(f"Error listing markdown files: {e}")
             return []
 
-    def get_unified_markdown(self, custom_path: Path = None) -> str:
-        """Get unified markdown content from all files.
-        
+    def get_markdown_content_parts(self, custom_path: Path = None) -> List[str]:
+        """Return markdown for each file as an ordered list.
+
         Args:
             custom_path: Optional custom directory path. If None, uses default markdown_dir.
-        
+
         Returns:
-            Combined markdown content from all files
+            List of markdown strings in the same order as ``get_markdown_files``.
         """
         target_path = custom_path if custom_path else self.markdown_dir
         files = self.get_markdown_files(custom_path)
-        
+
         if not files:
-            return self.get_fallback_content(target_path)
-        
-        content_parts = []
+            # Ensure the UI still receives a single blob of markdown when the
+            # directory is empty so it can render the fallback message.
+            return [self.get_fallback_content(target_path)]
+
+        content_parts: List[str] = []
         for file_info in files:
             try:
                 file_content = file_info['path'].read_text(encoding='utf-8')
@@ -117,8 +119,20 @@ class FileManager:
             except Exception as e:
                 logger.error(f"Error reading file {file_info['name']}: {e}")
                 content_parts.append(f"# Error\n\nCould not read file: {file_info['name']}")
-        
-        return '\n\n---\n\n'.join(content_parts)
+
+        return content_parts
+
+    def get_unified_markdown(self, custom_path: Path = None) -> str:
+        """Get unified markdown content from all files.
+
+        Args:
+            custom_path: Optional custom directory path. If None, uses default markdown_dir.
+
+        Returns:
+            Combined markdown content from all files
+        """
+        parts = self.get_markdown_content_parts(custom_path)
+        return '\n\n---\n\n'.join(parts)
 
     def get_fallback_content(self, requested_path: Path) -> str:
         """Generate fallback content when directory is empty or inaccessible.

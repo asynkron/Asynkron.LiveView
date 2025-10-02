@@ -13,7 +13,7 @@ import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 from html import escape
 from aiohttp import web, WSMsgType
@@ -248,6 +248,12 @@ class UnifiedMarkdownServer:
     def get_unified_markdown(self, custom_path: Path = None) -> str:
         """Get all markdown content unified into a single string."""
         return self.file_manager.get_unified_markdown(custom_path)
+
+    def _get_content_with_parts(self, custom_path: Path = None) -> Tuple[str, List[str]]:
+        """Return unified markdown plus the individual blobs for each file."""
+        content_parts = self.file_manager.get_markdown_content_parts(custom_path)
+        unified_content = '\n\n---\n\n'.join(content_parts)
+        return unified_content, content_parts
     
     def load_index_template(self) -> str:
         """Load unified index template from disk."""
@@ -282,10 +288,11 @@ class UnifiedMarkdownServer:
         
         # Send initial content
         try:
-            unified_content = self.get_unified_markdown(target_directory)
+            unified_content, content_parts = self._get_content_with_parts(target_directory)
             await ws.send_str(json.dumps({
                 'type': 'content_update',
-                'content': unified_content
+                'content': unified_content,
+                'contentParts': content_parts
             }))
         except Exception as e:
             logger.error(f"Error sending initial content: {e}")
@@ -322,7 +329,7 @@ class UnifiedMarkdownServer:
         target_directory = self.resolve_markdown_path(path_param)
         
         files = self.get_markdown_files(target_directory)
-        unified_content = self.get_unified_markdown(target_directory)
+        unified_content, content_parts = self._get_content_with_parts(target_directory)
         
         # Get the sticky filename for this directory
         sticky_filename = self.sticky_files.get(str(target_directory))
@@ -346,6 +353,7 @@ class UnifiedMarkdownServer:
             'content': unified_content,
             'files': file_count,
             'fileList': file_list,
+            'contentParts': content_parts,
             'timestamp': time.time(),
             'directory': str(target_directory)
         })
@@ -553,12 +561,13 @@ class UnifiedMarkdownServer:
         
         try:
             # Get updated content
-            unified_content = self.get_unified_markdown()
-            
+            unified_content, content_parts = self._get_content_with_parts()
+
             # Prepare WebSocket message
             message = json.dumps({
                 'type': 'content_update',
                 'content': unified_content,
+                'contentParts': content_parts,
                 'changed_file': str(file_path)
             })
             

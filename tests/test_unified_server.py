@@ -135,13 +135,36 @@ async def test_api_content_includes_file_list(tmp_path: Path) -> None:
         assert "fileList" in payload
         assert isinstance(payload["fileList"], list)
         assert len(payload["fileList"]) == 1
-        
+        assert "contentParts" in payload
+        assert isinstance(payload["contentParts"], list)
+        assert len(payload["contentParts"]) == 1
+
         file_info = payload["fileList"][0]
         assert file_info["name"] == "test.md"
         assert file_info["fileId"] == "test.md"
         assert "path" in file_info
         assert "created" in file_info
         assert "updated" in file_info
+        assert payload["contentParts"][0] == "# Test Content\n\nThis is a test."
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_content_parts_preserve_markdown_blobs(tmp_path: Path) -> None:
+    """Ensure inline separators inside a file do not create phantom splits."""
+    markdown = "# Title\n\n---\n\nStill the same file."
+    (tmp_path / "notes.md").write_text(markdown)
+
+    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    client = await _create_test_client(server)
+    try:
+        response = await client.get("/api/content")
+        assert response.status == 200
+
+        payload = await response.json()
+        assert payload["contentParts"] == [markdown]
+        assert payload["content"].count("\n\n---\n\n") == 1
     finally:
         await client.close()
 
