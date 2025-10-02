@@ -63,6 +63,11 @@ def parse_args(argv: List[str]) -> tuple[argparse.Namespace, List[str]]:
         action="store_true",
         help="Prevent forwarding keyboard input to the child process",
     )
+    parser.add_argument(
+        "--exit-on-error",
+        action="store_true",
+        help="Terminate the child process if the WebSocket feed cannot be reached or disconnects",
+    )
 
     args = parser.parse_args(host_args)
     if not child_cmd:
@@ -146,6 +151,20 @@ async def inject_line_to_child(
         pass
 
 
+async def _terminate_child(proc: asyncio.subprocess.Process, *, timeout: float = 5.0) -> None:
+    """Gracefully terminate the child process, escalating if needed."""
+
+    if proc.returncode is not None:
+        return
+
+    proc.terminate()
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+
+
 async def ws_consumer(
     url: str,
     proc: asyncio.subprocess.Process,
@@ -155,6 +174,7 @@ async def ws_consumer(
     echo: bool,
     prefix: str,
     reconnect: bool,
+    exit_on_error: bool,
 ) -> None:
     """Stream chat messages from the server and feed them to the child process."""
 
@@ -213,11 +233,17 @@ async def ws_consumer(
             raise
         except Exception as exc:
             print(f"[clihost] websocket error: {exc}", file=sys.stderr)
+            if exit_on_error:
+                await _terminate_child(proc)
+                return
             if not reconnect:
                 return
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
         else:
+            if exit_on_error:
+                await _terminate_child(proc)
+                return
             if not reconnect:
                 return
 
@@ -247,6 +273,7 @@ async def main() -> None:
                 echo=args.echo_injections,
                 prefix=args.injection_prefix,
                 reconnect=not args.no_reconnect,
+                exit_on_error=args.exit_on_error,
             )
         )
     )
