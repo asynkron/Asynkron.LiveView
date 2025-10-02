@@ -112,7 +112,13 @@
     <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.22.2/build/vega-embed.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.4/dist/excalidraw.production.min.js" defer></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.18.0/dist/prod/index.css">
+    <script type="module">
+        import * as ExcalidrawLib from 'https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.18.0/dist/prod/index.js';
+
+        // Preserve the existing initialization flow by publishing the module globally.
+        window.ExcalidrawLib = ExcalidrawLib;
+    </script>
     <script>
         window.__PRINT_DATA__ = __PRINT_DATA__;
     </script>
