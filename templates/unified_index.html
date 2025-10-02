@@ -5,12 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Markdown Live View</title>
-    <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@1.*/css/pico.min.css">
     <style>
-        :root {
-            color-scheme: dark;
-        }
-
         * {
             margin: 0;
             padding: 0;
@@ -18,12 +13,12 @@
         }
 
         body {
-            font-family: var(--pico-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             line-height: 1.6;
-            color: var(--pico-color, #e0e6ed);
-            background-color: var(--pico-background-color, #1f2933);
-            padding: 2rem;
-            font-size: 0.95rem;
+            color: #e0e6ed;
+            background-color: #212830;
+            padding: 20px;
+            font-size: smaller;
         }
 
         .mermaid .cluster rect {
@@ -154,93 +149,98 @@
             margin: 0 auto;
         }
 
-        .panel {
-            background: rgba(255, 255, 255, 0.04);
-            border-radius: var(--pico-border-radius, 0.75rem);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 1rem 1.25rem;
-            margin-bottom: 1.25rem;
-            backdrop-filter: blur(6px);
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #1f2a33 0%, #253548 100%);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #58a6ff 0%, #79c0ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            color: #7d8590;
+            font-size: 1.1rem;
         }
 
         .directory-info {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.75rem 1.5rem;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
         }
 
-        .directory-meta {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 1.25rem;
-            font-weight: 500;
-        }
-
-        .directory-meta span {
-            color: var(--pico-muted-color, #9ca3af);
-        }
-
-        .directory-meta strong {
-            color: var(--pico-color, #f9fafb);
-            margin-right: 0.35rem;
+        .directory-info strong {
+            color: #58a6ff;
         }
 
         /* Chat input styles */
         .chat-container {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
             display: flex;
-            gap: 0.75rem;
+            gap: 10px;
             align-items: center;
-            flex-wrap: wrap;
         }
 
         .chat-input {
             flex: 1;
-            min-width: 220px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: var(--pico-border-radius, 0.5rem);
-            padding: 0.75rem 1rem;
-            color: var(--pico-color, #f9fafb);
-            font-size: 1rem;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 10px 15px;
+            color: #e0e6ed;
+            font-size: 0.95rem;
             font-family: inherit;
             outline: none;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            transition: border-color 0.2s;
         }
 
         .chat-input:focus {
-            border-color: var(--pico-primary, #60a5fa);
-            box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
+            border-color: #58a6ff;
         }
 
         .chat-input::placeholder {
-            color: var(--pico-muted-color, #9ca3af);
+            color: #7d8590;
         }
 
         .chat-send-btn {
-            padding: 0.75rem 1.5rem;
-            background: var(--pico-primary, #60a5fa);
-            border: 1px solid var(--pico-primary, #60a5fa);
-            border-radius: var(--pico-border-radius, 0.5rem);
-            color: var(--pico-primary-inverse, #0b1120);
-            font-size: 1rem;
+            padding: 10px 20px;
+            background: #238636;
+            border: 1px solid #2ea043;
+            border-radius: 6px;
+            color: white;
+            font-size: 0.95rem;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s ease, filter 0.2s ease;
+            transition: all 0.2s;
             white-space: nowrap;
         }
 
         .chat-send-btn:hover {
-            filter: brightness(1.05);
+            background: #2ea043;
+            border-color: #3fb950;
         }
 
         .chat-send-btn:active {
-            transform: scale(0.97);
+            background: #26a641;
         }
 
         .chat-send-btn:disabled {
-            opacity: 0.6;
+            background: #21262d;
+            border-color: #30363d;
+            color: #7d8590;
             cursor: not-allowed;
         }
 
@@ -363,31 +363,24 @@
 
         /* Status indicator */
         .status {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0.35rem 1rem;
-            border-radius: 999px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            transition: background-color 0.2s ease, color 0.2s ease;
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            z-index: 1000;
         }
 
         .status.connected {
-            background: rgba(34, 197, 94, 0.15);
-            color: #4ade80;
+            background: #1a7f37;
+            color: white;
         }
 
         .status.disconnected {
-            background: rgba(248, 113, 113, 0.15);
-            color: #f87171;
-        }
-
-        .status.connecting {
-            background: rgba(96, 165, 250, 0.15);
-            color: #93c5fd;
+            background: #cf222e;
+            color: white;
         }
 
         /* Loading animation */
@@ -409,70 +402,111 @@
 
         .file-actions {
             display: flex;
-            flex-wrap: wrap;
-            gap: 0.75rem;
+            gap: 10px;
+            margin: 20px 0;
+            padding: 10px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
             align-items: center;
-            margin: 0;
-            padding: 0.5rem 0;
         }
 
         .file-name {
             flex: 1;
-            color: var(--pico-color, #f9fafb);
+            color: #58a6ff;
             font-weight: 600;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
         }
 
         .action-btn {
-            padding: 0.55rem 1rem;
-            border: 1px solid var(--pico-primary, #60a5fa);
-            border-radius: var(--pico-border-radius, 0.5rem);
-            background: var(--pico-primary, #60a5fa);
-            color: var(--pico-primary-inverse, #0b1120);
-            font-size: 0.9rem;
-            font-weight: 600;
+            padding: 6px 12px;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            background: #21262d;
+            color: #e0e6ed;
+            font-size: 0.85rem;
             cursor: pointer;
-            transition: filter 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+            transition: all 0.2s;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-        }
-
-        .file-actions .action-btn {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        .file-actions:hover .action-btn,
-        .file-actions:focus-within .action-btn {
-            opacity: 1;
-            pointer-events: auto;
+            gap: 5px;
         }
 
         .action-btn:hover {
-            filter: brightness(1.08);
+            background: #30363d;
+            border-color: #58a6ff;
         }
 
-        .action-btn:active {
-            transform: scale(0.97);
+        .action-btn.delete {
+            color: #ff7b72;
+            border-color: #f85149;
+        }
+
+        .action-btn.delete:hover {
+            background: #f85149;
+            color: white;
+            border-color: #f85149;
+        }
+
+        .action-btn.download {
+            color: #79c0ff;
+            border-color: #58a6ff;
+        }
+
+        .action-btn.download:hover {
+            background: #58a6ff;
+            color: white;
+            border-color: #58a6ff;
+        }
+
+        .action-btn.sticky {
+            color: #ffa657;
+            border-color: #f0883e;
+        }
+
+        .action-btn.sticky:hover {
+            background: #f0883e;
+            color: white;
+            border-color: #f0883e;
         }
 
         .action-btn.sticky.active {
-            box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.35);
+            background: #f0883e;
+            color: white;
+            border-color: #f0883e;
         }
 
         .action-btn.expand {
-            min-width: 40px;
+            color: #8b949e;
+            border-color: #30363d;
+            min-width: 35px;
+            justify-content: center;
+        }
+
+        .action-btn.expand:hover {
+            background: #30363d;
+            border-color: #8b949e;
+        }
+
+        .action-btn.markdown-toggle {
+            color: #a5d6ff;
+            border-color: #58a6ff;
+        }
+
+        .action-btn.markdown-toggle:hover {
+            background: #58a6ff;
+            color: white;
+            border-color: #58a6ff;
         }
 
         .action-btn.markdown-toggle.raw-mode {
-            box-shadow: inset 0 0 0 2px rgba(15, 23, 42, 0.25);
+            background: #58a6ff;
+            color: white;
         }
 
         .action-btn:disabled {
-            opacity: 0.4;
+            opacity: 0.5;
             cursor: not-allowed;
         }
 
@@ -936,31 +970,20 @@
             }
 
             function updateStatus(connected) {
-                const status = document.querySelector('[data-role="status"]') || createStatusElement();
-                if (!status) {
-                    return;
-                }
-
+                const status = document.querySelector('.status') || createStatusElement();
                 if (connected) {
-                    status.textContent = 'Connected';
+                    status.textContent = '🟢 Connected';
                     status.className = 'status connected';
                 } else {
-                    status.textContent = 'Disconnected';
+                    status.textContent = '🔴 Disconnected';
                     status.className = 'status disconnected';
                 }
             }
 
             function createStatusElement() {
-                const container = document.querySelector('.directory-info');
-                if (!container) {
-                    return null;
-                }
-
-                const status = document.createElement('span');
-                status.className = 'status connecting';
-                status.setAttribute('data-role', 'status');
-                status.textContent = 'Connecting…';
-                container.appendChild(status);
+                const status = document.createElement('div');
+                status.className = 'status';
+                document.body.appendChild(status);
                 return status;
             }
 
@@ -1020,21 +1043,7 @@
                     // Update directory info
                     const directoryInfo = document.querySelector('.directory-info');
                     if (directoryInfo) {
-                        const directorySpan = directoryInfo.querySelector('[data-role="directory"]');
-                        const filesSpan = directoryInfo.querySelector('[data-role="files"]');
-                        const updatedSpan = directoryInfo.querySelector('[data-role="updated"]');
-
-                        if (directorySpan) {
-                            directorySpan.textContent = data.directory;
-                        }
-
-                        if (filesSpan) {
-                            filesSpan.textContent = data.files;
-                        }
-
-                        if (updatedSpan) {
-                            updatedSpan.textContent = new Date(data.timestamp * 1000).toLocaleString();
-                        }
+                        directoryInfo.innerHTML = `<strong>📁 Directory:</strong> ${data.directory} | <strong>📄 Files:</strong> ${data.files} | <strong>🕒 Last Updated:</strong> ${new Date(data.timestamp * 1000).toLocaleString()}`;
                     }
                 } catch (error) {
                     console.error('Error loading content:', error);
@@ -1069,28 +1078,28 @@
                         if (window.fileList && window.fileList[index]) {
                             const fileInfo = window.fileList[index];
                             const actions = document.createElement('div');
-                            actions.className = 'panel file-actions';
+                            actions.className = 'file-actions';
                             const expandBtnId = `expand-btn-${index}`;
                             const contentId = `content-${index}`;
                             const markdownToggleBtnId = `markdown-toggle-btn-${index}`;
                             const stickyClass = fileInfo.isSticky ? 'active' : '';
-                            const stickyLabel = fileInfo.isSticky ? 'Sticky (On)' : 'Sticky';
+                            const stickyIcon = fileInfo.isSticky ? '📌' : '📍';
                             actions.innerHTML = `
                                 <button class="action-btn expand" id="${expandBtnId}" onclick="toggleExpand('${contentId}', '${expandBtnId}')">
-                                    Collapse
+                                    ▼
                                 </button>
-                                <span class="file-name">${escapeHtml(fileInfo.name)}</span>
+                                <span class="file-name">📄 ${escapeHtml(fileInfo.name)}</span>
                                 <button class="action-btn markdown-toggle" id="${markdownToggleBtnId}" onclick="toggleMarkdownRaw('${contentId}', '${markdownToggleBtnId}')">
-                                    Raw
+                                    📝 Raw
                                 </button>
                                 <button class="action-btn sticky ${stickyClass}" onclick="toggleSticky('${escapeHtml(fileInfo.fileId)}')">
-                                    ${stickyLabel}
+                                    ${stickyIcon} Sticky
                                 </button>
                                 <button class="action-btn download" onclick="downloadFileAsPDF('${escapeHtml(fileInfo.fileId)}')">
-                                    Download PDF
+                                    📥 Download PDF
                                 </button>
                                 <button class="action-btn delete" onclick="deleteFile('${escapeHtml(fileInfo.fileId)}')">
-                                    Delete
+                                    🗑️ Delete
                                 </button>
                             `;
                             fileBlock.appendChild(actions);
@@ -1175,10 +1184,10 @@
 
                 if (content.classList.contains('collapsed')) {
                     content.classList.remove('collapsed');
-                    btn.textContent = 'Collapse';
+                    btn.textContent = '▼';
                 } else {
                     content.classList.add('collapsed');
-                    btn.textContent = 'Expand';
+                    btn.textContent = '▶';
                 }
             };
 
@@ -1223,7 +1232,7 @@
                         content.innerHTML = marked.parse(rawText);
                         content.classList.remove('raw-mode');
                         btn.classList.remove('raw-mode');
-                        btn.textContent = 'Raw';
+                        btn.innerHTML = '📝 Raw';
 
                         // Re-highlight code blocks
                         if (typeof hljs !== 'undefined') {
@@ -1246,7 +1255,7 @@
                         content.textContent = rawText;
                         content.classList.add('raw-mode');
                         btn.classList.add('raw-mode');
-                        btn.textContent = 'Rendered';
+                        btn.innerHTML = '🎨 Rendered';
                     }
                 }
             };
@@ -1307,21 +1316,19 @@
     </script>
 </head>
 
-<body data-theme="dark">
+<body>
     <div class="container">
-        <div class="panel directory-info">
-            <div class="directory-meta">
-                <span><strong>Directory:</strong> <span data-role="directory">__CURRENT_DIRECTORY__</span></span>
-                <span><strong>Files:</strong> <span data-role="files">Loading...</span></span>
-                <span><strong>Last Updated:</strong> <span data-role="updated">Loading...</span></span>
-            </div>
-            <span class="status connecting" data-role="status">Connecting…</span>
+        <div class="directory-info">
+            <strong>📁 Directory:</strong> __CURRENT_DIRECTORY__ | <strong>📄 Files:</strong> Loading... | <strong>🕒
+                Last Updated:</strong> Loading...
         </div>
 
-        <div class="panel chat-container">
+        <div class="chat-container">
             <input type="text" id="chat-input" class="chat-input"
-                placeholder="Send a message to connected AI agents..." onkeypress="handleChatKeyPress(event)" />
-            <button class="chat-send-btn" onclick="sendChatMessage()">Send</button>
+                placeholder="💬 Send a message to connected AI agents..." onkeypress="handleChatKeyPress(event)" />
+            <button class="chat-send-btn" onclick="sendChatMessage()">
+                📤 Send
+            </button>
         </div>
 
         <div id="content" class="loading">
