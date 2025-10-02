@@ -170,24 +170,35 @@
             font-size: 1.1rem;
         }
 
-        .directory-info {
+        .surface-panel {
             background: #161b22;
             border: 1px solid #30363d;
             border-radius: 8px;
             padding: 15px;
+        }
+
+        .directory-info {
             margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
         }
 
         .directory-info strong {
             color: #58a6ff;
         }
 
+        .directory-details {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+        }
+
         /* Chat input styles */
         .chat-container {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 15px;
             margin-bottom: 20px;
             display: flex;
             gap: 10px;
@@ -363,14 +374,10 @@
 
         /* Status indicator */
         .status {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-            z-index: 1000;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 600;
         }
 
         .status.connected {
@@ -403,12 +410,19 @@
         .file-actions {
             display: flex;
             gap: 10px;
+            align-items: center;
             margin: 20px 0;
             padding: 10px;
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            align-items: center;
+            border-radius: 8px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .file-block:hover .file-actions,
+        .file-actions:focus-within {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         .file-name {
@@ -430,7 +444,6 @@
             text-decoration: none;
             display: inline-flex;
             align-items: center;
-            gap: 5px;
         }
 
         .action-btn:hover {
@@ -438,71 +451,18 @@
             border-color: #58a6ff;
         }
 
-        .action-btn.delete {
-            color: #ff7b72;
-            border-color: #f85149;
-        }
-
-        .action-btn.delete:hover {
-            background: #f85149;
-            color: white;
-            border-color: #f85149;
-        }
-
-        .action-btn.download {
-            color: #79c0ff;
-            border-color: #58a6ff;
-        }
-
-        .action-btn.download:hover {
-            background: #58a6ff;
-            color: white;
-            border-color: #58a6ff;
-        }
-
-        .action-btn.sticky {
-            color: #ffa657;
-            border-color: #f0883e;
-        }
-
-        .action-btn.sticky:hover {
-            background: #f0883e;
-            color: white;
-            border-color: #f0883e;
-        }
-
-        .action-btn.sticky.active {
-            background: #f0883e;
-            color: white;
-            border-color: #f0883e;
-        }
-
         .action-btn.expand {
-            color: #8b949e;
-            border-color: #30363d;
             min-width: 35px;
             justify-content: center;
         }
 
-        .action-btn.expand:hover {
-            background: #30363d;
-            border-color: #8b949e;
-        }
-
-        .action-btn.markdown-toggle {
-            color: #a5d6ff;
-            border-color: #58a6ff;
-        }
-
-        .action-btn.markdown-toggle:hover {
-            background: #58a6ff;
-            color: white;
-            border-color: #58a6ff;
-        }
-
         .action-btn.markdown-toggle.raw-mode {
-            background: #58a6ff;
-            color: white;
+            background: #30363d;
+            border-color: #58a6ff;
+        }
+
+        .action-btn.sticky.active {
+            border-color: #58a6ff;
         }
 
         .action-btn:disabled {
@@ -970,21 +930,33 @@
             }
 
             function updateStatus(connected) {
-                const status = document.querySelector('.status') || createStatusElement();
+                const status = document.querySelector('.connection-status') || createStatusElement();
                 if (connected) {
-                    status.textContent = '🟢 Connected';
-                    status.className = 'status connected';
+                    status.textContent = 'Connected';
+                    status.className = 'status connection-status connected';
                 } else {
-                    status.textContent = '🔴 Disconnected';
-                    status.className = 'status disconnected';
+                    status.textContent = 'Disconnected';
+                    status.className = 'status connection-status disconnected';
                 }
             }
 
             function createStatusElement() {
-                const status = document.createElement('div');
-                status.className = 'status';
-                document.body.appendChild(status);
-                return status;
+                const directoryInfo = document.querySelector('.directory-info');
+                if (directoryInfo) {
+                    let status = directoryInfo.querySelector('.connection-status');
+                    if (status) {
+                        return status;
+                    }
+                    status = document.createElement('div');
+                    status.className = 'status connection-status';
+                    directoryInfo.appendChild(status);
+                    return status;
+                }
+
+                const fallbackStatus = document.createElement('div');
+                fallbackStatus.className = 'status connection-status';
+                document.body.appendChild(fallbackStatus);
+                return fallbackStatus;
             }
 
             function connectWebSocket() {
@@ -1041,9 +1013,9 @@
                     updateContent(data.content);
 
                     // Update directory info
-                    const directoryInfo = document.querySelector('.directory-info');
-                    if (directoryInfo) {
-                        directoryInfo.innerHTML = `<strong>📁 Directory:</strong> ${data.directory} | <strong>📄 Files:</strong> ${data.files} | <strong>🕒 Last Updated:</strong> ${new Date(data.timestamp * 1000).toLocaleString()}`;
+                    const directoryDetails = document.querySelector('.directory-details');
+                    if (directoryDetails) {
+                        directoryDetails.innerHTML = `<strong>📁 Directory:</strong> ${data.directory} | <strong>📄 Files:</strong> ${data.files} | <strong>🕒 Last Updated:</strong> ${new Date(data.timestamp * 1000).toLocaleString()}`;
                     }
                 } catch (error) {
                     console.error('Error loading content:', error);
@@ -1078,28 +1050,27 @@
                         if (window.fileList && window.fileList[index]) {
                             const fileInfo = window.fileList[index];
                             const actions = document.createElement('div');
-                            actions.className = 'file-actions';
+                            actions.className = 'file-actions surface-panel';
                             const expandBtnId = `expand-btn-${index}`;
                             const contentId = `content-${index}`;
                             const markdownToggleBtnId = `markdown-toggle-btn-${index}`;
                             const stickyClass = fileInfo.isSticky ? 'active' : '';
-                            const stickyIcon = fileInfo.isSticky ? '📌' : '📍';
                             actions.innerHTML = `
                                 <button class="action-btn expand" id="${expandBtnId}" onclick="toggleExpand('${contentId}', '${expandBtnId}')">
                                     ▼
                                 </button>
-                                <span class="file-name">📄 ${escapeHtml(fileInfo.name)}</span>
+                                <span class="file-name">${escapeHtml(fileInfo.name)}</span>
                                 <button class="action-btn markdown-toggle" id="${markdownToggleBtnId}" onclick="toggleMarkdownRaw('${contentId}', '${markdownToggleBtnId}')">
-                                    📝 Raw
+                                    Raw
                                 </button>
                                 <button class="action-btn sticky ${stickyClass}" onclick="toggleSticky('${escapeHtml(fileInfo.fileId)}')">
-                                    ${stickyIcon} Sticky
+                                    Sticky
                                 </button>
                                 <button class="action-btn download" onclick="downloadFileAsPDF('${escapeHtml(fileInfo.fileId)}')">
-                                    📥 Download PDF
+                                    Download PDF
                                 </button>
                                 <button class="action-btn delete" onclick="deleteFile('${escapeHtml(fileInfo.fileId)}')">
-                                    🗑️ Delete
+                                    Delete
                                 </button>
                             `;
                             fileBlock.appendChild(actions);
@@ -1232,7 +1203,7 @@
                         content.innerHTML = marked.parse(rawText);
                         content.classList.remove('raw-mode');
                         btn.classList.remove('raw-mode');
-                        btn.innerHTML = '📝 Raw';
+                        btn.textContent = 'Raw';
 
                         // Re-highlight code blocks
                         if (typeof hljs !== 'undefined') {
@@ -1255,7 +1226,7 @@
                         content.textContent = rawText;
                         content.classList.add('raw-mode');
                         btn.classList.add('raw-mode');
-                        btn.innerHTML = '🎨 Rendered';
+                        btn.textContent = 'Rendered';
                     }
                 }
             };
@@ -1318,16 +1289,19 @@
 
 <body>
     <div class="container">
-        <div class="directory-info">
-            <strong>📁 Directory:</strong> __CURRENT_DIRECTORY__ | <strong>📄 Files:</strong> Loading... | <strong>🕒
+        <div class="directory-info surface-panel">
+            <div class="directory-details">
+                <strong>📁 Directory:</strong> __CURRENT_DIRECTORY__ | <strong>📄 Files:</strong> Loading... | <strong>🕒
                 Last Updated:</strong> Loading...
+            </div>
+            <div class="status connection-status">Connecting...</div>
         </div>
 
-        <div class="chat-container">
+        <div class="chat-container surface-panel">
             <input type="text" id="chat-input" class="chat-input"
-                placeholder="💬 Send a message to connected AI agents..." onkeypress="handleChatKeyPress(event)" />
+                placeholder="Send a message to connected AI agents..." onkeypress="handleChatKeyPress(event)" />
             <button class="chat-send-btn" onclick="sendChatMessage()">
-                📤 Send
+                Send
             </button>
         </div>
 
