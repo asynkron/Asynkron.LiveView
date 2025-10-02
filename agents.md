@@ -1,29 +1,83 @@
 # Agent Development Guidelines
 
-## Live Chat Fan-out
+## 🚨 CRITICAL REQUIREMENT: NO POLLING FOR CHAT MESSAGES 🚨
 
-The chat bridge no longer uses MCP or the HTTP streaming endpoint. Chat traffic
-is delivered to CLI agents through a lightweight host process that connects to
-`/agent-feed` via WebSocket and injects messages into the child agent's stdin.
+### ❌ ABSOLUTELY FORBIDDEN:
+- **NEVER implement polling-based chat message retrieval**
+- **NEVER suggest `get_chat_messages()` with periodic calls** 
+- **NEVER use setTimeout/setInterval to check for new messages**
+- **NEVER implement "check every X seconds" patterns**
 
-### ✅ Required approach
-- Use the `clihost.py` helper to run agents as child processes.
-- The host connects to `ws://localhost:8080/agent-feed` and forwards JSON
-  messages that look like `{ "type": "chat", "text": "..." }` to the agent.
-- The host is responsible for keeping the terminal interactive for the user and
-  relaying server-sent chat messages into the agent's stdin.
+### ✅ REQUIRED APPROACH: HTTP STREAMING ONLY
 
-### ❌ Forbidden patterns
-- Re-introducing MCP chat tooling or the `/mcp/stream/chat` endpoint.
-- Polling the server for chat updates instead of using the WebSocket feed.
-- Spawning additional network transports that duplicate the agent feed.
+**Use the HTTP streaming endpoint exclusively:**
+```
+POST http://localhost:8080/mcp/stream/chat
+```
 
-### Development tips
-- Keep comments concise but clarify non-obvious decisions in code and tests.
-- When extending the host or server, ensure chat messages remain push-based and
-  that the terminal experience stays smooth for humans.
-- If you need to fan chat messages back to the server, prefer WebSocket messages
-  to match the existing push pipeline.
+**This endpoint provides:**
+- Real-time message delivery via chunked transfer encoding
+- Newline-delimited JSON (NDJSON) responses
+- Proper async generator-based streaming
+- No polling overhead or delays
 
-Following these conventions keeps the chat stack consistent and avoids the
-flakiness that the old MCP streaming integration introduced.
+### Implementation Pattern:
+
+```python
+# ✅ CORRECT - HTTP Streaming
+async with httpx.AsyncClient() as client:
+    async with client.stream('POST', 'http://localhost:8080/mcp/stream/chat') as response:
+        async for line in response.aiter_lines():
+            if line.strip():
+                message_data = json.loads(line)
+                await process_message(message_data)
+```
+
+```python
+# ❌ FORBIDDEN - Polling Pattern
+while True:
+    messages = await get_chat_messages(since=last_timestamp)  # NO!
+    await asyncio.sleep(1)  # NO!
+```
+
+### Why Polling is Banned:
+
+1. **Performance**: Wastes CPU cycles and network bandwidth
+2. **Latency**: Introduces unnecessary delays (1-30 seconds typical)
+3. **Scalability**: Doesn't scale with multiple agents
+4. **Resource Usage**: Creates unnecessary server load
+5. **User Experience**: Feels sluggish and unresponsive
+
+### Architecture Philosophy:
+
+- **Push, Don't Pull**: Messages are pushed to agents immediately
+- **Event-Driven**: React to events as they happen
+- **Efficient**: Zero polling overhead
+- **Real-Time**: Sub-second message delivery
+
+### Enforcement:
+
+Any code review that includes polling-based chat message retrieval will be **immediately rejected**. No exceptions.
+
+---
+
+## Streaming Chat Implementation Details
+
+### MCP Tool Available:
+- `get_chat_stream_info()` - Returns instructions for using the HTTP streaming endpoint
+
+### HTTP Endpoint:
+- `POST /mcp/stream/chat` - Direct HTTP streaming endpoint (PRIMARY METHOD)
+
+### Message Format:
+```json
+{"jsonrpc":"2.0","id":1,"result":"🔔 Subscribed to live chat stream. Waiting for messages..."}
+{"jsonrpc":"2.0","id":2,"result":"💬 [1696234567.123] User message here"}
+```
+
+### Connection Management:
+- Automatic reconnection on disconnection
+- Proper cleanup when streaming ends
+- Error handling for network issues
+
+Remember: **Streaming is the only acceptable approach for real-time chat messages.**
