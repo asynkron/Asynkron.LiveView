@@ -83,13 +83,15 @@ def parse_args(argv: List[str]) -> tuple[argparse.Namespace, List[str]]:
     )
     parser.add_argument(
         "--verbose",
-        action="store_true",
-        help="Enable additional logging for debugging",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable additional logging for debugging (use --no-verbose to disable)",
     )
     parser.add_argument(
         "--echo-chat",
-        action="store_true",
-        help="Always print chat messages received from the server",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Always print chat messages received from the server (use --no-echo-chat to suppress)",
     )
 
     args = parser.parse_args(host_args)
