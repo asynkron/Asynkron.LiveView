@@ -65,13 +65,31 @@ def parse_args(argv: List[str]) -> tuple[argparse.Namespace, List[str]]:
     )
     parser.add_argument(
         "--exit-on-error",
+        dest="exit_on_error",
         action="store_true",
         help="Terminate the child process if the WebSocket feed cannot be reached or disconnects",
     )
     parser.add_argument(
+        "--no-exit-on-error",
+        dest="exit_on_error",
+        action="store_false",
+        help="Keep retrying the WebSocket even if the child stays running",
+    )
+    parser.set_defaults(exit_on_error=True)
+    parser.add_argument(
         "--force-pty",
         action="store_true",
         help="Wrap the child command in a pseudo-terminal (via `script`) to preserve interactive behavior",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable additional logging for debugging",
+    )
+    parser.add_argument(
+        "--echo-chat",
+        action="store_true",
+        help="Always print chat messages received from the server",
     )
 
     args = parser.parse_args(host_args)
@@ -204,6 +222,8 @@ async def ws_consumer(
     prefix: str,
     reconnect: bool,
     exit_on_error: bool,
+    verbose: bool,
+    force_echo_chat: bool,
 ) -> None:
     """Stream chat messages from the server and feed them to the child process."""
 
@@ -223,6 +243,9 @@ async def ws_consumer(
                 backoff = 1
                 hello = json.dumps({"type": "hello", "pid": os.getpid()})
                 await ws.send(hello)
+                if verbose:
+                    print(f"[clihost] websocket connected to {url}")
+                    sys.stdout.flush()
 
                 async for raw in ws:
                     if proc.returncode is not None:
@@ -235,7 +258,7 @@ async def ws_consumer(
                     mtype = msg.get("type")
                     if mtype == "chat":
                         text = msg.get("text", "")
-                        if echo:
+                        if echo or force_echo_chat:
                             print(f"{prefix}{text}")
                             sys.stdout.flush()
                         await inject_line_to_child(
@@ -244,6 +267,9 @@ async def ws_consumer(
                             encoding=encoding,
                             newline=decoded_newline,
                         )
+                        if verbose:
+                            print(f"[clihost] injected chat into child PID {proc.pid}: {text!r}")
+                            sys.stdout.flush()
                     elif mtype == "control" and msg.get("cmd") == "quit":
                         if proc.returncode is None:
                             proc.terminate()
@@ -296,14 +322,14 @@ async def main() -> None:
     proc = await create_child(child_cmd_to_run)
     print(f"[clihost] started child PID {proc.pid}: {' '.join(child_cmd_to_run)}")
     sys.stdout.flush()
-    joined_cmd = " ".join(child_cmd)
-    print(f"[clihost] started child PID {proc.pid}: {joined_cmd}")
-    sys.stdout.flush()
 
     tasks = [
         asyncio.create_task(pump_stream(proc.stdout, sys.stdout, timeout=10.0, proc=proc)),
         asyncio.create_task(pump_stream(proc.stderr, sys.stderr, timeout=10.0, proc=proc)),
     ]
+    if args.verbose:
+        print("[clihost] stdout/stderr pump tasks started")
+        sys.stdout.flush()
 
     stdin_q: "queue.Queue[Optional[str]]" = queue.Queue()
     if not args.no_user_stdin:
@@ -321,9 +347,14 @@ async def main() -> None:
                 prefix=args.injection_prefix,
                 reconnect=not args.no_reconnect,
                 exit_on_error=args.exit_on_error,
+                verbose=args.verbose,
+                force_echo_chat=args.echo_chat,
             )
         )
     )
+    if args.verbose:
+        print("[clihost] websocket consumer task started")
+        sys.stdout.flush()
 
     stop_event = asyncio.Event()
 

@@ -529,10 +529,13 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js" defer=""></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer=""></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.4/dist/excalidraw.min.css">
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.18.0/dist/prod/index.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" defer=""></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" defer=""></script>
-    <script src="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.4/dist/excalidraw.production.min.js" defer=""></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"
+        defer=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.4/dist/excalidraw.production.min.js"
+        defer=""></script>
     <script src="https://cdn.jsdelivr.net/npm/vega@5.25.0/build/vega.min.js" defer=""></script>
     <script src="https://cdn.jsdelivr.net/npm/vega-lite@5.15.0/build/vega-lite.min.js" defer=""></script>
     <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.22.2/build/vega-embed.min.js" defer=""></script>
@@ -1252,25 +1255,25 @@
             window.sendChatMessage = function () {
                 const input = document.getElementById('chat-input');
                 const message = input.value.trim();
-                
+
                 if (!message) {
                     return;
                 }
-                
+
                 if (!ws || ws.readyState !== WebSocket.OPEN) {
                     alert('WebSocket not connected. Cannot send message.');
                     return;
                 }
-                
+
                 // Send chat message to server via WebSocket
                 try {
                     ws.send(JSON.stringify({
                         type: 'chat',
                         message: message
                     }));
-                    
+
                     console.log('Sent chat message:', message);
-                    
+
                     // Clear input
                     input.value = '';
                 } catch (error) {
@@ -1313,13 +1316,8 @@
         </div>
 
         <div class="chat-container">
-            <input 
-                type="text" 
-                id="chat-input" 
-                class="chat-input" 
-                placeholder="💬 Send a message to connected AI agents..."
-                onkeypress="handleChatKeyPress(event)"
-            />
+            <input type="text" id="chat-input" class="chat-input"
+                placeholder="💬 Send a message to connected AI agents..." onkeypress="handleChatKeyPress(event)" />
             <button class="chat-send-btn" onclick="sendChatMessage()">
                 📤 Send
             </button>
