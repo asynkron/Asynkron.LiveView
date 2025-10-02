@@ -25,6 +25,27 @@
             fill-opacity: 0.3;
         }
 
+        .vega-diagram {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+
+        .excalidraw-diagram {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            margin: 16px 0;
+            min-height: 320px;
+            display: flex;
+        }
+
+        .excalidraw-wrapper {
+            flex: 1;
+        }
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
@@ -418,13 +439,24 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js" defer=""></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer=""></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.4/dist/excalidraw.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" defer=""></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" defer=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.4/dist/excalidraw.production.min.js" defer=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega@5.25.0/build/vega.min.js" defer=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-lite@5.15.0/build/vega-lite.min.js" defer=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.22.2/build/vega-embed.min.js" defer=""></script>
     <script>
         window.addEventListener('DOMContentLoaded', () => {
             let ws = null;
             let reconnectAttempts = 0;
             const maxReconnectAttempts = 5;
             let mermaidReady = false;
+            let vegaReady = false;
+            let excalidrawReady = false;
             let mermaidIdCounter = 0;
+            let vegaIdCounter = 0;
+            let excalidrawIdCounter = 0;
             let markedConfigured = false;
             const textEncoder = new TextEncoder();
             const textDecoder = new TextDecoder();
@@ -489,7 +521,7 @@
                     .replace(/'/g, '&#39;');
             }
 
-            function encodeMermaidSource(code) {
+            function encodeDiagramSource(code) {
                 if (!code) {
                     return '';
                 }
@@ -501,7 +533,7 @@
                 return btoa(binary);
             }
 
-            function decodeMermaidSource(encoded) {
+            function decodeDiagramSource(encoded, label = 'diagram') {
                 if (!encoded) {
                     return '';
                 }
@@ -509,9 +541,33 @@
                     const bytes = Uint8Array.from(atob(encoded), char => char.charCodeAt(0));
                     return textDecoder.decode(bytes);
                 } catch (error) {
-                    console.warn('Failed to decode Mermaid source', error);
+                    console.warn(`Failed to decode ${label} source`, error);
                     return '';
                 }
+            }
+
+            function encodeMermaidSource(code) {
+                return encodeDiagramSource(code);
+            }
+
+            function decodeMermaidSource(encoded) {
+                return decodeDiagramSource(encoded, 'Mermaid');
+            }
+
+            function encodeVegaSource(code) {
+                return encodeDiagramSource(code);
+            }
+
+            function decodeVegaSource(encoded) {
+                return decodeDiagramSource(encoded, 'Vega');
+            }
+
+            function encodeExcalidrawSource(code) {
+                return encodeDiagramSource(code);
+            }
+
+            function decodeExcalidrawSource(encoded) {
+                return decodeDiagramSource(encoded, 'Excalidraw');
             }
 
             function setupMarked() {
@@ -533,6 +589,20 @@
                                     token.type = 'html';
                                     token.raw = mermaidHtml;
                                     token.text = mermaidHtml;
+                                } else if (lang.includes('vega-lite') || lang === 'vega') {
+                                    const id = `vega-${vegaIdCounter++}`;
+                                    const encodedSource = encodeVegaSource(token.text || token.raw || '');
+                                    const vegaHtml = `<div class="vega-diagram" id="${id}" data-vega-source="${encodedSource}"></div>`;
+                                    token.type = 'html';
+                                    token.raw = vegaHtml;
+                                    token.text = vegaHtml;
+                                } else if (lang.includes('excalidraw')) {
+                                    const id = `excalidraw-${excalidrawIdCounter++}`;
+                                    const encodedSource = encodeExcalidrawSource(token.text || token.raw || '');
+                                    const excalidrawHtml = `<div class="excalidraw-diagram" id="${id}" data-excalidraw-source="${encodedSource}"></div>`;
+                                    token.type = 'html';
+                                    token.raw = excalidrawHtml;
+                                    token.text = excalidrawHtml;
                                 }
                             }
                         }
@@ -584,6 +654,162 @@
                         const encoded = element.getAttribute('data-mermaid-source');
                         const sourceContent = encoded ? decodeMermaidSource(encoded) : element.textContent;
                         element.innerHTML = `<div class="loading">📊 Mermaid diagram (awaiting Mermaid.js):<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
+                    });
+                }
+            }
+
+            function initializeVega(retryCount = 0) {
+                if (typeof vega === 'undefined' || typeof vegaLite === 'undefined' || typeof vegaEmbed === 'undefined') {
+                    if (retryCount < 10) {
+                        setTimeout(() => initializeVega(retryCount + 1), 200);
+                    } else {
+                        console.warn('Vega libraries not available');
+                    }
+                    vegaReady = false;
+                    return;
+                }
+
+                vegaReady = true;
+                console.log('Vega initialized successfully');
+                requestAnimationFrame(renderVegaVisualizations);
+            }
+
+            function renderVegaVisualizations() {
+                const vegaElements = document.querySelectorAll('.vega-diagram');
+                if (!vegaElements.length) {
+                    return;
+                }
+
+                if (vegaReady && typeof vegaEmbed !== 'undefined') {
+                    vegaElements.forEach((element) => {
+                        if (element.dataset.rendered === 'true') {
+                            return;
+                        }
+
+                        const encoded = element.getAttribute('data-vega-source');
+                        const sourceContent = encoded ? decodeVegaSource(encoded) : element.textContent;
+
+                        if (!sourceContent.trim()) {
+                            element.innerHTML = '<div class="loading">⚠️ Vega spec is empty.</div>';
+                            element.dataset.rendered = 'true';
+                            return;
+                        }
+
+                        let spec;
+                        try {
+                            spec = JSON.parse(sourceContent);
+                        } catch (error) {
+                            console.error('Vega parsing error:', error);
+                            element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">Invalid Vega specification:<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
+                            element.dataset.rendered = 'true';
+                            return;
+                        }
+
+                        element.innerHTML = '';
+                        const target = document.createElement('div');
+                        element.appendChild(target);
+
+                        vegaEmbed(target, spec, { actions: false, renderer: 'canvas', theme: 'dark' })
+                            .then(() => {
+                                element.dataset.rendered = 'true';
+                            })
+                            .catch((error) => {
+                                console.error('Vega rendering error:', error);
+                                element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">Vega rendering error: ${escapeHtml(error.message)}</div>`;
+                                element.dataset.rendered = 'true';
+                            });
+                    });
+                } else {
+                    vegaElements.forEach((element) => {
+                        const encoded = element.getAttribute('data-vega-source');
+                        const sourceContent = encoded ? decodeVegaSource(encoded) : element.textContent;
+                        element.innerHTML = `<div class="loading">📈 Vega visualization (awaiting Vega libraries):<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
+                    });
+                }
+            }
+
+            function initializeExcalidraw(retryCount = 0) {
+                if (typeof window.React === 'undefined' || typeof window.ReactDOM === 'undefined' || typeof window.ExcalidrawLib === 'undefined') {
+                    if (retryCount < 10) {
+                        setTimeout(() => initializeExcalidraw(retryCount + 1), 200);
+                    } else {
+                        console.warn('Excalidraw libraries not available');
+                    }
+                    excalidrawReady = false;
+                    return;
+                }
+
+                excalidrawReady = true;
+                console.log('Excalidraw initialized successfully');
+                requestAnimationFrame(renderExcalidrawDiagrams);
+            }
+
+            function renderExcalidrawDiagrams() {
+                const excalidrawElements = document.querySelectorAll('.excalidraw-diagram');
+                if (!excalidrawElements.length) {
+                    return;
+                }
+
+                if (excalidrawReady && window.React && window.ReactDOM && window.ExcalidrawLib && window.ExcalidrawLib.Excalidraw) {
+                    excalidrawElements.forEach((element) => {
+                        if (element.dataset.rendered === 'true') {
+                            return;
+                        }
+
+                        const encoded = element.getAttribute('data-excalidraw-source');
+                        const sourceContent = encoded ? decodeExcalidrawSource(encoded) : element.textContent;
+
+                        if (!sourceContent.trim()) {
+                            element.innerHTML = '<div class="loading">⚠️ Excalidraw scene is empty.</div>';
+                            element.dataset.rendered = 'true';
+                            return;
+                        }
+
+                        let sceneData;
+                        try {
+                            sceneData = JSON.parse(sourceContent);
+                        } catch (error) {
+                            console.error('Excalidraw parsing error:', error);
+                            element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">Invalid Excalidraw JSON:<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
+                            element.dataset.rendered = 'true';
+                            return;
+                        }
+
+                        element.innerHTML = '';
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'excalidraw-wrapper';
+                        wrapper.style.height = '480px';
+                        element.appendChild(wrapper);
+
+                        try {
+                            const excalidrawElement = React.createElement(window.ExcalidrawLib.Excalidraw, {
+                                initialData: sceneData,
+                                viewModeEnabled: true,
+                                zenModeEnabled: false,
+                                gridModeEnabled: false,
+                                theme: 'dark'
+                            });
+
+                            if (typeof window.ReactDOM.createRoot === 'function') {
+                                const root = window.ReactDOM.createRoot(wrapper);
+                                root.render(excalidrawElement);
+                                element.dataset.rendered = 'true';
+                                element._excalidrawRoot = root;
+                            } else {
+                                window.ReactDOM.render(excalidrawElement, wrapper);
+                                element.dataset.rendered = 'true';
+                            }
+                        } catch (error) {
+                            console.error('Excalidraw rendering error:', error);
+                            element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">Excalidraw rendering error: ${escapeHtml(error.message)}</div>`;
+                            element.dataset.rendered = 'true';
+                        }
+                    });
+                } else {
+                    excalidrawElements.forEach((element) => {
+                        const encoded = element.getAttribute('data-excalidraw-source');
+                        const sourceContent = encoded ? decodeExcalidrawSource(encoded) : element.textContent;
+                        element.innerHTML = `<div class="loading">✏️ Excalidraw scene (awaiting Excalidraw libraries):<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
                     });
                 }
             }
@@ -678,6 +904,8 @@
 
                 try {
                     mermaidIdCounter = 0;
+                    vegaIdCounter = 0;
+                    excalidrawIdCounter = 0;
 
                     // Split content by file separators (---)
                     const sections = markdownContent.split('\n\n---\n\n');
@@ -744,6 +972,8 @@
                     }
 
                     renderMermaidDiagrams();
+                    renderVegaVisualizations();
+                    renderExcalidrawDiagrams();
                 } catch (error) {
                     console.error('Error rendering markdown:', error);
                     document.getElementById('content').innerHTML = `<div style="color: #cf222e;">Error rendering markdown: ${error.message}</div>`;
@@ -941,6 +1171,8 @@
 
                         // Re-render mermaid diagrams
                         renderMermaidDiagrams();
+                        renderVegaVisualizations();
+                        renderExcalidrawDiagrams();
                     }
                 } else {
                     // Switch to raw markdown mode
@@ -996,6 +1228,8 @@
                 .then(() => {
                     console.log('All libraries loaded successfully');
                     initializeMermaid();
+                    initializeVega();
+                    initializeExcalidraw();
                     setupMarked();
                     connectWebSocket();
                     loadContent();
