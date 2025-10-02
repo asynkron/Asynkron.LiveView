@@ -40,13 +40,14 @@ def main():
     if str(script_dir) not in sys.path:
         sys.path.insert(0, str(script_dir))
     
-    print("🚀 Starting Markdown Live View Server")
-    print("=" * 32)
+    print("🚀 Starting Unified Markdown Live View Server with MCP Integration")
+    print("=" * 40)
     
     # Check if dependencies are installed
     try:
         import aiohttp
         import watchdog
+        import mcp
         print("✅ Dependencies already installed")
     except ImportError:
         print("📦 Installing dependencies...")

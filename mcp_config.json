@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "markdown-liveview": {
+      "command": "python",
+      "args": ["mcp_server.py"],
+      "cwd": ".",
+      "description": "MCP server for managing markdown files in the live view system",
+      "capabilities": [
+        "show_content",
+        "list_content",
+        "view_content",
+        "update_content",
+        "remove_content"
+      ]
+    }
+  }
+}

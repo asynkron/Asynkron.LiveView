@@ -1,4 +1,3 @@
-# Chat Bridge Refresh
+# FastMCP HTTP Fixed
 
-The live chat bridge now uses the agent host + WebSocket feed. No more MCP
-streaming or NDJSON endpoints—just push messages straight into your CLI agent.
+This should show the proper result!
