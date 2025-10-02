@@ -783,9 +783,181 @@ See get_chat_stream_info() for complete implementation."""
         app.router.add_post('/api/toggle-sticky', self.handle_toggle_sticky)
         app.router.add_get('/raw', self.handle_raw_markdown)
         
-        # FastMCP - stdio only for now (HTTP integration needs investigation)
+        # FastMCP HTTP integration
         if self.enable_mcp:
-            logger.info("FastMCP tools registered - use stdio mode for MCP client access")
+            # Create FastMCP HTTP handler
+            async def fastmcp_handler(request):
+                """Handle MCP requests using FastMCP's HTTP transport."""
+                # Convert aiohttp request to a format FastMCP can handle
+                try:
+                    # Get the request body
+                    if request.method == 'POST':
+                        body = await request.read()
+                        
+                        # Create a simple mock request object for FastMCP
+                        from starlette.requests import Request
+                        from starlette.responses import JSONResponse
+                        
+                        # Create a minimal ASGI scope for Starlette Request
+                        scope = {
+                            'type': 'http',
+                            'method': request.method,
+                            'path': request.path_qs,
+                            'headers': [(k.encode(), v.encode()) for k, v in request.headers.items()],
+                            'query_string': request.query_string.encode() if hasattr(request, 'query_string') else b'',
+                        }
+                        
+                        # Use FastMCP's HTTP app to handle the request
+                        fastmcp_app = self.mcp_server.http_app(transport='http')
+                        
+                        # Create a simple ASGI interface
+                        import asyncio
+                        import json as json_module
+                        
+                        # Parse the JSON-RPC request
+                        try:
+                            json_data = json_module.loads(body.decode('utf-8'))
+                        except:
+                            return web.json_response({
+                                "jsonrpc": "2.0",
+                                "id": None,
+                                "error": {"code": -32700, "message": "Parse error"}
+                            }, status=400)
+                        
+                        # Handle MCP requests directly through FastMCP
+                        method = json_data.get('method')
+                        params = json_data.get('params', {})
+                        request_id = json_data.get('id')
+                        
+                        if method == 'initialize':
+                            # Initialize response
+                            result = {
+                                "protocolVersion": "2024-11-05",
+                                "capabilities": {"tools": {}},
+                                "serverInfo": {
+                                    "name": self.mcp_server.name,
+                                    "version": "1.0.0"
+                                }
+                            }
+                            return web.json_response({
+                                "jsonrpc": "2.0",
+                                "id": request_id,
+                                "result": result
+                            })
+                        
+                        elif method == 'tools/list':
+                            # Get tools from FastMCP
+                            tools = await self.mcp_server.get_tools()
+                            tool_list = []
+                            for name, tool in tools.items():
+                                tool_list.append({
+                                    "name": name,
+                                    "description": tool.description or f"Tool: {name}",
+                                    "inputSchema": {
+                                        "type": "object",
+                                        "properties": {},
+                                        "additionalProperties": True
+                                    }
+                                })
+                            
+                            return web.json_response({
+                                "jsonrpc": "2.0", 
+                                "id": request_id,
+                                "result": {"tools": tool_list}
+                            })
+                        
+                        elif method == 'tools/call':
+                            # Call FastMCP tool
+                            tool_name = params.get('name')
+                            arguments = params.get('arguments', {})
+                            
+                            if not tool_name:
+                                return web.json_response({
+                                    "jsonrpc": "2.0",
+                                    "id": request_id,
+                                    "error": {"code": -32602, "message": "Invalid params"}
+                                }, status=400)
+                            
+                            try:
+                                tools = await self.mcp_server.get_tools()
+                                if tool_name not in tools:
+                                    return web.json_response({
+                                        "jsonrpc": "2.0",
+                                        "id": request_id,
+                                        "error": {"code": -32601, "message": f"Unknown tool: {tool_name}"}
+                                    }, status=400)
+                                
+                                tool = tools[tool_name]
+                                result = await tool.run(arguments)
+                                
+                                # Convert result to MCP format - FastMCP returns ToolResult objects
+                                try:
+                                    if hasattr(result, 'value'):
+                                        # FastMCP ToolResult has a value attribute
+                                        text_content = str(result.value)
+                                    elif hasattr(result, 'content'):
+                                        # Alternative: check for content attribute
+                                        if result.content and len(result.content) > 0:
+                                            text_content = result.content[0].text if hasattr(result.content[0], 'text') else str(result.content[0])
+                                        else:
+                                            text_content = str(result)
+                                    else:
+                                        # Fallback: direct string conversion
+                                        text_content = str(result)
+                                except Exception as e:
+                                    logger.error(f"Error extracting tool result: {e}")
+                                    text_content = str(result)
+                                
+                                return web.json_response({
+                                    "jsonrpc": "2.0",
+                                    "id": request_id,
+                                    "result": {
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": text_content
+                                            }
+                                        ]
+                                    }
+                                })
+                            
+                            except Exception as e:
+                                return web.json_response({
+                                    "jsonrpc": "2.0",
+                                    "id": request_id,
+                                    "error": {"code": -32603, "message": f"Tool execution failed: {str(e)}"}
+                                }, status=500)
+                        
+                        else:
+                            return web.json_response({
+                                "jsonrpc": "2.0",
+                                "id": request_id,
+                                "error": {"code": -32601, "message": f"Unknown method: {method}"}
+                            }, status=400)
+                    
+                    else:
+                        # GET request - return server info
+                        return web.json_response({
+                            "name": self.mcp_server.name,
+                            "version": "1.0.0",
+                            "transport": "http",
+                            "capabilities": {"tools": {}}
+                        })
+                        
+                except Exception as e:
+                    logger.error(f"FastMCP HTTP handler error: {e}")
+                    return web.json_response({
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {"code": -32603, "message": "Internal error"}
+                    }, status=500)
+            
+            # Add MCP HTTP endpoints
+            app.router.add_post('/mcp', fastmcp_handler)
+            app.router.add_get('/mcp', fastmcp_handler)
+            
+            # Chat streaming endpoint
+            app.router.add_post('/mcp/stream/chat', self.handle_mcp_stream_chat)
 
         return app
 

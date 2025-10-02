@@ -18,11 +18,23 @@
 - ✅ HTTP streaming endpoint for chat: `POST /mcp/stream/chat`
 
 ### Server Status:
-- ✅ Server starts successfully on http://localhost:8080
-- ✅ FastMCP tools registered and available
-- ✅ Live view functionality working
-- ✅ File watching operational
-- ✅ WebSocket client connections working
+### Server Status:
+- ✅ **Server running** on http://localhost:8081 
+- ✅ **FastMCP tools registered** and working
+- ✅ **FastMCP HTTP endpoint** working at `/mcp` 
+- ✅ **Live view functional** with WebSocket updates
+- ✅ **HTTP streaming** available at `/mcp/stream/chat`
+- ✅ **File watching** operational
+- ✅ **MCP HTTP calls** responding correctly
+
+### HTTP MCP Test Results:
+```bash
+# ✅ Tools list working
+curl -X POST http://localhost:8081/mcp -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+
+# ✅ Tool calls working  
+curl -X POST http://localhost:8081/mcp -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"show_content","arguments":{"content":"test"}}}'
+```
 
 ### FastMCP Tools Available:
 1. **show_content(content, title=None)** - Create new markdown files
