@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
+from html import escape
 from aiohttp import web, WSMsgType
 from aiohttp.web_response import Response
 from watchdog.observers import Observer
@@ -109,6 +110,7 @@ class UnifiedMarkdownServer:
         self.template_handler = TemplateHandler(
             Path(__file__).resolve().parent / "templates" / "unified_index.html"
         )
+        self.print_template_path = Path(__file__).resolve().parent / "templates" / "print_view.html"
         self.request_handlers = RequestHandlers(self.default_markdown_dir)
         
         # Initialize FastMCP server if enabled
@@ -389,7 +391,53 @@ class UnifiedMarkdownServer:
                 'success': False,
                 'error': str(e)
             }, status=500)
-    
+
+    async def handle_print_view(self, request):
+        """Serve a print-friendly HTML page for a specific markdown file."""
+        file_id = request.query.get('fileId')
+        if not file_id:
+            return Response(text='Missing fileId parameter', status=400, content_type='text/plain')
+
+        path_param = request.query.get('path')
+        target_directory = self.resolve_markdown_path(path_param)
+
+        filename = self._sanitize_file_id(file_id)
+        file_path = target_directory / filename
+
+        if not file_path.exists():
+            logger.warning(f"Print view requested for missing file: {file_path}")
+            return Response(text=f'File not found: {escape(filename)}', status=404, content_type='text/plain')
+
+        try:
+            content = file_path.read_text(encoding='utf-8')
+        except Exception as exc:  # pragma: no cover - I/O safeguard
+            logger.error(f"Failed reading file for print view: {exc}")
+            return Response(text='Unable to read file content', status=500, content_type='text/plain')
+
+        try:
+            template = self.print_template_path.read_text(encoding='utf-8')
+        except FileNotFoundError:
+            logger.error(f"Print template not found: {self.print_template_path}")
+            return Response(text='Print template unavailable', status=500, content_type='text/plain')
+        except Exception as exc:  # pragma: no cover - template guard
+            logger.error(f"Error loading print template: {exc}")
+            return Response(text='Print template unavailable', status=500, content_type='text/plain')
+
+        file_stat = file_path.stat()
+        payload = {
+            'fileId': file_id,
+            'fileName': file_path.name,
+            'directory': str(target_directory),
+            'content': content,
+            'modified': datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
+        }
+
+        json_payload = json.dumps(payload).replace('</', '<\\/')
+        safe_title = escape(file_path.name)
+        html = template.replace('__PRINT_TITLE__', safe_title).replace('__PRINT_DATA__', json_payload)
+
+        return Response(text=html, content_type='text/html', charset='utf-8')
+
     async def handle_raw_markdown(self, request):
         """Serve unified markdown content as plain text."""
         # Get optional path parameter
@@ -708,6 +756,7 @@ class UnifiedMarkdownServer:
         app.router.add_get('/api/file', self.handle_get_file)
         app.router.add_post('/api/delete', self.handle_delete_file)
         app.router.add_post('/api/toggle-sticky', self.handle_toggle_sticky)
+        app.router.add_get('/print', self.handle_print_view)
         app.router.add_get('/raw', self.handle_raw_markdown)
         app.router.add_get('/agent-feed', self.handle_agent_feed)
 

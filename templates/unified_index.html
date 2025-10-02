@@ -33,6 +33,11 @@
             margin: 16px 0;
         }
 
+        .vega-diagram canvas,
+        .vega-diagram svg {
+            border-radius: 4px;
+        }
+
         .excalidraw-diagram {
             background: #0d1117;
             border: 1px solid #30363d;
@@ -460,6 +465,33 @@
             let markedConfigured = false;
             const textEncoder = new TextEncoder();
             const textDecoder = new TextDecoder();
+            const vegaDarkBaseConfig = {
+                background: '#0d1117',
+                view: {
+                    stroke: '#30363d'
+                },
+                axis: {
+                    gridColor: '#30363d',
+                    tickColor: '#6e7681',
+                    domainColor: '#30363d',
+                    labelColor: '#c9d1d9',
+                    titleColor: '#c9d1d9'
+                },
+                legend: {
+                    labelColor: '#c9d1d9',
+                    titleColor: '#c9d1d9'
+                },
+                header: {
+                    labelColor: '#c9d1d9',
+                    titleColor: '#c9d1d9'
+                },
+                title: {
+                    color: '#e6edf3'
+                },
+                range: {
+                    category: ['#58a6ff', '#f778ba', '#8b949e', '#d29922', '#ffa657', '#56d364', '#6fddff', '#ff7b72']
+                }
+            };
 
             function waitForLibraries(maxRetries = 50, intervalMs = 100) {
                 return new Promise((resolve, reject) => {
@@ -709,7 +741,14 @@
                         const target = document.createElement('div');
                         element.appendChild(target);
 
-                        vegaEmbed(target, spec, { actions: false, renderer: 'canvas', theme: 'dark' })
+                        const embedOptions = {
+                            actions: false,
+                            renderer: 'canvas',
+                            theme: 'dark',
+                            config: { ...vegaDarkBaseConfig }
+                        };
+
+                        vegaEmbed(target, spec, embedOptions)
                             .then(() => {
                                 element.dataset.rendered = 'true';
                             })
@@ -782,11 +821,31 @@
                         element.appendChild(wrapper);
 
                         try {
+                            const defaultAppState = {
+                                theme: 'dark',
+                                viewBackgroundColor: '#0d1117',
+                                currentItemStrokeColor: '#58a6ff',
+                                currentItemBackgroundColor: 'transparent',
+                                currentItemFillStyle: 'hachure'
+                            };
+
+                            const mergedAppState = {
+                                ...defaultAppState,
+                                ...(sceneData.appState || {}),
+                                theme: 'dark',
+                                viewBackgroundColor: sceneData.appState?.viewBackgroundColor || '#0d1117'
+                            };
+
+                            const initialData = {
+                                ...sceneData,
+                                appState: mergedAppState
+                            };
+
                             const excalidrawElement = React.createElement(window.ExcalidrawLib.Excalidraw, {
-                                initialData: sceneData,
+                                initialData,
                                 viewModeEnabled: true,
                                 zenModeEnabled: false,
-                                gridModeEnabled: false,
+                                gridModeEnabled: Boolean(mergedAppState.gridSize),
                                 theme: 'dark'
                             });
 
@@ -940,7 +999,7 @@
                                 <button class="action-btn sticky ${stickyClass}" onclick="toggleSticky('${escapeHtml(fileInfo.fileId)}')">
                                     ${stickyIcon} Sticky
                                 </button>
-                                <button class="action-btn download" onclick="downloadFileAsPDF('${escapeHtml(fileInfo.fileId)}', '${escapeHtml(fileInfo.name)}')">
+                                <button class="action-btn download" onclick="downloadFileAsPDF('${escapeHtml(fileInfo.fileId)}')">
                                     📥 Download PDF
                                 </button>
                                 <button class="action-btn delete" onclick="deleteFile('${escapeHtml(fileInfo.fileId)}')">
@@ -1010,98 +1069,17 @@
                 }
             };
 
-            window.downloadFileAsPDF = async function (fileId, fileName) {
-                try {
-                    // Get the individual file content
-                    const response = await fetch(`/api/file?fileId=${encodeURIComponent(fileId)}${window.location.search.replace('?', '&')}`);
-                    const result = await response.json();
+            window.downloadFileAsPDF = function (fileId) {
+                const url = new URL('/print', window.location.origin);
+                url.searchParams.set('fileId', fileId);
 
-                    if (!result.success) {
-                        alert(`Error loading file: ${result.error}`);
-                        return;
-                    }
-
-                    // Create a temporary window with the rendered content
-                    const printWindow = window.open('', '_blank');
-                    printWindow.document.write(`
-                        <!DOCTYPE html>
-                        <html>
-                        <head>
-                            <title>${escapeHtml(fileName)}</title>
-                            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown-dark.min.css">
-                            <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/14.1.2/marked.min.js"><\/script>
-                            <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"><\/script>
-                            <style>
-                                body {
-                                    background: white;
-                                    padding: 40px;
-                                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                                }
-                                .markdown-body {
-                                    max-width: 800px;
-                                    margin: 0 auto;
-                                    color: #24292f;
-                                    background: white;
-                                }
-                                @media print {
-                                    body { padding: 20px; }
-                                }
-                            </style>
-                        </head>
-                        <body>
-                            <div class="markdown-body" id="content">Loading...</div>
-                            <script>
-                                // Wait for all libraries to load
-                                function waitForLibraries() {
-                                    if (typeof marked !== 'undefined' && typeof mermaid !== 'undefined') {
-                                        // Initialize mermaid after it's loaded
-                                        mermaid.initialize({ startOnLoad: false, theme: 'default' });
-                                        
-                                        const content = ${JSON.stringify(result.content)};
-                                        const html = marked.parse(content);
-                                        document.getElementById('content').innerHTML = html;
-                                        
-                                        // Render mermaid diagrams
-                                        const mermaidElements = document.querySelectorAll('.language-mermaid');
-                                        let rendered = 0;
-                                        if (mermaidElements.length > 0) {
-                                            mermaidElements.forEach((element, i) => {
-                                                const code = element.textContent;
-                                                const id = 'mermaid-' + i;
-                                                mermaid.render(id, code).then(({ svg }) => {
-                                                    const container = document.createElement('div');
-                                                    container.innerHTML = svg;
-                                                    element.parentElement.replaceWith(container);
-                                                    rendered++;
-                                                    if (rendered === mermaidElements.length) {
-                                                        // Increased delay to ensure rendering is complete before print
-                                                        setTimeout(() => window.print(), 1000);
-                                                    }
-                                                }).catch(err => {
-                                                    console.error('Mermaid error:', err);
-                                                    rendered++;
-                                                    if (rendered === mermaidElements.length) {
-                                                        setTimeout(() => window.print(), 1000);
-                                                    }
-                                                });
-                                            });
-                                        } else {
-                                            setTimeout(() => window.print(), 1000);
-                                        }
-                                    } else {
-                                        setTimeout(waitForLibraries, 100);
-                                    }
-                                }
-                                waitForLibraries();
-                            <\/script>
-                        </body>
-                        </html>
-                    `);
-                    printWindow.document.close();
-                } catch (error) {
-                    console.error('Error downloading PDF:', error);
-                    alert(`Error downloading PDF: ${error.message}`);
+                const currentParams = new URLSearchParams(window.location.search);
+                const currentPath = currentParams.get('path');
+                if (currentPath) {
+                    url.searchParams.set('path', currentPath);
                 }
+
+                window.open(url.toString(), '_blank');
             };
 
             window.toggleExpand = function (contentId, btnId) {
