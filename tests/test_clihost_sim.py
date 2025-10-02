@@ -1,7 +1,6 @@
 import os
 import asyncio
 import json
-import os
 import signal
 import socket
 import subprocess
@@ -15,18 +14,12 @@ import websockets
 
 ROOT = Path(__file__).resolve().parents[1]
 CLIHOST = ROOT / "clihost.py"
-SIMPLE_AGENT = ROOT / "simple_agent.py"
-SIM_SERVER = ROOT / "simulated_server.py"
+HELPERS_DIR = ROOT / "tests" / "helpers"
+SIMPLE_AGENT = HELPERS_DIR / "simple_agent.py"
+SIM_SERVER = HELPERS_DIR / "simulated_server.py"
 
 if sys.platform == "win32":  # pragma: no cover - not intended for Windows CI
     pytest.skip("clihost integration tests require POSIX signals", allow_module_level=True)
-
-
-@pytest.fixture(scope="module")
-def simulated_server():
-    sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
-    host, port = sock.getsockname()
 def _pick_port() -> Tuple[str, int]:
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
