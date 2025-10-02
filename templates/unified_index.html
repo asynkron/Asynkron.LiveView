@@ -521,6 +521,11 @@
             const splitter = document.getElementById('splitter');
             const sidebar = document.querySelector('.sidebar');
 
+            // Sidebar width constants - must be defined before clampSidebarWidth is called
+            const SIDEBAR_WIDTH_KEY = 'liveview.sidebarWidth';
+            const SIDEBAR_MIN_WIDTH = 220;
+            const SIDEBAR_MAX_WIDTH = 520;
+
             const initialIndex = normaliseFileIndex({
                 filesValue: state.files,
                 treeValue: state.fileTree,
@@ -562,9 +567,6 @@
             const relativeLinkDummyOrigin = 'http://__dummy__/';
             const relativeLinkSchemePattern = /^[a-zA-Z][\w+.-]*:/;
             const relativeLinkProtocolRelativePattern = /^\/\//;
-            const SIDEBAR_WIDTH_KEY = 'liveview.sidebarWidth';
-            const SIDEBAR_MIN_WIDTH = 220;
-            const SIDEBAR_MAX_WIDTH = 520;
             const expandedDirectories = new Set();
             const knownDirectories = new Set();
 
