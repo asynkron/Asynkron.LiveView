@@ -355,8 +355,9 @@ async def main() -> None:
         print("[clihost] child stdout/stderr will flow directly to parent console")
         sys.stdout.flush()
 
-    stdin_q: "queue.Queue[Optional[str]]" = queue.Queue()
+    stdin_q: Optional["queue.Queue[Optional[str]]"] = None
     if not args.no_user_stdin:
+        stdin_q = queue.Queue()
         threading.Thread(target=stdin_thread, args=(stdin_q,), daemon=True).start()
         tasks.append(asyncio.create_task(forward_user_stdin(stdin_q, proc, args.encoding)))
 
@@ -392,6 +393,8 @@ async def main() -> None:
             except Exception as exc:
                 print(f"[clihost] failed to forward signal ({exc}); falling back to terminate()")
                 proc.terminate()
+        if stdin_q is not None:
+            stdin_q.put(None)
         stop_event.set()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -406,6 +409,9 @@ async def main() -> None:
     )
     for future in done:
         future.result()
+
+    if stdin_q is not None:
+        stdin_q.put(None)
 
     for task in tasks:
         task.cancel()
