@@ -86,11 +86,28 @@ async def create_child(child_cmd: List[str]) -> asyncio.subprocess.Process:
     )
 
 
-async def pump_stream(reader: asyncio.StreamReader, dest) -> None:
-    """Continuously copy the child's output into the terminal."""
+async def pump_stream(
+    reader: asyncio.StreamReader,
+    dest,
+    *,
+    timeout: Optional[float] = None,
+    proc: Optional[asyncio.subprocess.Process] = None,
+) -> None:
+    """Continuously copy the child's output into the terminal.
+
+    A timeout keeps the read loop from hanging indefinitely when the child is idle.
+    """
 
     while True:
-        chunk = await reader.read(4096)
+        try:
+            if timeout is not None:
+                chunk = await asyncio.wait_for(reader.read(4096), timeout=timeout)
+            else:
+                chunk = await reader.read(4096)
+        except asyncio.TimeoutError:
+            if proc is not None and proc.returncode is not None:
+                break
+            continue
         if not chunk:
             break
         if hasattr(dest, "buffer"):
@@ -157,7 +174,12 @@ async def _terminate_child(proc: asyncio.subprocess.Process, *, timeout: float =
     if proc.returncode is not None:
         return
 
-    proc.terminate()
+    try:
+        proc.send_signal(signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except Exception:
+        proc.terminate()
     try:
         await asyncio.wait_for(proc.wait(), timeout=timeout)
     except asyncio.TimeoutError:
@@ -252,10 +274,15 @@ async def main() -> None:
     args, child_cmd = parse_args(sys.argv)
 
     proc = await create_child(child_cmd)
+    print(f"[clihost] spawned child PID {proc.pid}: {' '.join(child_cmd)}")
+    sys.stdout.flush()
+    joined_cmd = " ".join(child_cmd)
+    print(f"[clihost] started child PID {proc.pid}: {joined_cmd}")
+    sys.stdout.flush()
 
     tasks = [
-        asyncio.create_task(pump_stream(proc.stdout, sys.stdout)),
-        asyncio.create_task(pump_stream(proc.stderr, sys.stderr)),
+        asyncio.create_task(pump_stream(proc.stdout, sys.stdout, timeout=10.0, proc=proc)),
+        asyncio.create_task(pump_stream(proc.stderr, sys.stderr, timeout=10.0, proc=proc)),
     ]
 
     stdin_q: "queue.Queue[Optional[str]]" = queue.Queue()
@@ -282,7 +309,12 @@ async def main() -> None:
 
     def _handle_signal(signum: int, _frame) -> None:
         if proc.returncode is None:
-            proc.terminate()
+            try:
+                proc.send_signal(signum)
+            except ProcessLookupError:
+                pass
+            except Exception:
+                proc.terminate()
         stop_event.set()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -307,8 +339,7 @@ async def main() -> None:
             pass
 
     if proc.returncode is None:
-        proc.kill()
-        await proc.wait()
+        await _terminate_child(proc)
 
 
 if __name__ == "__main__":
