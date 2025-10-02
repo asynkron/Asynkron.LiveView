@@ -1,7 +1,5 @@
-"""Components package for unified server."""
+"""Components available to the markdown viewer."""
 
 from .file_manager import FileManager
-from .template_handler import TemplateHandler
-from .request_handlers import RequestHandlers
 
-__all__ = ['FileManager', 'TemplateHandler', 'RequestHandlers']
+__all__ = ["FileManager"]

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Simple startup script for the Markdown Live View server.
-"""
+"""Helper script to install dependencies and launch the markdown viewer."""
 
 import sys
 import subprocess
@@ -40,23 +38,22 @@ def main():
     if str(script_dir) not in sys.path:
         sys.path.insert(0, str(script_dir))
     
-    print("🚀 Starting Unified Markdown Live View Server with MCP Integration")
+    print("🚀 Starting Markdown Viewer Server")
     print("=" * 40)
     
     # Check if dependencies are installed
     try:
         import aiohttp
         import watchdog
-        import mcp
         print("✅ Dependencies already installed")
     except ImportError:
         print("📦 Installing dependencies...")
         if not install_dependencies():
             print("❌ Failed to install dependencies. Please run: pip install -r requirements.txt")
             return 1
-    
+
     # Start the unified server
-    print("🌐 Starting unified server...")
+    print("🌐 Starting server...")
     try:
         from server import main as unified_main
         unified_main()

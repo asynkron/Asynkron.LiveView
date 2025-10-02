@@ -1,1326 +1,647 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Markdown Live View</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Markdown Viewer</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" integrity="sha512-P02it93yHqdNK0qi6ixkmKuuNH5hMgFBhbv7FLnTvF3z4r3nWxdcQN9l8QNX6h/c0e97/8lCxJ6zIS95/JoSuA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
+        :root {
+            color-scheme: dark;
+        }
+
         * {
-            margin: 0;
-            padding: 0;
             box-sizing: border-box;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            color: #e0e6ed;
-            background-color: #212830;
-            padding: 20px;
-            font-size: smaller;
+            margin: 0;
+            font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
         }
 
-        .mermaid .cluster rect {
-            fill: #263442 !important;
+        a {
+            color: #58a6ff;
         }
 
-        svg .mermaid .cluster rect {
-            fill: red;
+        .app-shell {
+            display: grid;
+            grid-template-columns: minmax(0, 3fr) 280px;
+            gap: 20px;
+            padding: 24px;
+            min-height: 100vh;
         }
 
-        .loading {
-            background-color: #212830 !important;
+        @media (max-width: 980px) {
+            .app-shell {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                order: -1;
+            }
         }
 
-        .vega-diagram {
+        .viewer {
+            display: flex;
+            flex-direction: column;
             background: #161b22;
             border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 16px;
-            margin: 16px 0;
+            border-radius: 12px;
+            min-height: 60vh;
+            overflow: hidden;
         }
 
-        .vega-diagram canvas,
-        .vega-diagram svg {
-            border-radius: 4px;
-        }
-
-        .excalidraw-diagram {
-            background: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            margin: 16px 0;
-            min-height: 320px;
+        .file-header {
             display: flex;
-        }
-
-        .excalidraw-wrapper {
-            flex: 1;
-        }
-
-        /* Excalidraw dark theme variables (sourced from upstream theme.scss) */
-        .excalidraw.theme--dark.theme--dark-background-none {
-            background: none;
-        }
-
-        .excalidraw.theme--dark {
-            --theme-filter: invert(93%) hue-rotate(180deg);
-            --button-destructive-bg-color: #5a0000;
-            --button-destructive-color: #ffa8a8;
-            --button-gray-1: #363636;
-            --button-gray-2: #272727;
-            --button-gray-3: #222;
-            --button-special-active-bg-color: #204624;
-            --dialog-border-color: var(--color-gray-80);
-            --dropdown-icon: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="292.4" height="292.4" viewBox="0 0 292 292"><path fill="%23ced4da" d="M287 197L159 69c-4-3-8-5-13-5s-9 2-13 5L5 197c-3 4-5 8-5 13s2 9 5 13c4 4 8 5 13 5h256c5 0 9-1 13-5s5-8 5-13-1-9-5-13z"/></svg>');
-            --focus-highlight-color: #228be6;
-            --icon-green-fill-color: #69db7c;
-            --default-bg-color: #121212;
-            --input-bg-color: #121212;
-            --input-border-color: #2e2e2e;
-            --input-hover-bg-color: #181818;
-            --input-label-color: #e9ecef;
-            --island-bg-color: #232329;
-            --keybinding-color: var(--color-gray-60);
-            --link-color: #4dabf7;
-            --overlay-bg-color: rgba(52, 58, 64, 0.12);
-            --popup-secondary-bg-color: #222;
-            --popup-text-color: #ced4da;
-            --popup-text-inverted-color: #2c2c2c;
-            --select-highlight-color: #4dabf7;
-            --shadow-island: 0px 0px 0.9310142993927002px 0px rgba(0, 0, 0, 0.17),
-                0px 0px 3.1270833015441895px 0px rgba(0, 0, 0, 0.08),
-                0px 7px 14px 0px rgba(0, 0, 0, 0.05);
-            --modal-shadow: 0px 100px 80px rgba(0, 0, 0, 0.07),
-                0px 41.7776px 33.4221px rgba(0, 0, 0, 0.0503198),
-                0px 22.3363px 17.869px rgba(0, 0, 0, 0.0417275),
-                0px 12.5216px 10.0172px rgba(0, 0, 0, 0.035),
-                0px 6.6501px 5.32008px rgba(0, 0, 0, 0.0282725),
-                0px 2.76726px 2.21381px rgba(0, 0, 0, 0.0196802);
-            --avatar-border-color: var(--color-gray-85);
-            --scrollbar-thumb: #343a40;
-            --scrollbar-thumb-hover: #495057;
-            --color-slider-track: hsl(244, 23%, 39%);
-            --color-selection: #3530c4;
-            --color-icon-white: var(--color-gray-90);
-            --color-primary: #a8a5ff;
-            --color-primary-darker: #b2aeff;
-            --color-primary-darkest: #beb9ff;
-            --color-primary-light: #4f4d6f;
-            --color-primary-light-darker: #43415e;
-            --color-primary-hover: #bbb8ff;
-            --color-disabled: var(--color-gray-70);
-            --color-text-warning: var(--color-gray-80);
-            --color-danger: #ffa8a5;
-            --color-danger-dark: #672120;
-            --color-danger-darker: #8f2625;
-            --color-danger-darkest: #ac2b29;
-            --color-danger-text: #fbcbcc;
-            --color-danger-background: #fbcbcc;
-            --color-danger-icon-background: #672120;
-            --color-danger-color: #261919;
-            --color-danger-icon-color: #fbcbcc;
-            --color-warning-background: var(--color-warning);
-            --color-warning-icon-background: var(--color-warning-dark);
-            --color-warning-color: var(--color-gray-80);
-            --color-warning-icon-color: var(--color-gray-80);
-            --color-muted: var(--color-gray-80);
-            --color-muted-darker: var(--color-gray-60);
-            --color-muted-darkest: var(--color-gray-20);
-            --color-muted-background: var(--color-gray-40);
-            --color-muted-background-darker: var(--color-gray-20);
-            --color-logo-text: #e2dfff;
-            --color-surface-high: #2e2d39;
-            --color-surface-low: hsl(240, 8%, 15%);
-            --color-surface-mid: hsl(240 6% 10%);
-            --color-surface-lowest: hsl(0, 0%, 7%);
-            --color-on-surface: #e3e3e8;
-            --color-brand-hover: #bbb8ff;
-            --color-on-primary-container: #e0dfff;
-            --color-surface-primary-container: #403e6a;
-            --color-brand-active: #d0ccff;
-            --color-border-outline: #8e8d9c;
-            --color-border-outline-variant: #46464f;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 8px;
-            background: linear-gradient(135deg, #1f2a33 0%, #253548 100%);
-        }
-
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            background: linear-gradient(135deg, #58a6ff 0%, #79c0ff 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .header p {
-            color: #7d8590;
-            font-size: 1.1rem;
-        }
-
-        .surface-panel {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 15px;
-        }
-
-        .directory-info {
-            margin-bottom: 8px;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
+            align-items: flex-start;
             justify-content: space-between;
-            gap: 12px;
+            gap: 16px;
+            padding: 20px;
+            border-bottom: 1px solid #30363d;
+            background: linear-gradient(135deg, rgba(34, 45, 64, 0.9), rgba(19, 24, 32, 0.9));
         }
 
-        .directory-info strong {
-            color: #58a6ff;
-        }
-
-        .directory-details {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 8px;
-        }
-
-        /* Chat input styles */
-        .chat-container {
-            margin-bottom: 8px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .chat-input {
-            flex: 1;
-            background: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 10px 15px;
-            color: #e0e6ed;
-            font-size: 0.95rem;
-            font-family: inherit;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        .chat-input:focus {
-            border-color: #58a6ff;
-        }
-
-        .chat-input::placeholder {
-            color: #7d8590;
-        }
-
-        .chat-send-btn {
-            padding: 10px 20px;
-            background: #238636;
-            border: 1px solid #2ea043;
-            border-radius: 6px;
-            color: white;
-            font-size: 0.95rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            white-space: nowrap;
-        }
-
-        .chat-send-btn:hover {
-            background: #2ea043;
-            border-color: #3fb950;
-        }
-
-        .chat-send-btn:active {
-            background: #26a641;
-        }
-
-        .chat-send-btn:disabled {
-            background: #21262d;
-            border-color: #30363d;
-            color: #7d8590;
-            cursor: not-allowed;
-        }
-
-        #content {
-            background: #0d1117;
-            padding: 0px;
-            min-height: 400px;
-        }
-
-        /* Markdown styles */
-        #content h1,
-        #content h2,
-        #content h3,
-        #content h4,
-        #content h5,
-        #content h6 {
+        .file-header h1 {
+            margin: 0;
+            font-size: 1.6rem;
             color: #f0f6fc;
-            margin-top: 24px;
-            margin-bottom: 16px;
-            font-weight: 600;
-            line-height: 1.25;
         }
 
-        #content h1 {
-            font-size: 2rem;
-            border-bottom: 1px solid #21262d;
-            padding-bottom: 8px;
+        .file-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
 
-        #content h2 {
-            font-size: 1.5rem;
-            border-bottom: 1px solid #21262d;
-            padding-bottom: 8px;
-        }
-
-        #content p {
-            margin-bottom: 16px;
-        }
-
-        #content ul,
-        #content ol {
-            margin-bottom: 16px;
-            padding-left: 32px;
-        }
-
-        #content li {
-            margin-bottom: 4px;
-        }
-
-        #content blockquote {
-            margin: 16px 0;
-            padding: 0 16px;
-            border-left: 4px solid #58a6ff;
-            color: #7d8590;
-        }
-
-        #content code {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 2px 6px;
-            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-            font-size: 85%;
-        }
-
-        #content pre {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 16px;
-            overflow-x: auto;
-            margin: 16px 0;
-        }
-
-        #content pre code {
-            background: none;
-            border: none;
-            padding: 0;
-            font-size: 85%;
-        }
-
-        #content a {
-            color: #58a6ff;
-            text-decoration: none;
-        }
-
-        #content a:hover {
-            text-decoration: underline;
-        }
-
-        #content table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 16px 0;
-        }
-
-        #content th,
-        #content td {
-            border: 1px solid #30363d;
-            padding: 8px 12px;
-            text-align: left;
-        }
-
-        #content th {
-            background: #161b22;
-            font-weight: 600;
-        }
-
-        #content hr {
-            border: none;
-            border-top: 1px solid #30363d;
-            margin: 24px 0;
-        }
-
-        /* Mermaid diagram styles */
-        .mermaid {
-            text-align: center;
-            margin: 20px 0;
-        }
-
-        /* Status indicator */
-        .status {
-            padding: 6px 12px;
-            border-radius: 999px;
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
-
-        .status.connected {
-            background: #1a7f37;
-            color: white;
-        }
-
-        .status.disconnected {
-            background: #cf222e;
-            color: white;
-        }
-
-        /* Loading animation */
-        .loading {
-            text-align: left;
-            color: #a0a5ad;
-        }
-
-        /* Code highlighting */
-        .hljs {
-            background: #161b22 !important;
-        }
-
-        /* File action buttons */
-        .file-block {
-            position: relative;
-            margin-bottom: 40px;
+        .file-meta small {
+            color: #8b949e;
         }
 
         .file-actions {
             display: flex;
-            gap: 10px;
-            align-items: center;
-            margin: 8px 0;
-            padding: 10px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .file-actions button {
+            padding: 10px 14px;
             border-radius: 8px;
-            pointer-events: none;
-        }
-
-        .file-name {
-            flex: 1;
-            color: #58a6ff;
+            border: 1px solid transparent;
+            background: #238636;
+            color: #fff;
             font-weight: 600;
-            font-size: 0.9rem;
-        }
-
-        .action-btn {
-            padding: 6px 12px;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            background: #21262d;
-            color: #e0e6ed;
-            font-size: 0.85rem;
             cursor: pointer;
-            transition: all 0.2s;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
+            transition: transform 0.1s ease, background 0.2s ease;
         }
 
-        .action-btn:hover {
+        .file-actions button.secondary {
             background: #30363d;
-            border-color: #58a6ff;
+            color: #c9d1d9;
         }
 
-        .action-btn.expand {
-            min-width: 35px;
-            justify-content: center;
+        .file-actions button.danger {
+            background: #da3633;
         }
 
-        .action-btn.markdown-toggle.raw-mode {
-            background: #30363d;
-            border-color: #58a6ff;
-        }
-
-        .action-btn.sticky.active {
-            border-color: #58a6ff;
-        }
-
-        .action-btn:disabled {
-            opacity: 0.5;
+        .file-actions button:disabled {
+            opacity: 0.4;
             cursor: not-allowed;
         }
 
-        .file-content.raw-mode {
-            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+        .file-actions button:not(:disabled):hover {
+            transform: translateY(-1px);
+        }
+
+        .status-message {
+            color: #ffa657;
+            font-size: 0.9rem;
+        }
+
+        .content-area {
+            padding: 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .content-area h1,
+        .content-area h2,
+        .content-area h3,
+        .content-area h4,
+        .content-area h5,
+        .content-area h6 {
+            color: #f0f6fc;
+        }
+
+        .content-area code {
+            background: #0d1117;
+            border-radius: 6px;
+            padding: 2px 5px;
+        }
+
+        .content-area pre {
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 16px;
+            overflow-x: auto;
+        }
+
+        .raw-view {
+            display: none;
+            margin: 0;
+            padding: 20px;
+            border-top: 1px solid #30363d;
+            background: #0d1117;
+            font-family: "SF Mono", "JetBrains Mono", monospace;
+            font-size: 0.9rem;
             white-space: pre-wrap;
-            word-wrap: break-word;
+            word-break: break-word;
+        }
+
+        .raw-view.visible {
+            display: block;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
             background: #161b22;
             border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 16px;
-            color: #e0e6ed;
-            font-size: 0.9em;
+            border-radius: 12px;
+            padding: 20px;
+            gap: 16px;
+            max-height: calc(100vh - 48px);
         }
 
-        .file-content {
-            transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
-            overflow: hidden;
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
         }
 
-        .file-content.collapsed {
-            max-height: 0 !important;
-            opacity: 0;
+        .sidebar-header h2 {
+            margin: 0;
+            font-size: 1.1rem;
+            color: #f0f6fc;
+        }
+
+        .connection-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff7b72;
+        }
+
+        .connection-indicator.connected {
+            background: #3fb950;
+        }
+
+        .file-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            overflow-y: auto;
+        }
+
+        .file-list li {
+            margin: 0;
+        }
+
+        .file-button {
+            width: 100%;
+            background: #1f242e;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            color: inherit;
+            padding: 10px 12px;
+            text-align: left;
+            cursor: pointer;
+            transition: border 0.2s ease, background 0.2s ease;
+        }
+
+        .file-button:hover {
+            border-color: #30363d;
+        }
+
+        .file-button.active {
+            background: #238636;
+            border-color: #2ea043;
+        }
+
+        .empty-state {
+            color: #8b949e;
+            font-size: 0.95rem;
+            text-align: center;
+            padding: 24px 12px;
+        }
+
+        .directory-path {
+            font-size: 0.85rem;
+            color: #8b949e;
+            word-break: break-all;
         }
     </style>
+</head>
+<body>
+    <div class="app-shell">
+        <section class="viewer">
+            <header class="file-header">
+                <div class="file-meta">
+                    <h1 id="file-name">Markdown Viewer</h1>
+                    <small class="directory-path">Watching: <span id="directory-path"></span></small>
+                    <span id="status-message" class="status-message"></span>
+                </div>
+                <div class="file-actions">
+                    <button id="download-button" title="Download the current file">Download</button>
+                    <button id="raw-button" class="secondary" title="Toggle raw markdown view">Show Raw</button>
+                    <button id="delete-button" class="danger" title="Delete the current file">Delete</button>
+                </div>
+            </header>
+            <div id="content" class="content-area"></div>
+            <pre id="raw-view" class="raw-view"></pre>
+        </section>
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Directory</h2>
+                <span id="connection-indicator" class="connection-indicator" title="WebSocket status"></span>
+            </div>
+            <ul id="file-list" class="file-list"></ul>
+        </aside>
+    </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/14.1.2/marked.min.js" defer=""></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js" defer=""></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer=""></script>
-
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.18.0/dist/prod/index.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" defer=""></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"
-        defer=""></script>
-    <script src="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.4/dist/excalidraw.production.min.js"
-        defer=""></script>
-    <script src="https://cdn.jsdelivr.net/npm/vega@5.25.0/build/vega.min.js" defer=""></script>
-    <script src="https://cdn.jsdelivr.net/npm/vega-lite@5.15.0/build/vega-lite.min.js" defer=""></script>
-    <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.22.2/build/vega-embed.min.js" defer=""></script>
     <script>
-        window.addEventListener('DOMContentLoaded', () => {
-            let ws = null;
-            let reconnectAttempts = 0;
-            const maxReconnectAttempts = 5;
-            let mermaidReady = false;
-            let vegaReady = false;
-            let excalidrawReady = false;
-            let mermaidIdCounter = 0;
-            let vegaIdCounter = 0;
-            let excalidrawIdCounter = 0;
-            let markedConfigured = false;
-            const textEncoder = new TextEncoder();
-            const textDecoder = new TextDecoder();
-            const vegaDarkBaseConfig = {
-                background: '#0d1117',
-                view: {
-                    stroke: '#30363d'
-                },
-                axis: {
-                    gridColor: '#30363d',
-                    tickColor: '#6e7681',
-                    domainColor: '#30363d',
-                    labelColor: '#c9d1d9',
-                    titleColor: '#c9d1d9'
-                },
-                legend: {
-                    labelColor: '#c9d1d9',
-                    titleColor: '#c9d1d9'
-                },
-                header: {
-                    labelColor: '#c9d1d9',
-                    titleColor: '#c9d1d9'
-                },
-                title: {
-                    color: '#e6edf3'
-                },
-                range: {
-                    category: ['#58a6ff', '#f778ba', '#8b949e', '#d29922', '#ffa657', '#56d364', '#6fddff', '#ff7b72']
-                }
-            };
+        window.__INITIAL_STATE__ = __INITIAL_STATE_JSON__;
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/14.1.2/marked.min.js" integrity="sha512-NHkNVzjoZWU7FZrc4KCgDtvlW+14ZduU7/r/GOr1d6dN3clcjx4zYSF/1O6B3lCm2jNyinAlkL4evdu+Td5Vew==" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-WDSA6k+zHblAWd3q3RtCoX6q4me7jaFtnVnefQ4btYWhYqNe3oCzUF3pKwafKYpUBSChMkAIFbFx3v8GQAOG1A==" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js" integrity="sha512-XJIOzEi9xdyD4qEfPXbI0k24AU6swswhsCce1sQsOhTIycFhGLhbVLsoP1ZaqhojaG6OcP7d3gi8wTY07EL3nw==" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+    <script defer>
+        (function () {
+            const state = window.__INITIAL_STATE__ || {};
+            const content = document.getElementById('content');
+            const rawView = document.getElementById('raw-view');
+            const fileName = document.getElementById('file-name');
+            const directoryPath = document.getElementById('directory-path');
+            const statusMessage = document.getElementById('status-message');
+            const fileList = document.getElementById('file-list');
+            const downloadButton = document.getElementById('download-button');
+            const rawButton = document.getElementById('raw-button');
+            const deleteButton = document.getElementById('delete-button');
+            const indicator = document.getElementById('connection-indicator');
 
-            function waitForLibraries(maxRetries = 50, intervalMs = 100) {
-                return new Promise((resolve, reject) => {
-                    let attempts = 0;
-                    const check = () => {
-                        if (typeof marked !== 'undefined' && typeof mermaid !== 'undefined' && typeof hljs !== 'undefined') {
-                            resolve();
-                        } else if (attempts >= maxRetries) {
-                            reject(new Error('Required libraries failed to load'));
-                        } else {
-                            attempts += 1;
-                            setTimeout(check, intervalMs);
+            let currentFile = state.selectedFile || null;
+            let files = Array.isArray(state.files) ? state.files : [];
+            let websocket = null;
+            let reconnectTimer = null;
+            let rawVisible = false;
+
+            const originalPathArgument = state.pathArgument || '';
+            let resolvedRootPath = state.rootPath || '';
+
+            if (typeof mermaid !== 'undefined') {
+                mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+            }
+
+            if (typeof marked !== 'undefined') {
+                marked.setOptions({
+                    breaks: true,
+                    highlight(code, language) {
+                        try {
+                            if (typeof hljs !== 'undefined') {
+                                if (language && hljs.getLanguage(language)) {
+                                    return hljs.highlight(code, { language }).value;
+                                }
+                                return hljs.highlightAuto(code).value;
+                            }
+                        } catch (err) {
+                            console.warn('Highlight.js failed to render a block', err);
                         }
-                    };
-                    check();
+                        return code;
+                    },
                 });
             }
 
-            function initializeMermaid() {
+            function setStatus(message) {
+                statusMessage.textContent = message || '';
+            }
+
+            function setConnectionStatus(connected) {
+                indicator.classList.toggle('connected', connected);
+                indicator.title = connected ? 'Connected to watcher' : 'Disconnected';
+            }
+
+            function updateHeader() {
+                fileName.textContent = currentFile || 'No file selected';
+                directoryPath.textContent = resolvedRootPath || originalPathArgument || 'Unknown';
+                downloadButton.disabled = !currentFile;
+                rawButton.disabled = !currentFile;
+                deleteButton.disabled = !currentFile;
+            }
+
+            function buildQuery(params) {
+                const query = new URLSearchParams();
+                if (originalPathArgument) {
+                    query.set('path', originalPathArgument);
+                }
+                Object.entries(params).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null && value !== '') {
+                        query.set(key, value);
+                    }
+                });
+                const queryString = query.toString();
+                return queryString ? `?${queryString}` : '';
+            }
+
+            function updateLocation(file) {
+                const newQuery = buildQuery({ file });
+                window.history.replaceState({ file }, '', `${window.location.pathname}${newQuery}`);
+            }
+
+            function ensureMermaidRendered() {
                 if (typeof mermaid === 'undefined') {
-                    console.warn('Mermaid not available');
-                    mermaidReady = false;
                     return;
                 }
 
-                try {
-                    mermaid.initialize({
-                        startOnLoad: false,
-                        theme: 'dark',
-                        securityLevel: 'loose',
-                        themeVariables: {
-                            background: '#121a22',
-                            primaryColor: '#1f2a33',
-                            secondaryColor: '#253548',
-                            primaryTextColor: '#e0e6ed',
-                            primaryBorderColor: '#3d4f5c',
-                            lineColor: '#7d8590',
-                            tertiaryColor: '#161b22',
-                            cScale0: '#58a6ff',
-                            cScale1: '#79c0ff',
-                            cScale2: '#a5f3fc'
-                        }
-                    });
-                    mermaidReady = true;
-                    console.log('Mermaid initialized successfully');
-                    requestAnimationFrame(renderMermaidDiagrams);
-                } catch (error) {
-                    console.error('Failed to initialize Mermaid:', error);
-                    mermaidReady = false;
-                }
-            }
-
-            function escapeHtml(value) {
-                return String(value)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
-            }
-
-            function encodeDiagramSource(code) {
-                if (!code) {
-                    return '';
-                }
-                const bytes = textEncoder.encode(code);
-                let binary = '';
-                bytes.forEach(byte => {
-                    binary += String.fromCharCode(byte);
+                const codeBlocks = content.querySelectorAll('pre code.language-mermaid');
+                codeBlocks.forEach((block) => {
+                    const pre = block.parentElement?.parentElement;
+                    if (!pre) {
+                        return;
+                    }
+                    const diagram = document.createElement('div');
+                    diagram.className = 'mermaid';
+                    diagram.textContent = block.textContent;
+                    pre.replaceWith(diagram);
                 });
-                return btoa(binary);
+
+                const diagrams = content.querySelectorAll('.mermaid');
+                if (diagrams.length > 0) {
+                    try {
+                        mermaid.run({ querySelector: '.mermaid' });
+                    } catch (err) {
+                        console.warn('Mermaid render failed', err);
+                    }
+                }
             }
 
-            function decodeDiagramSource(encoded, label = 'diagram') {
-                if (!encoded) {
-                    return '';
+            function renderMarkdown(markdownText) {
+                if (typeof marked !== 'undefined') {
+                    content.innerHTML = marked.parse(markdownText || '');
+                } else {
+                    content.textContent = markdownText || '';
                 }
+
+                if (typeof hljs !== 'undefined') {
+                    content.querySelectorAll('pre code').forEach((block) => {
+                        try {
+                            hljs.highlightElement(block);
+                        } catch (err) {
+                            console.warn('Highlight.js error', err);
+                        }
+                    });
+                }
+
+                ensureMermaidRendered();
+                rawView.textContent = markdownText || '';
+            }
+
+            function renderFileList() {
+                fileList.innerHTML = '';
+                if (!files.length) {
+                    const empty = document.createElement('li');
+                    empty.className = 'empty-state';
+                    empty.textContent = 'No markdown files yet';
+                    fileList.appendChild(empty);
+                    return;
+                }
+
+                files.forEach((file) => {
+                    const item = document.createElement('li');
+                    const button = document.createElement('button');
+                    button.className = 'file-button';
+                    button.textContent = file.name;
+                    button.dataset.file = file.relativePath;
+                    if (file.relativePath === currentFile) {
+                        button.classList.add('active');
+                    }
+                    button.addEventListener('click', () => {
+                        if (file.relativePath !== currentFile) {
+                            selectFile(file.relativePath);
+                        }
+                    });
+                    item.appendChild(button);
+                    fileList.appendChild(item);
+                });
+            }
+
+            function updateActiveFileHighlight() {
+                fileList.querySelectorAll('.file-button').forEach((button) => {
+                    button.classList.toggle('active', button.dataset.file === currentFile);
+                });
+            }
+
+            async function fetchJson(url, options) {
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || `Request failed with status ${response.status}`);
+                }
+                return response.json();
+            }
+
+            async function refreshFiles() {
+                const url = `/api/files${buildQuery({})}`;
+                const data = await fetchJson(url);
+                resolvedRootPath = data.rootPath || resolvedRootPath;
+                files = data.files || [];
+                renderFileList();
+                if (!files.find((entry) => entry.relativePath === currentFile)) {
+                    currentFile = files.length ? files[0].relativePath : null;
+                    if (currentFile) {
+                        await loadFile(currentFile);
+                    } else {
+                        currentFile = null;
+                        renderMarkdown(fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'));
+                        updateLocation('');
+                        rawVisible = false;
+                        rawView.classList.remove('visible');
+                        rawButton.textContent = 'Show Raw';
+                        updateHeader();
+                    }
+                } else {
+                    updateActiveFileHighlight();
+                    updateHeader();
+                }
+            }
+
+            function fallbackMarkdownFor(path) {
+                return `# No markdown files found\n\nThe directory \`${path}\` does not contain any markdown files yet.`;
+            }
+
+            async function loadFile(file) {
+                setStatus('');
+                const url = `/api/file${buildQuery({ file })}`;
                 try {
-                    const bytes = Uint8Array.from(atob(encoded), char => char.charCodeAt(0));
-                    return textDecoder.decode(bytes);
-                } catch (error) {
-                    console.warn(`Failed to decode ${label} source`, error);
-                    return '';
+                    const data = await fetchJson(url);
+                    resolvedRootPath = data.rootPath || resolvedRootPath;
+                    currentFile = data.file || file;
+                    renderMarkdown(data.content || '');
+                    updateActiveFileHighlight();
+                    updateHeader();
+                    updateLocation(currentFile);
+                    rawVisible = false;
+                    rawView.classList.remove('visible');
+                    rawButton.textContent = 'Show Raw';
+                } catch (err) {
+                    setStatus(err.message);
+                    console.error('Failed to load file', err);
                 }
             }
 
-            function encodeMermaidSource(code) {
-                return encodeDiagramSource(code);
+            async function selectFile(file) {
+                await loadFile(file);
             }
 
-            function decodeMermaidSource(encoded) {
-                return decodeDiagramSource(encoded, 'Mermaid');
-            }
-
-            function encodeVegaSource(code) {
-                return encodeDiagramSource(code);
-            }
-
-            function decodeVegaSource(encoded) {
-                return decodeDiagramSource(encoded, 'Vega');
-            }
-
-            function encodeExcalidrawSource(code) {
-                return encodeDiagramSource(code);
-            }
-
-            function decodeExcalidrawSource(encoded) {
-                return decodeDiagramSource(encoded, 'Excalidraw');
-            }
-
-            function setupMarked() {
-                if (typeof marked === 'undefined') {
-                    console.warn('Marked not available');
-                    return;
-                }
-
-                if (!markedConfigured) {
-                    marked.use({
-                        walkTokens(token) {
-                            if (token && token.type === 'code') {
-                                const langInput = typeof token.lang === 'string' ? token.lang : '';
-                                const lang = langInput.toLowerCase();
-                                if (lang.includes('mermaid')) {
-                                    const id = `mermaid-${mermaidIdCounter++}`;
-                                    const encodedSource = encodeMermaidSource(token.text || token.raw || '');
-                                    const mermaidHtml = `<div class="mermaid" id="${id}" data-mermaid-source="${encodedSource}"></div>`;
-                                    token.type = 'html';
-                                    token.raw = mermaidHtml;
-                                    token.text = mermaidHtml;
-                                } else if (lang.includes('vega-lite') || lang === 'vega') {
-                                    const id = `vega-${vegaIdCounter++}`;
-                                    const encodedSource = encodeVegaSource(token.text || token.raw || '');
-                                    const vegaHtml = `<div class="vega-diagram" id="${id}" data-vega-source="${encodedSource}"></div>`;
-                                    token.type = 'html';
-                                    token.raw = vegaHtml;
-                                    token.text = vegaHtml;
-                                } else if (lang.includes('excalidraw')) {
-                                    const id = `excalidraw-${excalidrawIdCounter++}`;
-                                    const encodedSource = encodeExcalidrawSource(token.text || token.raw || '');
-                                    const excalidrawHtml = `<div class="excalidraw-diagram" id="${id}" data-excalidraw-source="${encodedSource}"></div>`;
-                                    token.type = 'html';
-                                    token.raw = excalidrawHtml;
-                                    token.text = excalidrawHtml;
-                                }
-                            }
-                        }
-                    });
-
-                    marked.setOptions({
-                        highlight: function (code, lang) {
-                            if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
-                                try {
-                                    return hljs.highlight(code, { language: lang }).value;
-                                } catch (err) {
-                                    console.warn('Highlight.js error:', err);
-                                }
-                            }
-                            return code;
-                        },
-                        breaks: true,
-                        gfm: true
-                    });
-
-                    markedConfigured = true;
-                }
-            }
-
-            function renderMermaidDiagrams() {
-                const mermaidElements = document.querySelectorAll('.mermaid');
-                if (!mermaidElements.length) {
-                    return;
-                }
-
-                if (mermaidReady && typeof mermaid !== 'undefined') {
-                    mermaidElements.forEach((element) => {
-                        const encoded = element.getAttribute('data-mermaid-source');
-                        const sourceContent = encoded ? decodeMermaidSource(encoded) : element.textContent;
-                        if (!sourceContent.trim()) {
-                            return;
-                        }
-                        mermaid.render(`${element.id}-svg`, sourceContent)
-                            .then(({ svg }) => {
-                                element.innerHTML = svg;
-                            })
-                            .catch((error) => {
-                                console.error('Mermaid rendering error:', error);
-                                element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">Mermaid rendering error: ${escapeHtml(error.message)}</div>`;
-                            });
-                    });
-                } else {
-                    mermaidElements.forEach((element) => {
-                        const encoded = element.getAttribute('data-mermaid-source');
-                        const sourceContent = encoded ? decodeMermaidSource(encoded) : element.textContent;
-                        element.innerHTML = `<div class="loading">📊 Mermaid diagram (awaiting Mermaid.js):<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
-                    });
-                }
-            }
-
-            function initializeVega(retryCount = 0) {
-                if (typeof vega === 'undefined' || typeof vegaLite === 'undefined' || typeof vegaEmbed === 'undefined') {
-                    if (retryCount < 10) {
-                        setTimeout(() => initializeVega(retryCount + 1), 200);
-                    } else {
-                        console.warn('Vega libraries not available');
+            function setupActions() {
+                downloadButton.addEventListener('click', async () => {
+                    if (!currentFile) {
+                        return;
                     }
-                    vegaReady = false;
-                    return;
-                }
-
-                vegaReady = true;
-                console.log('Vega initialized successfully');
-                requestAnimationFrame(renderVegaVisualizations);
-            }
-
-            function renderVegaVisualizations() {
-                const vegaElements = document.querySelectorAll('.vega-diagram');
-                if (!vegaElements.length) {
-                    return;
-                }
-
-                if (vegaReady && typeof vegaEmbed !== 'undefined') {
-                    vegaElements.forEach((element) => {
-                        if (element.dataset.rendered === 'true') {
-                            return;
-                        }
-
-                        const encoded = element.getAttribute('data-vega-source');
-                        const sourceContent = encoded ? decodeVegaSource(encoded) : element.textContent;
-
-                        if (!sourceContent.trim()) {
-                            element.innerHTML = '<div class="loading">⚠️ Vega spec is empty.</div>';
-                            element.dataset.rendered = 'true';
-                            return;
-                        }
-
-                        let spec;
-                        try {
-                            spec = JSON.parse(sourceContent);
-                        } catch (error) {
-                            console.error('Vega parsing error:', error);
-                            element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">Invalid Vega specification:<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
-                            element.dataset.rendered = 'true';
-                            return;
-                        }
-
-                        element.innerHTML = '';
-                        const target = document.createElement('div');
-                        element.appendChild(target);
-
-                        const embedOptions = {
-                            actions: false,
-                            renderer: 'canvas',
-                            theme: 'dark',
-                            config: { ...vegaDarkBaseConfig }
-                        };
-
-                        vegaEmbed(target, spec, embedOptions)
-                            .then(() => {
-                                element.dataset.rendered = 'true';
-                            })
-                            .catch((error) => {
-                                console.error('Vega rendering error:', error);
-                                element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">Vega rendering error: ${escapeHtml(error.message)}</div>`;
-                                element.dataset.rendered = 'true';
-                            });
-                    });
-                } else {
-                    vegaElements.forEach((element) => {
-                        const encoded = element.getAttribute('data-vega-source');
-                        const sourceContent = encoded ? decodeVegaSource(encoded) : element.textContent;
-                        element.innerHTML = `<div class="loading">📈 Vega visualization (awaiting Vega libraries):<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
-                    });
-                }
-            }
-
-            function initializeExcalidraw(retryCount = 0) {
-                if (typeof window.React === 'undefined' || typeof window.ReactDOM === 'undefined' || typeof window.ExcalidrawLib === 'undefined') {
-                    if (retryCount < 10) {
-                        setTimeout(() => initializeExcalidraw(retryCount + 1), 200);
-                    } else {
-                        console.warn('Excalidraw libraries not available');
+                    try {
+                        const data = await fetchJson(`/api/file${buildQuery({ file: currentFile })}`);
+                        const blob = new Blob([data.content || ''], { type: 'text/markdown' });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = currentFile;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+                    } catch (err) {
+                        setStatus(err.message);
+                        console.error('Download failed', err);
                     }
-                    excalidrawReady = false;
-                    return;
-                }
+                });
 
-                excalidrawReady = true;
-                console.log('Excalidraw initialized successfully');
-                requestAnimationFrame(renderExcalidrawDiagrams);
-            }
-
-            function renderExcalidrawDiagrams() {
-                const excalidrawElements = document.querySelectorAll('.excalidraw-diagram');
-                if (!excalidrawElements.length) {
-                    return;
-                }
-
-                if (excalidrawReady && window.React && window.ReactDOM && window.ExcalidrawLib && window.ExcalidrawLib.Excalidraw) {
-                    excalidrawElements.forEach((element) => {
-                        if (element.dataset.rendered === 'true') {
-                            return;
-                        }
-
-                        const encoded = element.getAttribute('data-excalidraw-source');
-                        const sourceContent = encoded ? decodeExcalidrawSource(encoded) : element.textContent;
-
-                        if (!sourceContent.trim()) {
-                            element.innerHTML = '<div class="loading">⚠️ Excalidraw scene is empty.</div>';
-                            element.dataset.rendered = 'true';
-                            return;
-                        }
-
-                        let sceneData;
-                        try {
-                            sceneData = JSON.parse(sourceContent);
-                        } catch (error) {
-                            console.error('Excalidraw parsing error:', error);
-                            element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">Invalid Excalidraw JSON:<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
-                            element.dataset.rendered = 'true';
-                            return;
-                        }
-
-                        element.innerHTML = '';
-                        const wrapper = document.createElement('div');
-                        wrapper.className = 'excalidraw-wrapper';
-                        wrapper.style.height = '480px';
-                        element.appendChild(wrapper);
-
-                        try {
-                            const defaultAppState = {
-                                theme: 'dark',
-                                viewBackgroundColor: '#0d1117',
-                                currentItemStrokeColor: '#58a6ff',
-                                currentItemBackgroundColor: 'transparent',
-                                currentItemFillStyle: 'hachure'
-                            };
-
-                            const mergedAppState = {
-                                ...defaultAppState,
-                                ...(sceneData.appState || {}),
-                                theme: 'dark',
-                                viewBackgroundColor: sceneData.appState?.viewBackgroundColor || '#0d1117'
-                            };
-
-                            const initialData = {
-                                ...sceneData,
-                                appState: mergedAppState
-                            };
-
-                            const excalidrawElement = React.createElement(window.ExcalidrawLib.Excalidraw, {
-                                initialData,
-                                viewModeEnabled: true,
-                                zenModeEnabled: false,
-                                gridModeEnabled: Boolean(mergedAppState.gridSize),
-                                theme: 'dark'
-                            });
-
-                            if (typeof window.ReactDOM.createRoot === 'function') {
-                                const root = window.ReactDOM.createRoot(wrapper);
-                                root.render(excalidrawElement);
-                                element.dataset.rendered = 'true';
-                                element._excalidrawRoot = root;
-                            } else {
-                                window.ReactDOM.render(excalidrawElement, wrapper);
-                                element.dataset.rendered = 'true';
-                            }
-                        } catch (error) {
-                            console.error('Excalidraw rendering error:', error);
-                            element.innerHTML = `<div style="color: #cf222e; border: 1px solid #cf222e; padding: 10px; border-radius: 4px;">Excalidraw rendering error: ${escapeHtml(error.message)}</div>`;
-                            element.dataset.rendered = 'true';
-                        }
-                    });
-                } else {
-                    excalidrawElements.forEach((element) => {
-                        const encoded = element.getAttribute('data-excalidraw-source');
-                        const sourceContent = encoded ? decodeExcalidrawSource(encoded) : element.textContent;
-                        element.innerHTML = `<div class="loading">✏️ Excalidraw scene (awaiting Excalidraw libraries):<br><pre>${escapeHtml(sourceContent)}</pre></div>`;
-                    });
-                }
-            }
-
-            function updateStatus(connected) {
-                const status = document.querySelector('.connection-status') || createStatusElement();
-                if (connected) {
-                    status.textContent = 'Connected';
-                    status.className = 'status connection-status connected';
-                } else {
-                    status.textContent = 'Disconnected';
-                    status.className = 'status connection-status disconnected';
-                }
-            }
-
-            function createStatusElement() {
-                const directoryInfo = document.querySelector('.directory-info');
-                if (directoryInfo) {
-                    let status = directoryInfo.querySelector('.connection-status');
-                    if (status) {
-                        return status;
+                rawButton.addEventListener('click', () => {
+                    if (!currentFile) {
+                        return;
                     }
-                    status = document.createElement('div');
-                    status.className = 'status connection-status';
-                    directoryInfo.appendChild(status);
-                    return status;
-                }
+                    rawVisible = !rawVisible;
+                    rawView.classList.toggle('visible', rawVisible);
+                    rawButton.textContent = rawVisible ? 'Hide Raw' : 'Show Raw';
+                });
 
-                const fallbackStatus = document.createElement('div');
-                fallbackStatus.className = 'status connection-status';
-                document.body.appendChild(fallbackStatus);
-                return fallbackStatus;
+                deleteButton.addEventListener('click', async () => {
+                    if (!currentFile) {
+                        return;
+                    }
+                    const confirmed = window.confirm(`Delete ${currentFile}?`);
+                    if (!confirmed) {
+                        return;
+                    }
+                    try {
+                        await fetchJson(`/api/file${buildQuery({ file: currentFile })}`, { method: 'DELETE' });
+                        setStatus('File deleted.');
+                        await refreshFiles();
+                    } catch (err) {
+                        setStatus(err.message);
+                        console.error('Delete failed', err);
+                    }
+                });
             }
 
             function connectWebSocket() {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}/ws${window.location.search}`;
-
-                ws = new WebSocket(wsUrl);
-
-                ws.onopen = function () {
-                    console.log('WebSocket connected');
-                    updateStatus(true);
-                    reconnectAttempts = 0;
-                    loadContent();
-                };
-
-                ws.onmessage = function (event) {
-                    console.log('Received WebSocket message:', event.data);
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'content_update') {
-                        updateContent(data);
-                    }
-                };
-
-                ws.onclose = function () {
-                    console.log('WebSocket disconnected');
-                    updateStatus(false);
-                    attemptReconnect();
-                };
-
-                ws.onerror = function (error) {
-                    console.error('WebSocket error:', error);
-                    updateStatus(false);
-                };
-            }
-
-            function attemptReconnect() {
-                if (reconnectAttempts < maxReconnectAttempts) {
-                    reconnectAttempts++;
-                    console.log(`Attempting to reconnect... (${reconnectAttempts}/${maxReconnectAttempts})`);
-                    setTimeout(connectWebSocket, Math.pow(2, reconnectAttempts) * 1000);
-                } else {
-                    console.error('Max reconnection attempts reached');
-                }
-            }
-
-            async function loadContent() {
-                try {
-                    const response = await fetch(`/api/content${window.location.search}`);
-                    const data = await response.json();
-
-                    // Store file list globally for later use
-                    window.fileList = data.fileList || [];
-
-                    updateContent(data);
-
-                    // Update directory info
-                    const directoryDetails = document.querySelector('.directory-details');
-                    if (directoryDetails) {
-                        directoryDetails.innerHTML = `<strong>📁 Directory:</strong> ${data.directory} | <strong>📄 Files:</strong> ${data.files} | <strong>🕒 Last Updated:</strong> ${new Date(data.timestamp * 1000).toLocaleString()}`;
-                    }
-                } catch (error) {
-                    console.error('Error loading content:', error);
-                    document.getElementById('content').innerHTML = '<div class="loading">❌ Error loading content</div>';
-                }
-            }
-
-            function updateContent(payload) {
-                if (typeof marked === 'undefined') {
-                    document.getElementById('content').innerHTML = '<div class="loading">⏳ Loading markdown renderer...</div>';
-                    return;
+                if (websocket) {
+                    websocket.close();
                 }
 
-                try {
-                    mermaidIdCounter = 0;
-                    vegaIdCounter = 0;
-                    excalidrawIdCounter = 0;
+                const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+                websocket = new WebSocket(`${protocol}://${window.location.host}/ws`);
 
-                    // Prefer the server-provided blobs to keep each file intact.
-                    let unifiedContent = '';
-                    let sections = [];
-
-                    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-                        if (Array.isArray(payload.contentParts)) {
-                            sections = payload.contentParts.slice();
-                        }
-                        if (typeof payload.content === 'string') {
-                            unifiedContent = payload.content;
-                        }
-                    } else if (typeof payload === 'string') {
-                        unifiedContent = payload;
-                    }
-
-                    if (!sections.length && typeof unifiedContent === 'string') {
-                        sections = unifiedContent.split('\n\n---\n\n');
-                    }
-
-                    const contentDiv = document.getElementById('content');
-                    contentDiv.innerHTML = '';
-
-                    sections.forEach((section, index) => {
-                        if (typeof section !== 'string' || !section.trim()) {
-                            return;
-                        }
-
-                        // Create a file block container
-                        const fileBlock = document.createElement('div');
-                        fileBlock.className = 'file-block';
-
-                        // Add action buttons if we have file metadata
-                        if (window.fileList && window.fileList[index]) {
-                            const fileInfo = window.fileList[index];
-                            const actions = document.createElement('div');
-                            actions.className = 'file-actions surface-panel';
-                            const expandBtnId = `expand-btn-${index}`;
-                            const contentId = `content-${index}`;
-                            const markdownToggleBtnId = `markdown-toggle-btn-${index}`;
-                            const stickyClass = fileInfo.isSticky ? 'active' : '';
-                            actions.innerHTML = `
-                                <button class="action-btn expand" id="${expandBtnId}" onclick="toggleExpand('${contentId}', '${expandBtnId}')">
-                                    ▼
-                                </button>
-                                <span class="file-name">${escapeHtml(fileInfo.name)}</span>
-                                <button class="action-btn markdown-toggle" id="${markdownToggleBtnId}" onclick="toggleMarkdownRaw('${contentId}', '${markdownToggleBtnId}')">
-                                    Raw
-                                </button>
-                                <button class="action-btn sticky ${stickyClass}" onclick="toggleSticky('${escapeHtml(fileInfo.fileId)}')">
-                                    Sticky
-                                </button>
-                                <button class="action-btn download" onclick="downloadFileAsPDF('${escapeHtml(fileInfo.fileId)}')">
-                                    Download PDF
-                                </button>
-                                <button class="action-btn delete" onclick="deleteFile('${escapeHtml(fileInfo.fileId)}')">
-                                    Delete
-                                </button>
-                            `;
-                            fileBlock.appendChild(actions);
-                        }
-
-                        // Add the rendered content
-                        const contentSection = document.createElement('div');
-                        contentSection.className = 'file-content';
-                        contentSection.id = `content-${index}`;
-                        contentSection.setAttribute('data-raw-markdown', section);
-                        contentSection.innerHTML = marked.parse(section);
-                        fileBlock.appendChild(contentSection);
-
-                        contentDiv.appendChild(fileBlock);
-                    });
-
-                    // Highlight code blocks
-                    if (typeof hljs !== 'undefined') {
-                        document.querySelectorAll('pre code').forEach((block) => {
-                            if (block.classList.contains('language-mermaid')) {
-                                return;
-                            }
-                            hljs.highlightElement(block);
-                        });
-                    }
-
-                    renderMermaidDiagrams();
-                    renderVegaVisualizations();
-                    renderExcalidrawDiagrams();
-                } catch (error) {
-                    console.error('Error rendering markdown:', error);
-                    document.getElementById('content').innerHTML = `<div style="color: #cf222e;">Error rendering markdown: ${error.message}</div>`;
-                }
-            }
-
-            // Make functions globally accessible by attaching to window
-            window.deleteFile = async function (fileId) {
-                if (!confirm(`Are you sure you want to delete "${fileId}"?`)) {
-                    return;
-                }
-
-                try {
-                    const response = await fetch(`/api/delete${window.location.search}`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ fileId: fileId })
-                    });
-
-                    const result = await response.json();
-
-                    if (result.success) {
-                        console.log('File deleted successfully');
-                        // Reload content
-                        loadContent();
-                    } else {
-                        alert(`Error deleting file: ${result.error}`);
-                    }
-                } catch (error) {
-                    console.error('Error deleting file:', error);
-                    alert(`Error deleting file: ${error.message}`);
-                }
-            };
-
-            window.downloadFileAsPDF = function (fileId) {
-                const url = new URL('/print', window.location.origin);
-                url.searchParams.set('fileId', fileId);
-
-                const currentParams = new URLSearchParams(window.location.search);
-                const currentPath = currentParams.get('path');
-                if (currentPath) {
-                    url.searchParams.set('path', currentPath);
-                }
-
-                window.open(url.toString(), '_blank');
-            };
-
-            window.toggleExpand = function (contentId, btnId) {
-                const content = document.getElementById(contentId);
-                const btn = document.getElementById(btnId);
-
-                if (content.classList.contains('collapsed')) {
-                    content.classList.remove('collapsed');
-                    btn.textContent = '▼';
-                } else {
-                    content.classList.add('collapsed');
-                    btn.textContent = '▶';
-                }
-            };
-
-            window.toggleSticky = async function (fileId) {
-                try {
-                    const response = await fetch(`/api/toggle-sticky${window.location.search}`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ fileId: fileId })
-                    });
-
-                    const result = await response.json();
-
-                    if (result.success) {
-                        console.log('Sticky status toggled successfully');
-                        // Reload content to reflect the change
-                        loadContent();
-                    } else {
-                        alert(`Error toggling sticky: ${result.error}`);
-                    }
-                } catch (error) {
-                    console.error('Error toggling sticky:', error);
-                    alert(`Error toggling sticky: ${error.message}`);
-                }
-            };
-
-            window.toggleMarkdownRaw = function (contentId, btnId) {
-                const content = document.getElementById(contentId);
-                const btn = document.getElementById(btnId);
-
-                if (!content) return;
-
-                // Check if we're in raw mode
-                const isRawMode = content.classList.contains('raw-mode');
-
-                if (isRawMode) {
-                    // Switch back to markdown rendered mode
-                    const rawText = content.getAttribute('data-raw-markdown');
-                    if (rawText) {
-                        content.innerHTML = marked.parse(rawText);
-                        content.classList.remove('raw-mode');
-                        btn.classList.remove('raw-mode');
-                        btn.textContent = 'Raw';
-
-                        // Re-highlight code blocks
-                        if (typeof hljs !== 'undefined') {
-                            content.querySelectorAll('pre code').forEach((block) => {
-                                if (!block.classList.contains('language-mermaid')) {
-                                    hljs.highlightElement(block);
-                                }
-                            });
-                        }
-
-                        // Re-render mermaid diagrams
-                        renderMermaidDiagrams();
-                        renderVegaVisualizations();
-                        renderExcalidrawDiagrams();
-                    }
-                } else {
-                    // Switch to raw markdown mode
-                    const rawText = content.getAttribute('data-raw-markdown');
-                    if (rawText) {
-                        content.textContent = rawText;
-                        content.classList.add('raw-mode');
-                        btn.classList.add('raw-mode');
-                        btn.textContent = 'Rendered';
-                    }
-                }
-            };
-
-            window.sendChatMessage = function () {
-                const input = document.getElementById('chat-input');
-                const message = input.value.trim();
-
-                if (!message) {
-                    return;
-                }
-
-                if (!ws || ws.readyState !== WebSocket.OPEN) {
-                    alert('WebSocket not connected. Cannot send message.');
-                    return;
-                }
-
-                // Send chat message to server via WebSocket
-                try {
-                    ws.send(JSON.stringify({
-                        type: 'chat',
-                        message: message
-                    }));
-
-                    console.log('Sent chat message:', message);
-
-                    // Clear input
-                    input.value = '';
-                } catch (error) {
-                    console.error('Error sending chat message:', error);
-                    alert(`Error sending message: ${error.message}`);
-                }
-            };
-
-            window.handleChatKeyPress = function (event) {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault();
-                    sendChatMessage();
-                }
-            };
-
-            // Initialize everything
-            waitForLibraries()
-                .then(() => {
-                    console.log('All libraries loaded successfully');
-                    initializeMermaid();
-                    initializeVega();
-                    initializeExcalidraw();
-                    setupMarked();
-                    connectWebSocket();
-                    loadContent();
-                })
-                .catch((error) => {
-                    console.error('Failed to load required libraries:', error);
-                    document.getElementById('content').innerHTML = '<div class="loading">❌ Failed to load required libraries</div>';
+                websocket.addEventListener('open', () => {
+                    setConnectionStatus(true);
+                    websocket.send(JSON.stringify({ type: 'subscribe', path: originalPathArgument }));
                 });
-        });
+
+                websocket.addEventListener('message', async (event) => {
+                    try {
+                        const payload = JSON.parse(event.data);
+                        if (payload.type === 'directory_update') {
+                            resolvedRootPath = payload.path || resolvedRootPath;
+                            files = payload.files || [];
+                            renderFileList();
+                            if (!files.find((entry) => entry.relativePath === currentFile)) {
+                                currentFile = files.length ? files[0].relativePath : null;
+                                if (currentFile) {
+                                    await loadFile(currentFile);
+                                } else {
+                                    currentFile = null;
+                                    renderMarkdown(fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'));
+                                    updateLocation('');
+                                    rawVisible = false;
+                                    rawView.classList.remove('visible');
+                                    rawButton.textContent = 'Show Raw';
+                                    updateHeader();
+                                }
+                            } else {
+                                updateActiveFileHighlight();
+                                updateHeader();
+                            }
+                        } else if (payload.type === 'file_changed') {
+                            if (payload.file && payload.file === currentFile) {
+                                await loadFile(currentFile);
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Failed to process websocket event', err);
+                    }
+                });
+
+                function scheduleReconnect() {
+                    if (reconnectTimer) {
+                        return;
+                    }
+                    reconnectTimer = window.setTimeout(() => {
+                        reconnectTimer = null;
+                        connectWebSocket();
+                    }, 1500);
+                }
+
+                websocket.addEventListener('close', () => {
+                    setConnectionStatus(false);
+                    scheduleReconnect();
+                });
+
+                websocket.addEventListener('error', () => {
+                    websocket.close();
+                });
+            }
+
+            function initialise() {
+                const initialFallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
+                renderMarkdown(state.content || initialFallback);
+                renderFileList();
+                updateHeader();
+                if (state.error) {
+                    setStatus(state.error);
+                }
+                setupActions();
+                connectWebSocket();
+                if (!currentFile && files.length) {
+                    currentFile = files[0].relativePath;
+                    loadFile(currentFile);
+                }
+            }
+
+            initialise();
+        })();
     </script>
-</head>
-
-<body>
-    <div class="container">
-        <div class="directory-info surface-panel">
-            <div class="directory-details">
-                <strong>📁 Directory:</strong> __CURRENT_DIRECTORY__ | <strong>📄 Files:</strong> Loading... |
-                <strong>🕒
-                    Last Updated:</strong> Loading...
-            </div>
-            <div class="status connection-status">Connecting...</div>
-        </div>
-
-        <div class="chat-container surface-panel">
-            <input type="text" id="chat-input" class="chat-input" placeholder="Send a message to connected AI agents..."
-                onkeypress="handleChatKeyPress(event)" />
-            <button class="chat-send-btn" onclick="sendChatMessage()">
-                Send
-            </button>
-        </div>
-
-        <div id="content" class="loading">
-            ⏳ Loading content...
-        </div>
-    </div>
 </body>
-
 </html>
