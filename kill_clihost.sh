@@ -4,7 +4,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="$ROOT/clihost.py"
 
-mapfile -t PIDS < <(pgrep -f "$TARGET" || true)
+PIDS=( )
+while IFS= read -r pid; do
+  [[ -n "$pid" ]] && PIDS+=("$pid")
+done < <(pgrep -f "$TARGET" || true)
 
 if [[ ${#PIDS[@]} -eq 0 ]]; then
   echo "[kill] no clihost.py processes found"
@@ -37,7 +40,10 @@ terminate_pid() {
 for pid in "${PIDS[@]}"; do
   echo "[kill] processing clihost PID $pid"
 
-  mapfile -t CHILDREN < <(pgrep -P "$pid" || true)
+  CHILDREN=( )
+  while IFS= read -r child; do
+    [[ -n "$child" ]] && CHILDREN+=("$child")
+  done < <(pgrep -P "$pid" || true)
   if [[ ${#CHILDREN[@]} -gt 0 ]]; then
     for child in "${CHILDREN[@]}"; do
       echo "[kill] ├─ child PID $child"

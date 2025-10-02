@@ -68,6 +68,11 @@ def parse_args(argv: List[str]) -> tuple[argparse.Namespace, List[str]]:
         action="store_true",
         help="Terminate the child process if the WebSocket feed cannot be reached or disconnects",
     )
+    parser.add_argument(
+        "--force-pty",
+        action="store_true",
+        help="Wrap the child command in a pseudo-terminal (via `script`) to preserve interactive behavior",
+    )
 
     args = parser.parse_args(host_args)
     if not child_cmd:
@@ -78,7 +83,7 @@ def parse_args(argv: List[str]) -> tuple[argparse.Namespace, List[str]]:
 async def create_child(child_cmd: List[str]) -> asyncio.subprocess.Process:
     """Spawn the agent process whose stdin/stdout we proxy."""
 
-    print(f"[clihost] launching child: {' '.join(child_cmd)}")
+    print(f"[clihost] launching child command: {' '.join(child_cmd)}")
     sys.stdout.flush()
     return await asyncio.create_subprocess_exec(
         *child_cmd,
@@ -277,8 +282,19 @@ async def main() -> None:
 
     print("[clihost] awaiting child process creation...")
     sys.stdout.flush()
-    proc = await create_child(child_cmd)
-    print(f"[clihost] started child PID {proc.pid}: {' '.join(child_cmd)}")
+    child_cmd_to_run = child_cmd
+    if args.force_pty:
+        child_cmd_to_run = [
+            "script",
+            "-q",
+            "/dev/null",
+            "--",
+            *child_cmd,
+        ]
+        print(f"[clihost] wrapping child with pseudo-terminal: {' '.join(child_cmd_to_run)}")
+        sys.stdout.flush()
+    proc = await create_child(child_cmd_to_run)
+    print(f"[clihost] started child PID {proc.pid}: {' '.join(child_cmd_to_run)}")
     sys.stdout.flush()
     joined_cmd = " ".join(child_cmd)
     print(f"[clihost] started child PID {proc.pid}: {joined_cmd}")
