@@ -46,6 +46,7 @@ class MarkdownMCPServer:
                 "characters such as '{' or '(' and reserved names like 'node' unless "
                 "they are valid syntax. If you color Mermaid nodes, pick white or black "
                 "e.g style Response fill:#c8e6c9,color:#000000, vs fill:#003010,color:#FFFFFF"
+                "for sequence diagrams, if using background colors, add opacity to any background color, e.g. fill:#00301015"
                 "text based on the background brightness so labels stay readable."
             )
         )
