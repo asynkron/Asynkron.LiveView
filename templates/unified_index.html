@@ -210,22 +210,6 @@
             height: 520px;
         }
 
-        .raw-view {
-            display: none;
-            margin: 0;
-            padding: 20px;
-            border-top: 1px solid #30363d;
-            background: #0d1117;
-            font-family: "SF Mono", "JetBrains Mono", monospace;
-            font-size: 0.9rem;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-
-        .raw-view.visible {
-            display: block;
-        }
-
         .editor-container {
             display: none;
             flex: 1;
@@ -363,13 +347,11 @@
                     <button id="save-button" class="hidden" title="Save your changes">Save</button>
                     <button id="cancel-button" class="secondary hidden" title="Cancel editing">Cancel</button>
                     <button id="download-button" title="Download the current file">Download</button>
-                    <button id="raw-button" class="secondary" title="Toggle raw markdown view">Show Raw</button>
                     <button id="delete-button" class="danger" title="Delete the current file">Delete</button>
                 </div>
             </header>
             <div id="content" class="content-area"></div>
             <div id="editor-container" class="editor-container"></div>
-            <pre id="raw-view" class="raw-view"></pre>
         </section>
         <aside class="sidebar">
             <div class="sidebar-header">
@@ -423,13 +405,11 @@
         (function () {
             const state = window.__INITIAL_STATE__ || {};
             const content = document.getElementById('content');
-            const rawView = document.getElementById('raw-view');
             const fileName = document.getElementById('file-name');
             const directoryPath = document.getElementById('directory-path');
             const statusMessage = document.getElementById('status-message');
             const fileList = document.getElementById('file-list');
             const downloadButton = document.getElementById('download-button');
-            const rawButton = document.getElementById('raw-button');
             const deleteButton = document.getElementById('delete-button');
             const editButton = document.getElementById('edit-button');
             const previewButton = document.getElementById('preview-button');
@@ -442,7 +422,6 @@
             let files = Array.isArray(state.files) ? state.files : [];
             let websocket = null;
             let reconnectTimer = null;
-            let rawVisible = false;
             let isEditing = false;
             let isPreviewing = false;
             let editorInstance = null;
@@ -1060,7 +1039,6 @@
                 directoryPath.textContent = resolvedRootPath || originalPathArgument || 'Unknown';
                 const hasFile = Boolean(currentFile);
                 downloadButton.disabled = !hasFile;
-                rawButton.disabled = !hasFile || isEditing;
                 deleteButton.disabled = !hasFile;
                 editButton.disabled = !hasFile && !isEditing;
                 previewButton.disabled = !hasFile;
@@ -1076,7 +1054,6 @@
                 saveButton.classList.toggle('hidden', !isEditing);
                 cancelButton.classList.toggle('hidden', !isEditing);
                 downloadButton.classList.toggle('hidden', isEditing);
-                rawButton.classList.toggle('hidden', isEditing);
                 deleteButton.classList.toggle('hidden', isEditing);
             }
 
@@ -1138,7 +1115,6 @@
                             renderMarkdown(textToRender, { updateCurrent });
                         }
                     });
-                    rawView.textContent = sourceText;
                     if (updateCurrent) {
                         currentContent = sourceText;
                     }
@@ -1162,7 +1138,6 @@
                 }
 
                 renderAllDiagrams();
-                rawView.textContent = sourceText;
                 if (updateCurrent) {
                     currentContent = sourceText;
                 }
@@ -1220,9 +1195,6 @@
 
                 content.classList.add('hidden');
                 editorContainer.classList.add('visible');
-                rawVisible = false;
-                rawView.classList.remove('visible');
-                rawButton.textContent = 'Show Raw';
                 updateHeader();
                 setStatus('Editing markdown…');
             }
@@ -1276,9 +1248,6 @@
                 if (restoreContent) {
                     renderMarkdown(currentContent, { updateCurrent: true });
                 }
-                rawVisible = false;
-                rawView.classList.remove('visible');
-                rawButton.textContent = 'Show Raw';
                 updateHeader();
             }
 
@@ -1291,9 +1260,6 @@
                 renderMarkdown(fallback, { updateCurrent: true });
                 updateActiveFileHighlight();
                 updateHeader();
-                rawVisible = false;
-                rawView.classList.remove('visible');
-                rawButton.textContent = 'Show Raw';
                 if (!skipHistory) {
                     updateLocation('', { replace: true });
                 }
@@ -1360,9 +1326,6 @@
                             { updateCurrent: true }
                         );
                         updateLocation('', { replace: true });
-                        rawVisible = false;
-                        rawView.classList.remove('visible');
-                        rawButton.textContent = 'Show Raw';
                         updateHeader();
                     }
                 } else {
@@ -1392,9 +1355,6 @@
                     updateActiveFileHighlight();
                     updateHeader();
                     updateLocation(currentFile, { replace: replaceHistory || skipHistory });
-                    rawVisible = false;
-                    rawView.classList.remove('visible');
-                    rawButton.textContent = 'Show Raw';
                 } catch (err) {
                     setStatus(err.message);
                     console.error('Failed to load file', err);
@@ -1487,15 +1447,6 @@
                     }
                 });
 
-                rawButton.addEventListener('click', () => {
-                    if (!currentFile) {
-                        return;
-                    }
-                    rawVisible = !rawVisible;
-                    rawView.classList.toggle('visible', rawVisible);
-                    rawButton.textContent = rawVisible ? 'Hide Raw' : 'Show Raw';
-                });
-
                 deleteButton.addEventListener('click', async () => {
                     if (!currentFile) {
                         return;
@@ -1547,9 +1498,6 @@
                                         { updateCurrent: true }
                                     );
                                     updateLocation('', { replace: true });
-                                    rawVisible = false;
-                                    rawView.classList.remove('visible');
-                                    rawButton.textContent = 'Show Raw';
                                     updateHeader();
                                 }
                             } else {
