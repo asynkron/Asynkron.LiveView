@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-"""Quick test of the subscribe_chat MCP tool."""
+"""Quick test of the subscribe_chat_stream MCP tool."""
 
 import asyncio
 import json
 import httpx
 
 async def test_subscribe_chat():
-    """Test the subscribe_chat MCP tool."""
+    """Test the subscribe_chat_stream MCP tool."""
     
     mcp_request = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
         "params": {
-            "name": "subscribe_chat",
+            "name": "subscribe_chat_stream",
             "arguments": {}
         }
     }
     
-    print("🧪 Testing subscribe_chat MCP tool...")
+    print("🧪 Testing subscribe_chat_stream MCP tool...")
     
     async with httpx.AsyncClient() as client:
         try:

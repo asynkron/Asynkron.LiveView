@@ -14,7 +14,7 @@
 - ✅ Pure FastMCP server with `@tool()` decorators
 - ✅ Direct file operations using `file_manager` methods
 - ✅ Clean tool implementations: `show_content`, `list_content`, `view_content`, `update_content`, `remove_content`
-- ✅ Chat streaming tools: `get_chat_stream_info`, `subscribe_chat`, `get_chat_messages` (anti-polling)
+- ✅ Chat streaming tools: `get_chat_stream_info`, `subscribe_chat_stream` (streaming guidance only)
 - ✅ HTTP streaming endpoint for chat: `POST /mcp/stream/chat`
 
 ### Server Status:
@@ -43,8 +43,7 @@ curl -X POST http://localhost:8081/mcp -d '{"jsonrpc":"2.0","id":2,"method":"too
 4. **update_content(fileId, content, mode="append")** - Modify files
 5. **remove_content(fileId)** - Delete files
 6. **get_chat_stream_info()** - Get HTTP streaming instructions
-7. **subscribe_chat()** - Returns anti-polling message
-8. **get_chat_messages(since=None)** - Returns anti-polling message
+7. **subscribe_chat_stream()** - Provides quick streaming instructions
 
 ### Usage:
 - **Stdio Mode**: `python server.py --mcp-stdio` for MCP client connections

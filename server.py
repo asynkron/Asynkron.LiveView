@@ -20,6 +20,8 @@ from aiohttp.web_response import Response
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+import anyio
+
 # Import FastMCP functionality
 from fastmcp import FastMCP
 
@@ -31,6 +33,16 @@ from components.request_handlers import RequestHandlers
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+class _ClosedResourceFilter(logging.Filter):
+    """Ignore benign ClosedResourceError exceptions from FastMCP."""
+
+    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - simple guard
+        if not record.exc_info:
+            return True
+        exc = record.exc_info[1]
+        return not isinstance(exc, anyio.ClosedResourceError)
 
 class MarkdownFileHandler(FileSystemEventHandler):
     """Handles file system events for markdown files."""
@@ -115,12 +127,22 @@ class UnifiedMarkdownServer:
                 json_response=True,
                 stateless_http=True,
             )
+            self._install_closed_resource_filter()
             logger.info(f"FastMCP Server initialized for directory: {self.default_markdown_dir}")
 
     @property
     def mcp_http_app(self):
         """Expose the FastMCP Starlette application for testing utilities."""
         return getattr(self, "_mcp_http_app", None)
+
+    def _install_closed_resource_filter(self) -> None:
+        """Suppress benign ClosedResourceError logs from FastMCP's router."""
+
+        transport_logger = logging.getLogger("mcp.server.streamable_http")
+
+        # Avoid stacking duplicate filters when multiple server instances are created.
+        if not any(isinstance(f, _ClosedResourceFilter) for f in transport_logger.filters):
+            transport_logger.addFilter(_ClosedResourceFilter())
 
     def _register_mcp_tools(self):
         """Register all available MCP tools with FastMCP."""
@@ -240,50 +262,18 @@ async with httpx.AsyncClient() as client:
 ```"""
 
         @self.mcp_server.tool()
-        async def subscribe_chat() -> str:
-            """Subscribe to receive chat messages from the UI."""
-            return f"""🚨 POLLING NOT SUPPORTED - USE HTTP STREAMING INSTEAD
-
-This tool would traditionally enable polling for chat messages, but polling is FORBIDDEN.
-
-✅ CORRECT APPROACH - Use HTTP Streaming:
-POST http://localhost:{self.port}/mcp/stream/chat
-
-This provides real-time message delivery without polling overhead.
-See get_chat_stream_info() for complete implementation details.
-
-🚫 Why polling is banned:
-- Creates unnecessary latency (1-30 seconds)
-- Wastes CPU and network resources  
-- Doesn't scale with multiple agents
-- Provides poor user experience
-
-Use the HTTP streaming endpoint for immediate message delivery."""
-
-        @self.mcp_server.tool() 
-        async def get_chat_messages(since: float = None) -> str:
-            """Get recent chat messages from the UI."""
-            return f"""🚨 POLLING NOT SUPPORTED - USE HTTP STREAMING INSTEAD
-
-This tool would traditionally return recent chat messages, but polling is FORBIDDEN.
-
-✅ CORRECT APPROACH - Use HTTP Streaming:
-POST http://localhost:{self.port}/mcp/stream/chat
-
-Parameters like 'since' are not needed with streaming - you get messages immediately as they arrive.
-
-🚫 Polling pattern (BANNED):
-while True:
-    messages = get_chat_messages(since=timestamp)  # ❌ NO!
-    await asyncio.sleep(1)  # ❌ NO!
-
-✅ Streaming pattern (REQUIRED):
-async with httpx.AsyncClient() as client:
-    async with client.stream('POST', 'http://localhost:{self.port}/mcp/stream/chat') as response:
-        async for line in response.aiter_lines():
-            # Process messages immediately
-            
-See get_chat_stream_info() for complete implementation."""
+        async def subscribe_chat_stream() -> str:
+            """Explain how to subscribe to the live chat stream."""
+            return (
+                "🌊 Real-time chat streaming is available via the dedicated HTTP "
+                "endpoint.\n\n"
+                "Use POST http://localhost:{self.port}/mcp/stream/chat with an "
+                "HTTP client that supports chunked transfer decoding (for "
+                "example httpx's `client.stream`). Each newline-delimited JSON "
+                "object contains a JSON-RPC result describing the message that "
+                "arrived. No polling, sleeps or repeated tool invocations are "
+                "required."
+            )
 
         # HTTP streaming endpoint available at POST /mcp/stream/chat
 

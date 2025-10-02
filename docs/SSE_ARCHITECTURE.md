@@ -86,57 +86,38 @@ A set that tracks all active SSE connections for efficient broadcasting.
 3. **Server** → Receives message in WebSocket handler
 4. **Server** → Calls `broadcast_chat_to_mcp()`
 5. **Server** → Stores message in `chat_messages` list
-6. **Server** → Iterates through `sse_clients` set
-7. **Server** → Sends SSE event to each connected client
-8. **MCP Client** → Receives message in real-time
+6. **Server** → Iterates through `chat_subscribers` list of asyncio queues
+7. **Server** → Pushes the chat payload onto each subscriber queue
+8. **MCP Client** → Receives the NDJSON message from the HTTP stream in real-time
 
 ### MCP Client subscribes:
 
-1. **MCP Client** → Connects to `GET /mcp/chat/subscribe`
-2. **Server** → Adds client to `sse_clients` set
-3. **Server** → Sends connection confirmation
-4. **Server** → Keeps connection alive with heartbeats
-5. **Server** → Pushes chat messages as they arrive
-6. **MCP Client** → Parses SSE events and processes messages
+1. **MCP Client** → Opens a streaming request to `POST /mcp/stream/chat`
+2. **Server** → Creates an asyncio queue and stores it in `chat_subscribers`
+3. **Server** → Streams a JSON-RPC confirmation message (NDJSON)
+4. **Server** → Awaits new chat events and writes them to the stream
+5. **MCP Client** → Iterates over each JSON line and processes the payload
 
 ## Backward Compatibility
 
 The polling-based approach is still supported:
 
-1. **MCP Client** → Calls `subscribe_chat` tool
-2. **MCP Client** → Periodically calls `get_chat_messages` with timestamp
-3. **Server** → Returns new messages since timestamp
-
-This allows older clients to continue working while new clients benefit from real-time SSE.
+Legacy polling APIs have been removed in favor of streaming. Clients should
+use the HTTP stream exclusively to avoid latency and resource overhead.
 
 ## Implementation Details
 
-### SSE Event Format
+### Streaming Message Format
 
-SSE uses a simple text-based protocol:
-
-```
-data: <JSON payload>
-
-```
-
-Multiple `data:` lines can be used for a single event. Events are separated by blank lines.
-
-### Heartbeat Messages
-
-To keep the connection alive and detect disconnections:
-
-```
-: heartbeat
-
-```
-
-Lines starting with `:` are comment lines (ignored by clients but keep the connection open).
+The HTTP stream emits newline-delimited JSON (NDJSON). Each line contains a
+JSON-RPC result with the chat message. Because the stream stays open there is
+no need for heartbeats or manual reconnection logic unless the network
+disconnects.
 
 ### Error Handling
 
-- **Connection Errors:** Automatically remove client from `sse_clients`
-- **Disconnected Clients:** Detected during broadcast, removed from set
+- **Connection Errors:** Automatically remove client from `chat_subscribers`
+- **Disconnected Clients:** Detected during broadcast, removed from the subscriber list
 - **Timeout:** Clients should reconnect if no data received for extended period
 
 ## Testing
@@ -158,15 +139,15 @@ pytest tests/test_unified_server.py::test_sse_chat_subscription -v
 ### Using curl
 
 ```bash
-curl -N http://localhost:8080/mcp/chat/subscribe
+curl -N -X POST http://localhost:8080/mcp/stream/chat
 ```
 
 ## Performance Considerations
 
 - **Memory:** Chat messages limited to last 100 entries
-- **Connections:** SSE uses one HTTP connection per client (lightweight)
+- **Connections:** Streaming uses one HTTP connection per client (lightweight)
 - **Bandwidth:** Messages only sent when chat activity occurs
-- **Heartbeat:** 30-second interval balances responsiveness vs overhead
+- **Heartbeat:** Not required because the NDJSON stream stays active until the client disconnects
 
 ## Security Considerations
 

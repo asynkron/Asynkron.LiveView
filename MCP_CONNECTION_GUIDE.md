@@ -212,8 +212,8 @@ Response includes all available tools:
 - `view_content` - Read a specific file
 - `update_content` - Modify existing content
 - `remove_content` - Delete a file
-- `subscribe_chat` - Subscribe to chat messages
-- `get_chat_messages` - Poll for chat messages
+- `get_chat_stream_info` - Learn how to use the streaming endpoint
+- `subscribe_chat_stream` - Quick reminder about streaming access
 
 ### 4. Call Tools
 
@@ -271,39 +271,22 @@ The server supports these JSON-RPC methods:
 - `view_content` - Read content of a specific File Id
 - `update_content` - Append to or replace content
 - `remove_content` - Delete a file by File Id
-- `subscribe_chat` - Subscribe to chat messages (returns confirmation)
-- `get_chat_messages` - Poll for new chat messages since timestamp
+- `get_chat_stream_info` - Detailed instructions for the streaming endpoint
+- `subscribe_chat_stream` - Quick reminder about streaming access
 
 ## Chat Integration
 
-### Option A: Server-Sent Events (SSE) - Recommended
+### Streaming Chat Messages (Recommended)
 
-Connect to the SSE endpoint for push-based chat notifications:
+Use the dedicated HTTP streaming endpoint to receive chat messages in real time:
 
 ```bash
-curl -N http://localhost:8080/mcp/chat/subscribe
+curl -N -X POST http://localhost:8080/mcp/stream/chat
 ```
 
-This returns a Server-Sent Events stream with chat messages from the UI.
-
-### Option B: Polling with get_chat_messages
-
-Use the MCP tool to poll for messages:
-
-```json
-POST /mcp
-{
-  "jsonrpc": "2.0",
-  "method": "tools/call",
-  "id": 4,
-  "params": {
-    "name": "get_chat_messages",
-    "arguments": {
-      "since": 1234567890.0
-    }
-  }
-}
-```
+The response uses newline-delimited JSON (NDJSON). Each line is a JSON-RPC result
+containing the latest chat activity. The connection is long-lived, so there is
+no need for polling or repeated tool invocations.
 
 ## Python Example
 

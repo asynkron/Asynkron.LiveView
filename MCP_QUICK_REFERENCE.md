@@ -106,11 +106,11 @@ curl -X POST http://localhost:8080/mcp \
 5. **remove_content** - Delete a file
    - `fileId` (required): File identifier
 
-6. **subscribe_chat** - Subscribe to chat messages
+6. **get_chat_stream_info** - Streaming endpoint instructions
    - No parameters
 
-7. **get_chat_messages** - Get chat messages
-   - `since` (optional): Timestamp
+7. **subscribe_chat_stream** - Quick reference for the streaming endpoint
+   - No parameters
 
 ## Example Session
 
