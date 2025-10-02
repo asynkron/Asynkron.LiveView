@@ -39,7 +39,14 @@ class MarkdownMCPServer:
         self.server = FastMCP(
             name="markdown-liveview",
             version="1.0.0",
-            instructions="FastMCP server for managing markdown files in the live view system"
+            instructions=(
+                "FastMCP server for managing markdown files in the live view system. "
+                "When generating content for show_content or update_content, use plain "
+                "markdown, Mermaid, Excalidraw, or Vega payloads. Avoid stray Mermaid "
+                "characters such as '{' or '(' and reserved names like 'node' unless "
+                "they are valid syntax. If you color Mermaid nodes, pick white or black "
+                "text based on the background brightness so labels stay readable."
+            )
         )
         
         # Ensure the markdown directory exists
@@ -55,7 +62,12 @@ class MarkdownMCPServer:
         
         @self.server.tool()
         async def show_content(content: str, title: str = None) -> str:
-            """Create new markdown content that will appear in the live view."""
+            """Create markdown content (plain, Mermaid, Excalidraw, or Vega) for the live view.
+
+            Keep Mermaid syntax valid—avoid stray braces, parentheses, or reserved words
+            such as ``node``—and when you add color to Mermaid elements, choose white or
+            black text that contrasts with the fill color.
+            """
             result = await self._show_content(content, title)
             return result.content[0].text if result.content else "Created"
         
@@ -73,7 +85,11 @@ class MarkdownMCPServer:
         
         @self.server.tool()
         async def update_content(fileId: str, content: str, mode: str = "append") -> str:
-            """Append to or replace an existing markdown entry."""
+            """Append to or replace markdown (plain, Mermaid, Excalidraw, or Vega) content.
+
+            Follow the same Mermaid syntax and color-contrast guidance described for
+            :func:`show_content` so updates render correctly for the agent and the UI.
+            """
             result = await self._update_content(fileId, content, mode)
             return result.content[0].text if result.content else "Updated"
         
