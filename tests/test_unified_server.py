@@ -5,9 +5,11 @@ from pathlib import Path
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
+
 # Ensure imports resolve to the repository modules.
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+import server as server_module  # noqa: E402
 from server import UnifiedMarkdownServer  # noqa: E402
 
 
@@ -49,6 +51,7 @@ async def test_index_renders_selected_file(tmp_path: Path) -> None:
         assert state["selectedFile"] == "first.md"
         assert "Primary file" in state["content"]
         assert len(state["files"]) == 2
+        assert any(node.get("type") == "file" for node in state.get("fileTree", []))
     finally:
         await client.close()
 
@@ -71,11 +74,49 @@ async def test_file_listing_and_fetch(tmp_path: Path) -> None:
         payload = await listing.json()
         assert payload["files"]
         assert payload["files"][0]["name"] == "note.md"
+        assert payload["tree"]
+        assert payload["tree"][0]["type"] == "file"
 
         file_response = await client.get(f"/api/file?path={target}&file=note.md")
         assert file_response.status == 200
         file_payload = await file_response.json()
         assert file_payload["content"].startswith("# Note")
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_recursive_listing_includes_nested_files(tmp_path: Path) -> None:
+    """Nested markdown files should appear in both the flat list and the tree."""
+
+    nested_dir = tmp_path / "sub" / "docs"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "deep.md").write_text("# Deep dive\n")
+
+    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    client = await _create_test_client(server)
+
+    try:
+        listing = await client.get(f"/api/files?path={tmp_path}")
+        assert listing.status == 200
+        payload = await listing.json()
+
+        assert any(entry["relativePath"] == "sub/docs/deep.md" for entry in payload["files"])
+
+        def find_directory(nodes, target):
+            for node in nodes:
+                if node.get("type") != "directory":
+                    continue
+                if node.get("relativePath") == target:
+                    return node
+                found = find_directory(node.get("children", []), target)
+                if found:
+                    return found
+            return None
+
+        docs_node = find_directory(payload["tree"], "sub/docs")
+        assert docs_node is not None
+        assert any(child.get("relativePath") == "sub/docs/deep.md" for child in docs_node.get("children", []))
     finally:
         await client.close()
 
@@ -157,3 +198,27 @@ async def test_raw_download_endpoint(tmp_path: Path) -> None:
         assert text.startswith("# Downloadable")
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_watcher_uses_recursive_mode(tmp_path: Path, monkeypatch) -> None:
+    """File watchers must observe nested directories to power the tree view."""
+
+    events = {}
+
+    class DummyObserver:
+        def schedule(self, handler, path, recursive=False):
+            events["handler"] = handler
+            events["path"] = path
+            events["recursive"] = recursive
+
+        def start(self):
+            events["started"] = True
+
+    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    monkeypatch.setattr(server_module, "Observer", DummyObserver)
+
+    await server._ensure_watcher(tmp_path)
+
+    assert events.get("recursive") is True
+    assert Path(events.get("path", "")) == tmp_path
