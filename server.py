@@ -11,6 +11,7 @@ import argparse
 import json
 import logging
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
@@ -129,7 +130,8 @@ class UnifiedMarkdownServer:
                 
                 result = "📋 **Markdown Files:**\n\n"
                 for file_info in files:
-                    result += f"- **{file_info['filename']}** ({file_info['size']} bytes, modified: {file_info['modified']})\n"
+                    modified_time = datetime.fromtimestamp(file_info['updated']).strftime('%Y-%m-%d %H:%M:%S')
+                    result += f"- **{file_info['name']}** ({file_info['size']} bytes, modified: {modified_time})\n"
                 return result
             except Exception as e:
                 return f"❌ Error listing content: {str(e)}"
@@ -830,10 +832,14 @@ See get_chat_stream_info() for complete implementation."""
                         request_id = json_data.get('id')
                         
                         if method == 'initialize':
-                            # Initialize response
+                            # Initialize response - declare server capabilities
                             result = {
                                 "protocolVersion": "2024-11-05",
-                                "capabilities": {"tools": {}},
+                                "capabilities": {
+                                    "tools": {
+                                     #//TODO: fucking put the right shit here
+                                    }
+                                },
                                 "serverInfo": {
                                     "name": self.mcp_server.name,
                                     "version": "1.0.0"
@@ -892,20 +898,48 @@ See get_chat_stream_info() for complete implementation."""
                                 
                                 # Convert result to MCP format - FastMCP returns ToolResult objects
                                 try:
-                                    if hasattr(result, 'value'):
-                                        # FastMCP ToolResult has a value attribute
+                                    # Handle different types of FastMCP ToolResult objects
+                                    if hasattr(result, 'content') and result.content:
+                                        # For ToolResult with content array
+                                        if isinstance(result.content, list) and len(result.content) > 0:
+                                            first_content = result.content[0]
+                                            if hasattr(first_content, 'text'):
+                                                text_content = first_content.text
+                                            else:
+                                                text_content = str(first_content)
+                                        else:
+                                            text_content = str(result.content)
+                                    elif hasattr(result, 'value'):
+                                        # For ToolResult with value attribute
                                         text_content = str(result.value)
-                                    elif hasattr(result, 'content'):
-                                        # Alternative: check for content attribute
-                                        if result.content and len(result.content) > 0:
-                                            text_content = result.content[0].text if hasattr(result.content[0], 'text') else str(result.content[0])
+                                    elif hasattr(result, 'text'):
+                                        # For ToolResult with direct text attribute
+                                        text_content = result.text
+                                    elif isinstance(result, str):
+                                        # If it's already a string
+                                        text_content = result
+                                    else:
+                                        # Try to get the actual return value from the function
+                                        # FastMCP often wraps the actual result
+                                        if hasattr(result, '__dict__'):
+                                            # Look for common attributes that contain the actual result
+                                            for attr in ['value', 'text', 'content', 'result', 'data']:
+                                                if hasattr(result, attr):
+                                                    attr_value = getattr(result, attr)
+                                                    if isinstance(attr_value, str):
+                                                        text_content = attr_value
+                                                        break
+                                                    elif isinstance(attr_value, list) and attr_value:
+                                                        if hasattr(attr_value[0], 'text'):
+                                                            text_content = attr_value[0].text
+                                                            break
+                                            else:
+                                                # Fallback: use string representation
+                                                text_content = str(result)
                                         else:
                                             text_content = str(result)
-                                    else:
-                                        # Fallback: direct string conversion
-                                        text_content = str(result)
                                 except Exception as e:
-                                    logger.error(f"Error extracting tool result: {e}")
+                                    logger.error(f"Error extracting tool result: {e}", exc_info=True)
                                     text_content = str(result)
                                 
                                 return web.json_response({
