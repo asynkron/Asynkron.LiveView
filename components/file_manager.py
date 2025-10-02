@@ -58,6 +58,18 @@ class FileManager:
 
         return file_path.read_text(encoding="utf-8")
 
+    def write_markdown(self, root: Path, relative_path: str, content: str) -> None:
+        """Persist ``content`` to the markdown file located at ``relative_path``."""
+
+        file_path = self._resolve_relative(root, relative_path)
+        if file_path.suffix.lower() != ".md":
+            raise ValueError("Only markdown files can be edited through this endpoint")
+
+        if not file_path.exists():
+            raise FileNotFoundError(relative_path)
+
+        file_path.write_text(content, encoding="utf-8")
+
     def delete_markdown(self, root: Path, relative_path: str) -> None:
         """Remove a markdown file from disk if it exists."""
 

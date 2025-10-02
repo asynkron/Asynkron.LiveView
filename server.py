@@ -226,6 +226,33 @@ class UnifiedMarkdownServer:
         await self.handle_filesystem_event(root, "deleted", file_param)
         return web.json_response({"success": True})
 
+    async def handle_update_file(self, request: web.Request) -> web.Response:
+        path_param = request.rel_url.query.get("path")
+        file_param = request.rel_url.query.get("file")
+        if not file_param:
+            return web.json_response({"error": "Missing file parameter"}, status=400)
+
+        try:
+            payload = await request.json()
+        except json.JSONDecodeError:
+            return web.json_response({"error": "Invalid JSON payload"}, status=400)
+
+        if "content" not in payload:
+            return web.json_response({"error": "Missing content"}, status=400)
+
+        content = str(payload["content"])
+        root, _ = self.resolve_root(path_param)
+
+        try:
+            self.file_manager.write_markdown(root, file_param, content)
+        except FileNotFoundError:
+            return web.json_response({"error": "File not found"}, status=404)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+        await self.handle_filesystem_event(root, "modified", file_param)
+        return web.json_response({"success": True, "file": file_param, "content": content})
+
     # ------------------------------------------------------------------
     # Websocket handling
     # ------------------------------------------------------------------
@@ -317,6 +344,7 @@ class UnifiedMarkdownServer:
         app.router.add_get("/api/file", self.handle_get_file)
         app.router.add_get("/api/file/raw", self.handle_get_file_raw)
         app.router.add_delete("/api/file", self.handle_delete_file)
+        app.router.add_put("/api/file", self.handle_update_file)
         app.router.add_get("/ws", self.websocket_handler)
         app.on_startup.append(self.on_startup)
         app.on_shutdown.append(self.on_shutdown)
