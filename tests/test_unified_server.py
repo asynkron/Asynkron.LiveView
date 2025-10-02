@@ -1,21 +1,19 @@
-"""Unit tests for the unified LiveView + MCP server."""
-
-from pathlib import Path
-from typing import Optional
+import json
 import sys
+from pathlib import Path
 
-# Ensure the project root is importable when tests run from the repository root.
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-import httpx
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from server import UnifiedMarkdownServer
+# Ensure imports resolve to the repository modules.
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from server import UnifiedMarkdownServer  # noqa: E402
 
 
 async def _create_test_client(server: UnifiedMarkdownServer) -> TestClient:
-    """Spin up an in-memory aiohttp server and client for testing."""
+    """Spin up an in-memory aiohttp test client for the unified server."""
+
     app = server.create_app()
     test_server = TestServer(app)
     client = TestClient(test_server)
@@ -23,290 +21,115 @@ async def _create_test_client(server: UnifiedMarkdownServer) -> TestClient:
     return client
 
 
-def _extract_file_id(response_text: str) -> Optional[str]:
-    """Helper that pulls the generated File Id out of an MCP response."""
-    for line in response_text.splitlines():
-        lower_line = line.lower()
-        marker = "file id:"
-        if marker in lower_line:
-            idx = lower_line.index(marker) + len(marker)
-            remainder = line[idx:].strip()
-            if not remainder:
-                continue
-            # Remove any trailing metadata such as titles wrapped in parentheses.
-            candidate = remainder.split("(", 1)[0].strip()
-            if candidate:
-                return candidate
-    return None
-
-
 @pytest.mark.asyncio
-async def test_server_boots_and_serves_content(tmp_path: Path) -> None:
-    """Verify that the HTTP portion of the server starts and returns JSON."""
+async def test_index_renders_selected_file(tmp_path: Path) -> None:
+    """Ensure the HTML payload includes the initial state for the first file."""
+
+    first = tmp_path / "first.md"
+    first.write_text("# Hello\n\nPrimary file")
+    (tmp_path / "second.md").write_text("# Second\n\nContent")
+
     server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
-
     client = await _create_test_client(server)
-    try:
-        response = await client.get("/api/content")
-        assert response.status == 200
 
-        payload = await response.json()
-        # Expect the endpoint to return the watched directory and fallback content.
-        assert payload["files"] >= 1
-        assert Path(payload["directory"]) == tmp_path
-        assert "Directory Not Found or Empty" in payload["content"]
+    try:
+        response = await client.get(f"/?path={tmp_path}")
+        assert response.status == 200
+        html = await response.text()
+
+        marker = "window.__INITIAL_STATE__ = "
+        start = html.find(marker)
+        assert start != -1
+        start += len(marker)
+        end = html.find(";", start)
+        assert end != -1
+        payload = html[start:end].strip()
+        state = json.loads(payload)
+
+        assert state["selectedFile"] == "first.md"
+        assert "Primary file" in state["content"]
+        assert len(state["files"]) == 2
     finally:
         await client.close()
 
 
 @pytest.mark.asyncio
-async def test_mcp_http_endpoints(tmp_path: Path) -> None:
-    """Ensure the MCP-over-HTTP endpoint lists tools and creates content."""
-    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+async def test_file_listing_and_fetch(tmp_path: Path) -> None:
+    """Verify that the JSON endpoints expose the directory contents."""
 
-    # Interact with the FastMCP Starlette app directly via httpx's ASGI transport.
-    mcp_app = server.mcp_http_app
-    lifespan = mcp_app.router.lifespan_context(mcp_app)
-    async with lifespan:
-        transport = httpx.ASGITransport(app=mcp_app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as mcp_client:
-            # Ask the MCP bridge for the available tools.
-            tools_request = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/list",
-                "params": {},
-            }
-            response = await mcp_client.post(
-                "/mcp",
-                json=tools_request,
-                headers={"accept": "application/json, text/event-stream"},
-            )
-            assert response.status_code == 200
+    target = tmp_path / "docs"
+    target.mkdir()
+    file_path = target / "note.md"
+    file_path.write_text("# Note\n\nHello from tests")
 
-            payload = response.json()
-            tools = payload["result"]["tools"]
-            assert any(tool["name"] == "show_content" for tool in tools)
-
-            # Create a markdown snippet through MCP and ensure it lands on disk.
-            show_request = {
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "tools/call",
-                "params": {
-                    "name": "show_content",
-                    "arguments": {
-                        "title": "Test Entry",
-                        "content": "# Hello from tests!\n",
-                    },
-                },
-            }
-            response = await mcp_client.post(
-                "/mcp",
-                json=show_request,
-                headers={"accept": "application/json, text/event-stream"},
-            )
-            assert response.status_code == 200
-
-            payload = response.json()
-            text_block = payload["result"]["content"][0]["text"]
-            file_id = _extract_file_id(text_block)
-            assert file_id is not None
-
-            created_path = tmp_path / file_id
-            assert created_path.exists()
-            assert "Hello from tests" in created_path.read_text()
-
-
-@pytest.mark.asyncio
-async def test_api_content_includes_file_list(tmp_path: Path) -> None:
-    """Verify that /api/content returns fileList with metadata."""
-    # Create a test markdown file
-    test_file = tmp_path / "test.md"
-    test_file.write_text("# Test Content\n\nThis is a test.")
-    
-    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
+    server = UnifiedMarkdownServer(markdown_dir=str(target))
     client = await _create_test_client(server)
-    try:
-        response = await client.get("/api/content")
-        assert response.status == 200
 
-        payload = await response.json()
-        assert "fileList" in payload
-        assert isinstance(payload["fileList"], list)
-        assert len(payload["fileList"]) == 1
-        
-        file_info = payload["fileList"][0]
-        assert file_info["name"] == "test.md"
-        assert file_info["fileId"] == "test.md"
-        assert "path" in file_info
-        assert "created" in file_info
-        assert "updated" in file_info
+    try:
+        listing = await client.get(f"/api/files?path={target}")
+        assert listing.status == 200
+        payload = await listing.json()
+        assert payload["files"]
+        assert payload["files"][0]["name"] == "note.md"
+
+        file_response = await client.get(f"/api/file?path={target}&file=note.md")
+        assert file_response.status == 200
+        file_payload = await file_response.json()
+        assert file_payload["content"].startswith("# Note")
     finally:
         await client.close()
 
 
 @pytest.mark.asyncio
-async def test_delete_file_endpoint(tmp_path: Path) -> None:
-    """Verify that /api/delete successfully deletes files."""
-    # Create a test markdown file
-    test_file = tmp_path / "delete-me.md"
-    test_file.write_text("# Delete Me\n\nThis file will be deleted.")
-    
+async def test_delete_endpoint_removes_files(tmp_path: Path) -> None:
+    """Deleting a file through the API removes it from disk."""
+
+    file_path = tmp_path / "remove-me.md"
+    file_path.write_text("# Delete\n")
+
     server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
     client = await _create_test_client(server)
-    try:
-        # Verify the file exists
-        assert test_file.exists()
-        
-        # Delete the file via API
-        response = await client.post("/api/delete", json={"fileId": "delete-me.md"})
-        assert response.status == 200
 
+    try:
+        response = await client.delete(f"/api/file?path={tmp_path}&file=remove-me.md")
+        assert response.status == 200
         payload = await response.json()
         assert payload["success"] is True
-        assert "deleted" in payload["message"].lower()
-        
-        # Verify the file was actually deleted
-        assert not test_file.exists()
+        assert not file_path.exists()
     finally:
         await client.close()
 
 
 @pytest.mark.asyncio
-async def test_get_file_endpoint(tmp_path: Path) -> None:
-    """Verify that /api/file retrieves individual file content."""
-    # Create a test markdown file
-    test_content = "# Individual File\n\nThis is a single file's content."
-    test_file = tmp_path / "get-me.md"
-    test_file.write_text(test_content)
-    
+async def test_missing_file_returns_404(tmp_path: Path) -> None:
+    """Missing files should yield a clear HTTP 404 response."""
+
     server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
     client = await _create_test_client(server)
+
     try:
-        response = await client.get("/api/file?fileId=get-me.md")
-        assert response.status == 200
-
-        payload = await response.json()
-        assert payload["success"] is True
-        assert payload["fileId"] == "get-me.md"
-        assert payload["content"] == test_content
-    finally:
-        await client.close()
-
-
-@pytest.mark.asyncio
-async def test_delete_nonexistent_file(tmp_path: Path) -> None:
-    """Verify that deleting a nonexistent file returns an error."""
-    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
-    client = await _create_test_client(server)
-    try:
-        response = await client.post("/api/delete", json={"fileId": "nonexistent.md"})
+        response = await client.get(f"/api/file?path={tmp_path}&file=absent.md")
         assert response.status == 404
-
         payload = await response.json()
-        assert payload["success"] is False
-        assert "not found" in payload["error"].lower()
+        assert payload["error"] == "File not found"
     finally:
         await client.close()
 
 
 @pytest.mark.asyncio
-async def test_get_nonexistent_file(tmp_path: Path) -> None:
-    """Verify that getting a nonexistent file returns an error."""
-    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
-    client = await _create_test_client(server)
-    try:
-        response = await client.get("/api/file?fileId=nonexistent.md")
-        assert response.status == 404
+async def test_raw_download_endpoint(tmp_path: Path) -> None:
+    """The raw endpoint should stream the markdown content without JSON."""
 
-        payload = await response.json()
-        assert payload["success"] is False
-        assert "not found" in payload["error"].lower()
-    finally:
-        await client.close()
-
-
-@pytest.mark.asyncio
-async def test_toggle_sticky_endpoint(tmp_path: Path) -> None:
-    """Verify that /api/toggle-sticky toggles sticky status correctly."""
-    # Create test markdown files
-    file1 = tmp_path / "file1.md"
-    file1.write_text("# File 1\n\nFirst file.")
-    file2 = tmp_path / "file2.md"
-    file2.write_text("# File 2\n\nSecond file.")
-    
-    server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
-    client = await _create_test_client(server)
-    try:
-        # Initially, no files should be sticky
-        response = await client.get("/api/content")
-        payload = await response.json()
-        assert all(not f["isSticky"] for f in payload["fileList"])
-        
-        # Toggle file2 to be sticky
-        response = await client.post("/api/toggle-sticky", json={"fileId": "file2.md"})
-        assert response.status == 200
-        payload = await response.json()
-        assert payload["success"] is True
-        assert payload["isSticky"] is True
-        
-        # Verify file2 is now sticky and at the top
-        response = await client.get("/api/content")
-        payload = await response.json()
-        file_list = payload["fileList"]
-        assert file_list[0]["name"] == "file2.md"
-        assert file_list[0]["isSticky"] is True
-        assert file_list[1]["isSticky"] is False
-        
-        # Toggle file1 to be sticky (should replace file2 as sticky)
-        response = await client.post("/api/toggle-sticky", json={"fileId": "file1.md"})
-        assert response.status == 200
-        payload = await response.json()
-        assert payload["success"] is True
-        assert payload["isSticky"] is True
-        
-        # Verify only file1 is now sticky and at the top
-        response = await client.get("/api/content")
-        payload = await response.json()
-        file_list = payload["fileList"]
-        assert file_list[0]["name"] == "file1.md"
-        assert file_list[0]["isSticky"] is True
-        assert file_list[1]["isSticky"] is False
-        
-        # Toggle file1 again to remove sticky status
-        response = await client.post("/api/toggle-sticky", json={"fileId": "file1.md"})
-        assert response.status == 200
-        payload = await response.json()
-        assert payload["success"] is True
-        assert payload["isSticky"] is False
-        
-        # Verify no files are sticky
-        response = await client.get("/api/content")
-        payload = await response.json()
-        assert all(not f["isSticky"] for f in payload["fileList"])
-    finally:
-        await client.close()
-
-
-@pytest.mark.asyncio
-async def test_agent_feed_websocket(tmp_path: Path) -> None:
-    """Ensure chat messages are pushed to connected CLI host feeds."""
+    file_path = tmp_path / "download.md"
+    file_path.write_text("# Downloadable\n")
 
     server = UnifiedMarkdownServer(markdown_dir=str(tmp_path))
     client = await _create_test_client(server)
-    try:
-        ws = await client.ws_connect("/agent-feed")
-        try:
-            hello = await ws.receive_json()
-            assert hello["type"] == "hello"
 
-            await server.broadcast_chat_to_agents("Hello from tests")
-            event = await ws.receive_json()
-            assert event["type"] == "chat"
-            assert event["text"] == "Hello from tests"
-        finally:
-            await ws.close()
+    try:
+        response = await client.get(f"/api/file/raw?path={tmp_path}&file=download.md")
+        assert response.status == 200
+        text = await response.text()
+        assert text.startswith("# Downloadable")
     finally:
         await client.close()
-

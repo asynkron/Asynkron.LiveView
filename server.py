@@ -1,842 +1,341 @@
 #!/usr/bin/env python3
-"""
-Unified Server for Markdown Live View with MCP Integration
+"""A minimal markdown live viewer with websocket powered directory updates."""
 
-Combines both the HTTP LiveView server and MCP server functionality into a single application.
-Provides both web interface for viewing markdown files and MCP protocol support for AI assistants.
-"""
+from __future__ import annotations
 
-import asyncio
 import argparse
+import asyncio
 import json
 import logging
-import time
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from urllib.parse import quote
-from html import escape
-from aiohttp import web, WSMsgType
-from aiohttp.web_response import Response
-from watchdog.observers import Observer
+from typing import Dict, Optional
+from urllib.parse import unquote
+
+from aiohttp import WSMsgType, web
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
-import anyio
-
-# Import FastMCP functionality
-from fastmcp import FastMCP
-
-# Import component modules
 from components.file_manager import FileManager
-from components.template_handler import TemplateHandler
-from components.request_handlers import RequestHandlers
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
-class _ClosedResourceFilter(logging.Filter):
-    """Ignore benign ClosedResourceError exceptions from FastMCP."""
+class MarkdownDirectoryEventHandler(FileSystemEventHandler):
+    """Forward filesystem events for markdown files back to the aiohttp loop."""
 
-    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - simple guard
-        if not record.exc_info:
-            return True
-        exc = record.exc_info[1]
-        return not isinstance(exc, anyio.ClosedResourceError)
-
-class MarkdownFileHandler(FileSystemEventHandler):
-    """Handles file system events for markdown files."""
-    
-    def __init__(self, server, loop):
-        self.server = server
-        self.loop = loop
+    def __init__(self, server: "UnifiedMarkdownServer", root: Path) -> None:
         super().__init__()
-    
-    def on_created(self, event):
-        if not event.is_directory and event.src_path.endswith('.md'):
-            logger.info(f"New markdown file detected: {event.src_path}")
-            # Schedule the coroutine on the main event loop
-            asyncio.run_coroutine_threadsafe(
-                self.server.notify_clients_file_change(event.src_path), 
-                self.loop
-            )
-    
-    def on_modified(self, event):
-        if not event.is_directory and event.src_path.endswith('.md'):
-            logger.info(f"Markdown file modified: {event.src_path}")
-            # Schedule the coroutine on the main event loop
-            asyncio.run_coroutine_threadsafe(
-                self.server.notify_clients_file_change(event.src_path), 
-                self.loop
-            )
-    
-    def on_deleted(self, event):
-        if not event.is_directory and event.src_path.endswith('.md'):
-            logger.info(f"Markdown file deleted: {event.src_path}")
-            # Schedule the coroutine on the main event loop
-            asyncio.run_coroutine_threadsafe(
-                self.server.notify_clients_file_change(event.src_path), 
-                self.loop
-            )
+        self.server = server
+        self.root = root.resolve()
+
+    def on_created(self, event):  # pragma: no cover - exercised via watcher integration tests
+        if not event.is_directory:
+            self._handle_event("created", event.src_path)
+
+    def on_modified(self, event):  # pragma: no cover - exercised via watcher integration tests
+        if not event.is_directory:
+            self._handle_event("modified", event.src_path)
+
+    def on_deleted(self, event):  # pragma: no cover - exercised via watcher integration tests
+        if not event.is_directory:
+            self._handle_event("deleted", event.src_path)
+
+    def on_moved(self, event):  # pragma: no cover - exercised via watcher integration tests
+        if not event.is_directory:
+            self._handle_event("moved", event.dest_path or event.src_path)
+
+    def _handle_event(self, kind: str, raw_path: Optional[str]) -> None:
+        if not raw_path or not raw_path.endswith(".md"):
+            return
+
+        try:
+            resolved = Path(raw_path).expanduser().resolve()
+            relative = resolved.relative_to(self.root).as_posix()
+        except Exception:  # File may have been removed or moved away.
+            relative = None
+
+        if self.server.loop is None:
+            return
+
+        asyncio.run_coroutine_threadsafe(
+            self.server.handle_filesystem_event(self.root, kind, relative),
+            self.server.loop,
+        )
+
 
 class UnifiedMarkdownServer:
-    """Unified server class combining LiveView and MCP functionality."""
-    
-    def __init__(
-        self,
-        markdown_dir: str = "markdown",
-        port: int = 8080,
-        enable_mcp: bool = True,
-        mcp_host: str = "127.0.0.1",
-        mcp_port: Optional[int] = None,
-    ):
-        self.default_markdown_dir = Path(markdown_dir)
-        self.markdown_dir = self.default_markdown_dir  # Current active directory
+    """Serve a single markdown file view backed by a directory watcher."""
+
+    def __init__(self, markdown_dir: str = "markdown", port: int = 8080) -> None:
+        self.default_root = Path(markdown_dir).expanduser().resolve()
         self.port = port
-        self.mcp_host = mcp_host
-        self.mcp_port = mcp_port or (port + 1)
-        self.clients: set = set()
-        # Track CLI host WebSocket connections that should receive chat events
-        self.agent_feed_clients: set[web.WebSocketResponse] = set()
-        self.observer = None
-        self.enable_mcp = enable_mcp
-        self.sticky_files: Dict[str, str] = {}  # Maps directory path to sticky filename
-        self._mcp_http_server_task: Optional[asyncio.Task] = None
-        self._mcp_uvicorn_server = None
+        self.file_manager = FileManager()
+        self.template_path = Path(__file__).resolve().parent / "templates" / "unified_index.html"
 
-        # Initialize component modules (pass sticky_files reference to FileManager)
-        self.file_manager = FileManager(self.default_markdown_dir, self.sticky_files)
-        self.template_handler = TemplateHandler(
-            Path(__file__).resolve().parent / "templates" / "unified_index.html"
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.clients: Dict[web.WebSocketResponse, str] = {}
+        self.watchers: Dict[Path, Observer] = {}
+
+    # ------------------------------------------------------------------
+    # aiohttp lifecycle helpers
+    # ------------------------------------------------------------------
+    async def on_startup(self, app: web.Application) -> None:
+        self.loop = asyncio.get_running_loop()
+        if not self.default_root.exists():
+            self.default_root.mkdir(parents=True, exist_ok=True)
+        logger.info("Serving markdown from %s", self.default_root)
+
+    async def on_shutdown(self, app: web.Application) -> None:
+        for ws in list(self.clients.keys()):
+            await ws.close()
+        self.clients.clear()
+
+        for observer in self.watchers.values():
+            observer.stop()
+            observer.join(timeout=1)
+        self.watchers.clear()
+
+    # ------------------------------------------------------------------
+    # Path helpers
+    # ------------------------------------------------------------------
+    def resolve_root(self, path_param: Optional[str]) -> tuple[Path, str]:
+        if path_param:
+            candidate = Path(unquote(path_param)).expanduser()
+            display_value = path_param
+        else:
+            candidate = self.default_root
+            display_value = str(self.default_root)
+
+        resolved = candidate.resolve()
+        return resolved, display_value
+
+    # ------------------------------------------------------------------
+    # HTTP handlers
+    # ------------------------------------------------------------------
+    async def handle_index(self, request: web.Request) -> web.Response:
+        path_param = request.rel_url.query.get("path")
+        file_param = request.rel_url.query.get("file")
+
+        root, original_path_argument = self.resolve_root(path_param)
+        files = self.file_manager.list_markdown_files(root)
+        selected_file = None
+        error_message = None
+
+        fallback = self.file_manager.fallback_markdown(root)
+
+        if file_param:
+            try:
+                content = self.file_manager.read_markdown(root, file_param)
+                selected_file = file_param
+            except (FileNotFoundError, ValueError):
+                content = fallback
+                error_message = f"File not found: {file_param}"
+        elif files:
+            selected_file = files[0]["relativePath"]
+            content = self.file_manager.read_markdown(root, selected_file)
+        else:
+            content = fallback
+
+        initial_state = {
+            "rootPath": str(root),
+            "pathArgument": original_path_argument,
+            "files": files,
+            "selectedFile": selected_file,
+            "content": content,
+            "error": error_message,
+            "fallback": fallback,
+        }
+
+        html = self.template_path.read_text(encoding="utf-8")
+        html = html.replace("__INITIAL_STATE_JSON__", json.dumps(initial_state))
+        return web.Response(text=html, content_type="text/html")
+
+    async def handle_list_files(self, request: web.Request) -> web.Response:
+        path_param = request.rel_url.query.get("path")
+        root, original = self.resolve_root(path_param)
+        files = self.file_manager.list_markdown_files(root)
+
+        return web.json_response(
+            {
+                "rootPath": str(root),
+                "pathArgument": original,
+                "files": files,
+            }
         )
-        self.print_template_path = Path(__file__).resolve().parent / "templates" / "print_view.html"
-        self.request_handlers = RequestHandlers(self.default_markdown_dir)
-        
-        # Initialize FastMCP server if enabled
-        if self.enable_mcp:
-            self.mcp_server = FastMCP(
-                name="markdown-liveview",
-                version="1.0.0",
-                instructions="MCP server for managing markdown files in the live view system"
-            )
-            self._register_mcp_tools()
-            # Create the reusable ASGI application that FastMCP exposes for HTTP transport.
-            # We keep a reference so we don't need to recreate the Starlette app per request.
-            self._mcp_http_app = self.mcp_server.http_app(
-                transport='http',
-                json_response=True,
-                stateless_http=True,
-            )
-            self._install_closed_resource_filter()
-            logger.info(f"FastMCP Server initialized for directory: {self.default_markdown_dir}")
 
-    @property
-    def mcp_http_app(self):
-        """Expose the FastMCP Starlette application for testing utilities."""
-        return getattr(self, "_mcp_http_app", None)
+    async def handle_get_file(self, request: web.Request) -> web.Response:
+        path_param = request.rel_url.query.get("path")
+        file_param = request.rel_url.query.get("file")
+        if not file_param:
+            return web.json_response({"error": "Missing file parameter"}, status=400)
 
-    def _install_closed_resource_filter(self) -> None:
-        """Suppress benign ClosedResourceError logs from FastMCP's router."""
+        root, original = self.resolve_root(path_param)
 
-        transport_logger = logging.getLogger("mcp.server.streamable_http")
+        try:
+            content = self.file_manager.read_markdown(root, file_param)
+        except FileNotFoundError:
+            return web.json_response({"error": "File not found"}, status=404)
+        except ValueError:
+            return web.json_response({"error": "Invalid file path"}, status=400)
 
-        # Avoid stacking duplicate filters when multiple server instances are created.
-        if not any(isinstance(f, _ClosedResourceFilter) for f in transport_logger.filters):
-            transport_logger.addFilter(_ClosedResourceFilter())
+        return web.json_response(
+            {
+                "rootPath": str(root),
+                "pathArgument": original,
+                "file": file_param,
+                "content": content,
+            }
+        )
 
-    def _register_mcp_tools(self):
-        """Register all available MCP tools with FastMCP."""
-        
-        @self.mcp_server.tool()
-        async def show_content(content: str, title: str = None) -> str:
-            """Create new markdown content that appears in the live view."""
-            if not content:
-                return "Error: Content cannot be empty"
+    async def handle_get_file_raw(self, request: web.Request) -> web.Response:
+        path_param = request.rel_url.query.get("path")
+        file_param = request.rel_url.query.get("file")
+        if not file_param:
+            return web.Response(text="Missing file parameter", status=400)
 
-            file_id = self.file_manager.generate_file_id()
-            file_path = self.default_markdown_dir / file_id
+        root, _ = self.resolve_root(path_param)
+        try:
+            content = self.file_manager.read_markdown(root, file_param)
+        except FileNotFoundError:
+            return web.Response(text="File not found", status=404)
+        except ValueError:
+            return web.Response(text="Invalid file path", status=400)
 
-            try:
-                file_path.write_text(content, encoding='utf-8')
-                result_msg = f"✅ Content created with File Id: {file_id}"
-                if title:
-                    result_msg += f" (Title: {title})"
-                return result_msg
-            except Exception as e:
-                return f"❌ Error creating content: {str(e)}"
-        
-        @self.mcp_server.tool()
-        async def list_content() -> str:
-            """List every markdown entry managed by the server."""
-            try:
-                files = self.file_manager.get_markdown_files()
-                if not files:
-                    return "📁 No markdown files found"
-                
-                result = "📋 **Markdown Files:**\n\n"
-                for file_info in files:
-                    modified_time = datetime.fromtimestamp(file_info['updated']).strftime('%Y-%m-%d %H:%M:%S')
-                    result += f"- **{file_info['name']}** ({file_info['size']} bytes, modified: {modified_time})\n"
-                return result
-            except Exception as e:
-                return f"❌ Error listing content: {str(e)}"
-        
-        @self.mcp_server.tool()
-        async def view_content(fileId: str) -> str:
-            """Read markdown content using a File Id."""
-            try:
-                sanitized_id = self.file_manager.sanitize_file_id(fileId)
-                file_path = self.default_markdown_dir / sanitized_id
-                
-                if not file_path.exists():
-                    return f"❌ File not found: {fileId}"
-                
-                content = file_path.read_text(encoding='utf-8')
-                return f"📄 **Content of {fileId}:**\n\n{content}"
-            except Exception as e:
-                return f"❌ Error reading content: {str(e)}"
-        
-        @self.mcp_server.tool()
-        async def update_content(fileId: str, content: str, mode: str = "append") -> str:
-            """Append to or replace existing markdown content."""
-            try:
-                sanitized_id = self.file_manager.sanitize_file_id(fileId)
-                file_path = self.default_markdown_dir / sanitized_id
-                
-                if not file_path.exists():
-                    return f"❌ File not found: {fileId}"
-                
-                if mode == "replace":
-                    file_path.write_text(content, encoding='utf-8')
-                    return f"✅ Content replaced in {fileId}"
-                else:  # append mode
-                    existing_content = file_path.read_text(encoding='utf-8')
-                    new_content = existing_content + "\n" + content
-                    file_path.write_text(new_content, encoding='utf-8')
-                    return f"✅ Content appended to {fileId}"
-            except Exception as e:
-                return f"❌ Error updating content: {str(e)}"
-        
-        @self.mcp_server.tool()
-        async def remove_content(fileId: str) -> str:
-            """Delete markdown content using its File Id."""
-            try:
-                sanitized_id = self.file_manager.sanitize_file_id(fileId)
-                file_path = self.default_markdown_dir / sanitized_id
-                
-                if not file_path.exists():
-                    return f"❌ File not found: {fileId}"
-                
-                file_path.unlink()
-                return f"✅ Content deleted: {fileId}"
-            except Exception as e:
-                return f"❌ Error removing content: {str(e)}"
+        safe_name = Path(file_param).name
+        headers = {
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Content-Type": "text/markdown; charset=utf-8",
+        }
+        return web.Response(text=content, headers=headers)
 
-    def _sanitize_file_id(self, file_id: str) -> str:
-        """Ensure the provided File Id maps to a safe filename."""
-        return self.file_manager.sanitize_file_id(file_id)
+    async def handle_delete_file(self, request: web.Request) -> web.Response:
+        path_param = request.rel_url.query.get("path")
+        file_param = request.rel_url.query.get("file")
+        if not file_param:
+            return web.json_response({"error": "Missing file parameter"}, status=400)
 
-    def resolve_markdown_path(self, path_param: str = None) -> Path:
-        """Resolve the markdown directory path from various sources."""
-        return self.request_handlers.resolve_markdown_path(path_param)
-    
-    def get_markdown_files(self, custom_path: Path = None) -> List[Dict[str, Any]]:
-        """Get all markdown files sorted by creation time."""
-        return self.file_manager.get_markdown_files(custom_path)
-    
-    def get_unified_markdown(self, custom_path: Path = None) -> str:
-        """Get all markdown content unified into a single string."""
-        return self.file_manager.get_unified_markdown(custom_path)
-    
-    def load_index_template(self) -> str:
-        """Load unified index template from disk."""
-        return self.template_handler.load_template()
+        root, _ = self.resolve_root(path_param)
+        try:
+            self.file_manager.delete_markdown(root, file_param)
+        except FileNotFoundError:
+            return web.json_response({"error": "File not found"}, status=404)
+        except ValueError:
+            return web.json_response({"error": "Invalid file path"}, status=400)
 
-    def render_index_template(self, target_path: Path) -> str:
-        """Populate the template with runtime values."""
-        return self.template_handler.render_template(target_path)
+        await self.handle_filesystem_event(root, "deleted", file_param)
+        return web.json_response({"success": True})
 
-    async def handle_index(self, request):
-        """Serve the main HTML page."""
-        # Get optional path parameter
-        path_param = request.query.get('path')
-        
-        # Update the active directory
-        self.markdown_dir = self.resolve_markdown_path(path_param)
-        
-        html = self.render_index_template(self.markdown_dir)
-        return Response(text=html, content_type='text/html')
-    
-    async def handle_websocket(self, request):
-        """Handle WebSocket connections."""
+    # ------------------------------------------------------------------
+    # Websocket handling
+    # ------------------------------------------------------------------
+    async def websocket_handler(self, request: web.Request) -> web.StreamResponse:
         ws = web.WebSocketResponse()
         await ws.prepare(request)
-        
-        # Get optional path parameter
-        path_param = request.query.get('path')
-        target_directory = self.resolve_markdown_path(path_param)
-        
-        self.clients.add(ws)
-        logger.info(f"WebSocket client connected. Total clients: {len(self.clients)}")
-        
-        # Send initial content
-        try:
-            unified_content = self.get_unified_markdown(target_directory)
-            await ws.send_str(json.dumps({
-                'type': 'content_update',
-                'content': unified_content
-            }))
-        except Exception as e:
-            logger.error(f"Error sending initial content: {e}")
-        
-        try:
-            async for msg in ws:
-                if msg.type == WSMsgType.TEXT:
-                    try:
-                        data = json.loads(msg.data)
-                        if data.get('type') == 'chat':
-                            # Handle chat message from UI
-                            chat_message = data.get('message', '')
-                            logger.info(f"Received chat message from UI: {chat_message}")
-                            await self.broadcast_chat_to_agents(chat_message)
-                    except json.JSONDecodeError:
-                        logger.warning(f"Received non-JSON message: {msg.data}")
-                    except Exception as e:
-                        logger.error(f"Error processing WebSocket message: {e}")
-                elif msg.type == WSMsgType.ERROR:
-                    logger.error(f'WebSocket error: {ws.exception()}')
-                    break
-        except Exception as e:
-            logger.error(f"WebSocket error: {e}")
-        finally:
-            self.clients.discard(ws)
-            logger.info(f"WebSocket client disconnected. Total clients: {len(self.clients)}")
-        
+        self.clients[ws] = ""
+
+        async for message in ws:
+            if message.type == WSMsgType.TEXT:
+                await self._handle_ws_message(ws, message.data)
+            elif message.type == WSMsgType.ERROR:
+                logger.error("WebSocket closed with error: %s", ws.exception())
+                break
+
+        self.clients.pop(ws, None)
         return ws
-    
-    async def handle_api_content(self, request):
-        """API endpoint to get unified markdown content."""
-        # Get optional path parameter
-        path_param = request.query.get('path')
-        target_directory = self.resolve_markdown_path(path_param)
-        
-        files = self.get_markdown_files(target_directory)
-        unified_content = self.get_unified_markdown(target_directory)
-        
-        # Get the sticky filename for this directory
-        sticky_filename = self.sticky_files.get(str(target_directory))
-        
-        # Build file list with metadata for UI actions
-        file_list = []
-        for file_info in files:
-            file_list.append({
-                'name': file_info['name'],
-                'path': str(file_info['path']),
-                'fileId': file_info['name'],
-                'created': file_info['created'],
-                'updated': file_info['updated'],
-                'isSticky': file_info['name'] == sticky_filename
-            })
-        
-        # For empty directories, report at least 1 file (the fallback content)
-        file_count = len(files) if files else 1
-        
-        return web.json_response({
-            'content': unified_content,
-            'files': file_count,
-            'fileList': file_list,
-            'timestamp': time.time(),
-            'directory': str(target_directory)
-        })
-    
-    async def handle_delete_file(self, request):
-        """API endpoint to delete a markdown file."""
+
+    async def _handle_ws_message(self, ws: web.WebSocketResponse, raw: str) -> None:
         try:
-            data = await request.json()
-            file_id = data.get('fileId')
-            
-            if not file_id:
-                return web.json_response({
-                    'success': False,
-                    'error': 'fileId is required'
-                }, status=400)
-            
-            # Get the target directory
-            path_param = request.query.get('path')
-            target_directory = self.resolve_markdown_path(path_param)
-            
-            # Sanitize the file ID
-            filename = self._sanitize_file_id(file_id)
-            file_path = target_directory / filename
-            
-            if not file_path.exists():
-                return web.json_response({
-                    'success': False,
-                    'error': f'File not found: {filename}'
-                }, status=404)
-            
-            # Delete the file
-            file_path.unlink()
-            logger.info(f"Deleted file via API: {file_path}")
-            
-            return web.json_response({
-                'success': True,
-                'message': f'File deleted: {filename}'
-            })
-            
-        except Exception as e:
-            logger.error(f"Error deleting file: {e}")
-            return web.json_response({
-                'success': False,
-                'error': str(e)
-            }, status=500)
-
-    async def handle_print_view(self, request):
-        """Serve a print-friendly HTML page for a specific markdown file."""
-        file_id = request.query.get('fileId')
-        if not file_id:
-            return Response(text='Missing fileId parameter', status=400, content_type='text/plain')
-
-        path_param = request.query.get('path')
-        target_directory = self.resolve_markdown_path(path_param)
-
-        filename = self._sanitize_file_id(file_id)
-        file_path = target_directory / filename
-
-        if not file_path.exists():
-            logger.warning(f"Print view requested for missing file: {file_path}")
-            return Response(text=f'File not found: {escape(filename)}', status=404, content_type='text/plain')
-
-        try:
-            content = file_path.read_text(encoding='utf-8')
-        except Exception as exc:  # pragma: no cover - I/O safeguard
-            logger.error(f"Failed reading file for print view: {exc}")
-            return Response(text='Unable to read file content', status=500, content_type='text/plain')
-
-        try:
-            template = self.print_template_path.read_text(encoding='utf-8')
-        except FileNotFoundError:
-            logger.error(f"Print template not found: {self.print_template_path}")
-            return Response(text='Print template unavailable', status=500, content_type='text/plain')
-        except Exception as exc:  # pragma: no cover - template guard
-            logger.error(f"Error loading print template: {exc}")
-            return Response(text='Print template unavailable', status=500, content_type='text/plain')
-
-        file_stat = file_path.stat()
-        payload = {
-            'fileId': file_id,
-            'fileName': file_path.name,
-            'directory': str(target_directory),
-            'content': content,
-            'modified': datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
-        }
-
-        json_payload = json.dumps(payload).replace('</', '<\\/')
-        safe_title = escape(file_path.name)
-        html = template.replace('__PRINT_TITLE__', safe_title).replace('__PRINT_DATA__', json_payload)
-
-        return Response(text=html, content_type='text/html', charset='utf-8')
-
-    async def handle_raw_markdown(self, request):
-        """Serve unified markdown content as plain text."""
-        # Get optional path parameter
-        path_param = request.query.get('path')
-        target_directory = self.resolve_markdown_path(path_param)
-        
-        unified_content = self.get_unified_markdown(target_directory)
-        return Response(text=unified_content, content_type='text/plain', charset='utf-8')
-    
-    async def handle_get_file(self, request):
-        """API endpoint to get individual file content."""
-        try:
-            file_id = request.query.get('fileId')
-            
-            if not file_id:
-                return web.json_response({
-                    'success': False,
-                    'error': 'fileId is required'
-                }, status=400)
-            
-            # Get the target directory
-            path_param = request.query.get('path')
-            target_directory = self.resolve_markdown_path(path_param)
-            
-            # Sanitize the file ID
-            filename = self._sanitize_file_id(file_id)
-            file_path = target_directory / filename
-            
-            if not file_path.exists():
-                return web.json_response({
-                    'success': False,
-                    'error': f'File not found: {filename}'
-                }, status=404)
-            
-            # Read the file
-            content = file_path.read_text(encoding='utf-8')
-            
-            return web.json_response({
-                'success': True,
-                'fileId': file_id,
-                'content': content
-            })
-            
-        except Exception as e:
-            logger.error(f"Error reading file: {e}")
-            return web.json_response({
-                'success': False,
-                'error': str(e)
-            }, status=500)
-    
-    async def handle_toggle_sticky(self, request):
-        """API endpoint to toggle sticky status of a file."""
-        try:
-            data = await request.json()
-            file_id = data.get('fileId')
-            
-            if not file_id:
-                return web.json_response({
-                    'success': False,
-                    'error': 'fileId is required'
-                }, status=400)
-            
-            # Get the target directory
-            path_param = request.query.get('path')
-            target_directory = self.resolve_markdown_path(path_param)
-            
-            # Sanitize the file ID
-            filename = self._sanitize_file_id(file_id)
-            file_path = target_directory / filename
-            
-            if not file_path.exists():
-                return web.json_response({
-                    'success': False,
-                    'error': f'File not found: {filename}'
-                }, status=404)
-            
-            dir_key = str(target_directory)
-            current_sticky = self.sticky_files.get(dir_key)
-            
-            # Toggle: if this file is currently sticky, remove it; otherwise set it as sticky
-            if current_sticky == filename:
-                # Remove sticky status
-                del self.sticky_files[dir_key]
-                logger.info(f"Removed sticky status from: {filename}")
-                is_sticky = False
-            else:
-                # Set as sticky (only one file can be sticky at a time)
-                self.sticky_files[dir_key] = filename
-                logger.info(f"Set sticky status for: {filename} in {dir_key}")
-                is_sticky = True
-            
-            return web.json_response({
-                'success': True,
-                'isSticky': is_sticky,
-                'message': f'Sticky status toggled for: {filename}'
-            })
-            
-        except Exception as e:
-            logger.error(f"Error toggling sticky: {e}")
-            return web.json_response({
-                'success': False,
-                'error': str(e)
-            }, status=500)
-    
-    # MCP functionality handled by FastMCP
-    
-    # MCP functionality handled by FastMCP
-    
-    async def notify_clients_file_change(self, file_path: str):
-        """Notify all connected clients about file changes."""
-        if not self.clients:
-            return
-        
-        try:
-            # Get updated content
-            unified_content = self.get_unified_markdown()
-            
-            # Prepare WebSocket message
-            message = json.dumps({
-                'type': 'content_update',
-                'content': unified_content,
-                'changed_file': str(file_path)
-            })
-            
-            # Send to all connected clients
-            disconnected_clients = set()
-            for client in self.clients:
-                try:
-                    await client.send_str(message)
-                except Exception as e:
-                    logger.warning(f"Failed to send message to client: {e}")
-                    disconnected_clients.add(client)
-            
-            # Remove disconnected clients
-            for client in disconnected_clients:
-                self.clients.discard(client)
-                
-            logger.info(f"Notified {len(self.clients)} clients about file change: {file_path}")
-            
-        except Exception as e:
-            logger.error(f"Error notifying clients: {e}")
-    
-    def start_file_watcher(self, loop):
-        """Start watching the markdown directory for changes."""
-        if self.observer is not None:
-            return  # Already watching
-        
-        self.observer = Observer()
-        event_handler = MarkdownFileHandler(self, loop)
-        self.observer.schedule(event_handler, str(self.default_markdown_dir), recursive=False)
-        self.observer.start()
-        logger.info(f"Started watching directory: {self.default_markdown_dir}")
-    
-    def stop_file_watcher(self):
-        """Stop the file watcher."""
-        if self.observer is not None:
-            self.observer.stop()
-            self.observer.join()
-            logger.info("File watcher stopped")
-
-    async def broadcast_chat_to_agents(self, message: str) -> None:
-        """Broadcast chat messages to all connected CLI host clients."""
-
-        text = message.strip()
-        if not text:
-            logger.debug("Ignoring empty chat message from UI")
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("Ignoring malformed websocket message: %s", raw)
             return
 
-        payload = {
-            "type": "chat",
-            "text": text,
-            "timestamp": time.time(),
-        }
+        if payload.get("type") != "subscribe":
+            return
 
-        stale_clients: List[web.WebSocketResponse] = []
-        for ws in list(self.agent_feed_clients):
-            if ws.closed:
-                stale_clients.append(ws)
+        path_param = payload.get("path")
+        root, _ = self.resolve_root(path_param)
+        self.clients[ws] = str(root)
+        await self._ensure_watcher(root)
+
+        files = self.file_manager.list_markdown_files(root)
+        await ws.send_json({"type": "directory_update", "path": str(root), "files": files})
+
+    async def handle_filesystem_event(self, root: Path, kind: str, relative: Optional[str]) -> None:
+        if kind in {"created", "deleted", "moved"}:
+            await self.notify_directory_update(root)
+        if kind in {"modified", "created", "moved"} and relative:
+            await self.notify_file_changed(root, relative)
+
+    async def notify_directory_update(self, root: Path) -> None:
+        files = self.file_manager.list_markdown_files(root)
+        await self._broadcast(root, {"type": "directory_update", "path": str(root), "files": files})
+
+    async def notify_file_changed(self, root: Path, relative: str) -> None:
+        await self._broadcast(root, {"type": "file_changed", "path": str(root), "file": relative})
+
+    async def _broadcast(self, root: Path, payload: Dict[str, object]) -> None:
+        target = str(root)
+        stale_clients = []
+        for ws, subscribed_root in self.clients.items():
+            if subscribed_root != target or ws.closed:
                 continue
-
             try:
                 await ws.send_json(payload)
-            except Exception as exc:
-                logger.warning(f"Failed to push chat message to CLI host: {exc}")
+            except Exception:  # pragma: no cover - defensive cleanup
                 stale_clients.append(ws)
 
         for ws in stale_clients:
-            self.agent_feed_clients.discard(ws)
+            self.clients.pop(ws, None)
 
-        if self.agent_feed_clients:
-            logger.info(
-                "Delivered chat message to %d CLI host connection(s)",
-                len(self.agent_feed_clients),
-            )
-
-    async def handle_agent_feed(self, request):
-        """WebSocket endpoint that streams chat events to CLI host processes."""
-
-        ws = web.WebSocketResponse(heartbeat=30)
-        await ws.prepare(request)
-
-        self.agent_feed_clients.add(ws)
-        logger.info(
-            "CLI host connected for chat feed. Total hosts: %d",
-            len(self.agent_feed_clients),
-        )
-
-        # Send a small handshake so hosts know the channel is live.
-        try:
-            await ws.send_json({
-                "type": "hello",
-                "message": "Connected to markdown-liveview agent feed",
-                "timestamp": time.time(),
-            })
-        except Exception as exc:
-            logger.error(f"Failed to send handshake to CLI host: {exc}")
-
-        try:
-            async for msg in ws:
-                if msg.type == WSMsgType.TEXT:
-                    try:
-                        data = json.loads(msg.data)
-                        logger.debug(f"Received message from CLI host: {data}")
-                    except json.JSONDecodeError:
-                        logger.debug(f"Ignoring non-JSON payload from CLI host: {msg.data!r}")
-                elif msg.type == WSMsgType.ERROR:
-                    logger.error(f"Agent feed WebSocket error: {ws.exception()}")
-                    break
-        except asyncio.CancelledError:
-            logger.debug("Agent feed handler cancelled")
-            raise
-        except Exception as exc:
-            logger.error(f"Agent feed failure: {exc}")
-        finally:
-            self.agent_feed_clients.discard(ws)
-            logger.info(
-                "CLI host disconnected from chat feed. Total hosts: %d",
-                len(self.agent_feed_clients),
-            )
-
-        return ws
-
-    async def start_mcp_http_server(self):
-        """Run the FastMCP HTTP transport on its own port using Uvicorn."""
-        if not self.enable_mcp:
+    async def _ensure_watcher(self, root: Path) -> None:
+        resolved = root.resolve()
+        if resolved in self.watchers:
             return
 
-        if self._mcp_http_server_task is not None:
+        if not resolved.exists():
+            resolved.mkdir(parents=True, exist_ok=True)
+
+        if not resolved.is_dir():
+            logger.warning("Cannot watch non-directory path: %s", resolved)
             return
 
-        if not hasattr(self, "_mcp_http_app") or self._mcp_http_app is None:
-            raise RuntimeError("FastMCP HTTP app not initialized")
+        handler = MarkdownDirectoryEventHandler(self, resolved)
+        observer = Observer()
+        observer.schedule(handler, str(resolved), recursive=False)
+        observer.start()
+        self.watchers[resolved] = observer
 
-        try:
-            import uvicorn
-        except ImportError as exc:  # pragma: no cover - guarded by requirements
-            raise RuntimeError("uvicorn is required for HTTP MCP transport") from exc
-
-        config = uvicorn.Config(
-            self._mcp_http_app,
-            host=self.mcp_host,
-            port=self.mcp_port,
-            log_level="info",
-            lifespan="on",
-            access_log=False,
-        )
-        self._mcp_uvicorn_server = uvicorn.Server(config)
-
-        async def _serve():
-            try:
-                await self._mcp_uvicorn_server.serve()
-            finally:
-                self._mcp_http_server_task = None
-                self._mcp_uvicorn_server = None
-
-        self._mcp_http_server_task = asyncio.create_task(_serve())
-
-        # Wait for the server to finish its startup sequence before returning.
-        while True:
-            if self._mcp_uvicorn_server is None:
-                raise RuntimeError("FastMCP HTTP server failed to start")
-            if getattr(self._mcp_uvicorn_server, "started", False):
-                break
-            if self._mcp_http_server_task.done():
-                # Surface startup exceptions immediately.
-                await self._mcp_http_server_task
-                raise RuntimeError("FastMCP HTTP server exited during startup")
-            await asyncio.sleep(0.05)
-
-    async def stop_mcp_http_server(self):
-        """Shut down the FastMCP HTTP transport server if it is running."""
-        if self._mcp_uvicorn_server is not None:
-            self._mcp_uvicorn_server.should_exit = True
-
-        if self._mcp_http_server_task is not None:
-            await self._mcp_http_server_task
-            self._mcp_http_server_task = None
-
-    async def run_mcp_stdio(self):
-        """Run the FastMCP server using stdio (for AI assistant integration)."""
-        if not self.enable_mcp:
-            logger.warning("MCP not enabled, skipping stdio server")
-            return
-        
-        logger.info("Starting FastMCP stdio server...")
-        await self.mcp_server.run_stdio_async()
-    
+    # ------------------------------------------------------------------
+    # Server bootstrap helpers
+    # ------------------------------------------------------------------
     def create_app(self) -> web.Application:
-        """Create the aiohttp application with all registered routes."""
         app = web.Application()
-
-        # LiveView routes
-        app.router.add_get('/', self.handle_index)
-        app.router.add_get('/ws', self.handle_websocket)
-        app.router.add_get('/api/content', self.handle_api_content)
-        app.router.add_get('/api/file', self.handle_get_file)
-        app.router.add_post('/api/delete', self.handle_delete_file)
-        app.router.add_post('/api/toggle-sticky', self.handle_toggle_sticky)
-        app.router.add_get('/print', self.handle_print_view)
-        app.router.add_get('/raw', self.handle_raw_markdown)
-        app.router.add_get('/agent-feed', self.handle_agent_feed)
-
+        app.router.add_get("/", self.handle_index)
+        app.router.add_get("/api/files", self.handle_list_files)
+        app.router.add_get("/api/file", self.handle_get_file)
+        app.router.add_get("/api/file/raw", self.handle_get_file_raw)
+        app.router.add_delete("/api/file", self.handle_delete_file)
+        app.router.add_get("/ws", self.websocket_handler)
+        app.on_startup.append(self.on_startup)
+        app.on_shutdown.append(self.on_shutdown)
         return app
 
-    async def run(self, enable_stdio_mcp: bool = False):
-        """Run the unified server."""
+    def run(self) -> None:
         app = self.create_app()
+        web.run_app(app, port=self.port)
 
-        # Get the current event loop
-        loop = asyncio.get_event_loop()
 
-        # Start file watcher
-        self.start_file_watcher(loop)
-
-        try:
-            logger.info(f"Starting unified server on http://localhost:{self.port}")
-            if self.enable_mcp:
-                logger.info("MCP functionality enabled:")
-                logger.info(f"  - HTTP endpoint: http://{self.mcp_host}:{self.mcp_port}/mcp")
-                if enable_stdio_mcp:
-                    logger.info("  - stdio server: will start after HTTP server")
-
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, 'localhost', self.port)
-            await site.start()
-
-            logger.info(f"Server running at http://localhost:{self.port}")
-            logger.info(f"Watching markdown files in: {self.default_markdown_dir.absolute()}")
-
-            if self.enable_mcp:
-                await self.start_mcp_http_server()
-                logger.info("FastMCP HTTP server started on separate port")
-
-            # Optionally start stdio MCP server in parallel
-            if enable_stdio_mcp and self.enable_mcp:
-                # Create a task for the stdio MCP server
-                stdio_task = asyncio.create_task(self.run_mcp_stdio())
-
-            # Keep the server running
-            while True:
-                await asyncio.sleep(1)
-
-        except KeyboardInterrupt:
-            logger.info("Server shutting down...")
-        except asyncio.CancelledError:
-            logger.info("Server task cancelled")
-            raise
-        finally:
-            self.stop_file_watcher()
-            if self.enable_mcp:
-                await self.stop_mcp_http_server()
-
-def main():
-    """Main entry point."""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Unified Markdown Live View Server with MCP Integration')
-    parser.add_argument('--dir', default='markdown', help='Directory to watch for markdown files')
-    parser.add_argument('--port', type=int, default=8080, help='Port to run server on')
-    parser.add_argument('--disable-mcp', action='store_true', help='Disable MCP functionality')
-    parser.add_argument('--mcp-host', default='127.0.0.1', help='Host for the FastMCP HTTP server')
-    parser.add_argument('--mcp-port', type=int, help='Port for the FastMCP HTTP server (defaults to web port + 1)')
-    parser.add_argument('--mcp-stdio', action='store_true', help='Enable MCP stdio server alongside HTTP server')
-    
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Serve a markdown directory")
+    parser.add_argument("--path", dest="path", default="markdown", help="Directory to watch")
+    parser.add_argument("--port", dest="port", type=int, default=8080, help="Port to bind")
     args = parser.parse_args()
-    
-    server = UnifiedMarkdownServer(
-        args.dir,
-        args.port,
-        enable_mcp=not args.disable_mcp,
-        mcp_host=args.mcp_host,
-        mcp_port=args.mcp_port,
-    )
-    
-    try:
-        asyncio.run(server.run(enable_stdio_mcp=args.mcp_stdio))
-    except KeyboardInterrupt:
-        logger.info("Server stopped by user")
 
-if __name__ == '__main__':
+    server = UnifiedMarkdownServer(markdown_dir=args.path, port=args.port)
+    server.run()
+
+
+if __name__ == "__main__":
     main()
