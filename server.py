@@ -19,24 +19,11 @@ from aiohttp.web_response import Response
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-# Import MCP classes and functionality
+# Import FastMCP functionality
 from fastmcp import FastMCP
-from mcp.types import (
-    CallToolRequest,
-    ListToolsRequest,
-    ListToolsResult,
-    DEFAULT_NEGOTIATED_VERSION,
-    INTERNAL_ERROR,
-    INVALID_PARAMS,
-    INVALID_REQUEST,
-    METHOD_NOT_FOUND,
-    PARSE_ERROR,
-    JSONRPCError
-)
 
 # Import component modules
 from components.file_manager import FileManager
-from components.mcp_tools import MCPTools
 from components.template_handler import TemplateHandler
 from components.request_handlers import RequestHandlers
 
@@ -90,9 +77,6 @@ class UnifiedMarkdownServer:
         self.sse_clients: set = set()  # Track SSE clients for chat messages
         self.observer = None
         self.enable_mcp = enable_mcp
-        self._mcp_client_capabilities: Dict[str, Any] | None = None
-        self._mcp_initialized = False
-        self._negotiated_protocol_version: str | int = DEFAULT_NEGOTIATED_VERSION
         self.sticky_files: Dict[str, str] = {}  # Maps directory path to sticky filename
         self.chat_messages: List[Dict[str, Any]] = []  # Store recent chat messages
         self.chat_subscribers: List[asyncio.Queue] = []  # Queues for streaming chat to MCP clients
@@ -103,7 +87,6 @@ class UnifiedMarkdownServer:
             Path(__file__).resolve().parent / "templates" / "unified_index.html"
         )
         self.request_handlers = RequestHandlers(self.default_markdown_dir)
-        self.mcp_tools = MCPTools(self.default_markdown_dir, self.file_manager, self.chat_messages)
         
         # Initialize FastMCP server if enabled
         if self.enable_mcp:
@@ -115,93 +98,94 @@ class UnifiedMarkdownServer:
             self._register_mcp_tools()
             logger.info(f"FastMCP Server initialized for directory: {self.default_markdown_dir}")
 
-    def _build_tool_definitions(self):
-        """Return the shared MCP tool definitions."""
-        return self.mcp_tools.build_tool_definitions()
-
-    def _handle_mcp_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Process an MCP initialize request and return the server capabilities."""
-        protocol_version = params.get("protocolVersion") or DEFAULT_NEGOTIATED_VERSION
-        capabilities = params.get("capabilities")
-
-        if isinstance(capabilities, dict):
-            self._mcp_client_capabilities = capabilities
-        else:
-            self._mcp_client_capabilities = None
-
-        self._negotiated_protocol_version = protocol_version
-        self._mcp_initialized = False
-
-        # FastMCP initialization response
-        server_info: Dict[str, Any] = {
-            "name": self.mcp_server.name,
-            "version": "1.0.0",
-        }
-
-        init_result: Dict[str, Any] = {
-            "protocolVersion": protocol_version,
-            "capabilities": {
-                "tools": {}
-            },
-            "serverInfo": server_info,
-        }
-
-        if self.mcp_server.instructions:
-            init_result["instructions"] = self.mcp_server.instructions
-
-        logger.info(
-            "MCP initialize handshake (protocol=%s, client caps present=%s)",
-            protocol_version,
-            isinstance(capabilities, dict),
-        )
-
-        return init_result
-
     def _register_mcp_tools(self):
         """Register all available MCP tools with FastMCP."""
         
         @self.mcp_server.tool()
         async def show_content(content: str, title: str = None) -> str:
             """Create new markdown content that appears in the live view."""
-            result = await self.mcp_tools.show_content(content, title)
-            # Extract text from CallToolResult
-            if result.content and len(result.content) > 0:
-                return result.content[0].text
-            return "Content created"
+            if not content:
+                return "Error: Content cannot be empty"
+
+            file_id = self.file_manager.generate_file_id()
+            file_path = self.default_markdown_dir / file_id
+
+            try:
+                file_path.write_text(content, encoding='utf-8')
+                result_msg = f"✅ Content created with File Id: {file_id}"
+                if title:
+                    result_msg += f" (Title: {title})"
+                return result_msg
+            except Exception as e:
+                return f"❌ Error creating content: {str(e)}"
         
         @self.mcp_server.tool()
         async def list_content() -> str:
             """List every markdown entry managed by the server."""
-            result = await self.mcp_tools.list_content()
-            if result.content and len(result.content) > 0:
-                return result.content[0].text
-            return "No content"
+            try:
+                files = self.file_manager.get_markdown_files()
+                if not files:
+                    return "📁 No markdown files found"
+                
+                result = "📋 **Markdown Files:**\n\n"
+                for file_info in files:
+                    result += f"- **{file_info['filename']}** ({file_info['size']} bytes, modified: {file_info['modified']})\n"
+                return result
+            except Exception as e:
+                return f"❌ Error listing content: {str(e)}"
         
         @self.mcp_server.tool()
         async def view_content(fileId: str) -> str:
             """Read markdown content using a File Id."""
-            result = await self.mcp_tools.view_content(fileId)
-            if result.content and len(result.content) > 0:
-                return result.content[0].text
-            return "Content not found"
+            try:
+                sanitized_id = self.file_manager.sanitize_file_id(fileId)
+                file_path = self.default_markdown_dir / sanitized_id
+                
+                if not file_path.exists():
+                    return f"❌ File not found: {fileId}"
+                
+                content = file_path.read_text(encoding='utf-8')
+                return f"📄 **Content of {fileId}:**\n\n{content}"
+            except Exception as e:
+                return f"❌ Error reading content: {str(e)}"
         
         @self.mcp_server.tool()
         async def update_content(fileId: str, content: str, mode: str = "append") -> str:
             """Append to or replace existing markdown content."""
-            result = await self.mcp_tools.update_content(fileId, content, mode)
-            if result.content and len(result.content) > 0:
-                return result.content[0].text
-            return "Content updated"
+            try:
+                sanitized_id = self.file_manager.sanitize_file_id(fileId)
+                file_path = self.default_markdown_dir / sanitized_id
+                
+                if not file_path.exists():
+                    return f"❌ File not found: {fileId}"
+                
+                if mode == "replace":
+                    file_path.write_text(content, encoding='utf-8')
+                    return f"✅ Content replaced in {fileId}"
+                else:  # append mode
+                    existing_content = file_path.read_text(encoding='utf-8')
+                    new_content = existing_content + "\n" + content
+                    file_path.write_text(new_content, encoding='utf-8')
+                    return f"✅ Content appended to {fileId}"
+            except Exception as e:
+                return f"❌ Error updating content: {str(e)}"
         
         @self.mcp_server.tool()
         async def remove_content(fileId: str) -> str:
             """Delete markdown content using its File Id."""
-            result = await self.mcp_tools.remove_content(fileId)
-            if result.content and len(result.content) > 0:
-                return result.content[0].text
-            return "Content removed"
+            try:
+                sanitized_id = self.file_manager.sanitize_file_id(fileId)
+                file_path = self.default_markdown_dir / sanitized_id
+                
+                if not file_path.exists():
+                    return f"❌ File not found: {fileId}"
+                
+                file_path.unlink()
+                return f"✅ Content deleted: {fileId}"
+            except Exception as e:
+                return f"❌ Error removing content: {str(e)}"
         
-        # POLLING CHAT TOOLS REMOVED - STREAMING ONLY APPROACH
+        # CHAT TOOLS - HTTP STREAMING ONLY (NO POLLING)
 
         @self.mcp_server.tool()
         async def get_chat_stream_info() -> str:
@@ -229,6 +213,52 @@ async with httpx.AsyncClient() as client:
                 data = json.loads(line)
                 print(data['result'])  # Process the message
 ```"""
+
+        @self.mcp_server.tool()
+        async def subscribe_chat() -> str:
+            """Subscribe to receive chat messages from the UI."""
+            return f"""🚨 POLLING NOT SUPPORTED - USE HTTP STREAMING INSTEAD
+
+This tool would traditionally enable polling for chat messages, but polling is FORBIDDEN.
+
+✅ CORRECT APPROACH - Use HTTP Streaming:
+POST http://localhost:{self.port}/mcp/stream/chat
+
+This provides real-time message delivery without polling overhead.
+See get_chat_stream_info() for complete implementation details.
+
+🚫 Why polling is banned:
+- Creates unnecessary latency (1-30 seconds)
+- Wastes CPU and network resources  
+- Doesn't scale with multiple agents
+- Provides poor user experience
+
+Use the HTTP streaming endpoint for immediate message delivery."""
+
+        @self.mcp_server.tool() 
+        async def get_chat_messages(since: float = None) -> str:
+            """Get recent chat messages from the UI."""
+            return f"""🚨 POLLING NOT SUPPORTED - USE HTTP STREAMING INSTEAD
+
+This tool would traditionally return recent chat messages, but polling is FORBIDDEN.
+
+✅ CORRECT APPROACH - Use HTTP Streaming:
+POST http://localhost:{self.port}/mcp/stream/chat
+
+Parameters like 'since' are not needed with streaming - you get messages immediately as they arrive.
+
+🚫 Polling pattern (BANNED):
+while True:
+    messages = get_chat_messages(since=timestamp)  # ❌ NO!
+    await asyncio.sleep(1)  # ❌ NO!
+
+✅ Streaming pattern (REQUIRED):
+async with httpx.AsyncClient() as client:
+    async with client.stream('POST', 'http://localhost:{self.port}/mcp/stream/chat') as response:
+        async for line in response.aiter_lines():
+            # Process messages immediately
+            
+See get_chat_stream_info() for complete implementation."""
 
         # HTTP streaming endpoint available at POST /mcp/stream/chat
 
@@ -495,190 +525,9 @@ async with httpx.AsyncClient() as client:
                 'error': str(e)
             }, status=500)
     
-    async def handle_mcp_info(self, request):
-        """GET endpoint for MCP server discovery and capabilities."""
-        if not self.enable_mcp:
-            return web.json_response({'error': 'MCP not enabled'}, status=503)
-        
-        # Return server information and available tools (using FastMCP)
-        tools = self._build_tool_definitions()
-        
-        return web.json_response({
-            'protocol': 'MCP (Model Context Protocol)',
-            'version': '1.0.0',
-            'name': self.mcp_server.name,
-            'description': 'FastMCP server for managing markdown files in the live view system',
-            'transport': 'JSON-RPC 2.0 over HTTP',
-            'endpoint': '/mcp',
-            'methods': ['POST'],
-            'capabilities': {
-                'tools': {}
-            },
-            'tools': [
-                {
-                    'name': tool.name,
-                    'description': tool.description
-                }
-                for tool in tools
-            ],
-            'usage': {
-                'initialize': 'POST /mcp with {"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2024-11-05","capabilities":{}}}',
-                'list_tools': 'POST /mcp with {"jsonrpc":"2.0","method":"tools/list","id":2}',
-                'call_tool': 'POST /mcp with {"jsonrpc":"2.0","method":"tools/call","id":3,"params":{"name":"show_content","arguments":{...}}}'
-            },
-            'documentation': {
-                'quick_reference': '/MCP_QUICK_REFERENCE.md',
-                'connection_guide': '/MCP_CONNECTION_GUIDE.md',
-                'troubleshooting': '/TROUBLESHOOTING_405.md'
-            }
-        })
+    # MCP functionality handled by FastMCP
     
-    async def handle_mcp_http(self, request):
-        """HTTP endpoint for MCP protocol (JSON-RPC over HTTP)."""
-        if not self.enable_mcp:
-            return web.json_response({'error': 'MCP not enabled'}, status=503)
-
-        try:
-            data = await request.json()
-        except json.JSONDecodeError as exc:
-            logger.warning(f"Failed to parse MCP request JSON: {exc}")
-            return web.json_response(
-                {
-                    "jsonrpc": "2.0",
-                    "id": None,
-                    "error": {"code": PARSE_ERROR, "message": "Malformed JSON payload"}
-                },
-                status=400,
-            )
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.error(f"Unexpected error reading MCP request body: {exc}")
-            return web.json_response(
-                {
-                    "jsonrpc": "2.0",
-                    "id": None,
-                    "error": {"code": INTERNAL_ERROR, "message": "Failed to read request body"}
-                },
-                status=500,
-            )
-
-        if not isinstance(data, dict):
-            return web.json_response(
-                {
-                    "jsonrpc": "2.0",
-                    "id": None,
-                    "error": {"code": INVALID_REQUEST, "message": "Request payload must be an object"}
-                },
-                status=400,
-            )
-
-        method = data.get('method')
-        params = data.get('params') or {}
-        request_id = data.get('id')
-
-        def jsonrpc_error(code: int, message: str, *, status: int = 400):
-            return web.json_response(
-                {
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "error": {"code": code, "message": message}
-                },
-                status=status,
-            )
-
-        if not method:
-            return jsonrpc_error(INVALID_REQUEST, "Request is missing method")
-
-        if method == 'initialize':
-            if request_id is None:
-                return jsonrpc_error(INVALID_REQUEST, "initialize requires an id")
-            if not isinstance(params, dict):
-                return jsonrpc_error(INVALID_PARAMS, "initialize params must be an object")
-
-            init_result = self._handle_mcp_initialize(params)
-            return web.json_response({
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": init_result
-            })
-
-        if method == 'notifications/initialized':
-            self._mcp_initialized = True
-            return web.Response(status=204)
-
-        if method == 'ping':
-            if request_id is None:
-                return web.Response(status=204)
-            return web.json_response({
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {}
-            })
-
-        if method == 'tools/list':
-            if request_id is None:
-                return jsonrpc_error(INVALID_REQUEST, "tools/list requires an id")
-            list_result = ListToolsResult(tools=self._build_tool_definitions())
-            return web.json_response({
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": list_result.model_dump(exclude_none=True)
-            })
-
-        if method == 'tools/call':
-            if request_id is None:
-                return jsonrpc_error(INVALID_REQUEST, "tools/call requires an id")
-            if not isinstance(params, dict):
-                return jsonrpc_error(INVALID_PARAMS, "tools/call params must be an object")
-
-            tool_name = params.get('name')
-            arguments = params.get('arguments') or {}
-
-            if not tool_name:
-                return jsonrpc_error(INVALID_PARAMS, "Tool name is required")
-            if not isinstance(arguments, dict):
-                return jsonrpc_error(INVALID_PARAMS, "Tool arguments must be an object")
-
-            try:
-                # Get FastMCP tools and execute
-                fastmcp_tools = await self.mcp_server.get_tools()
-                
-                if tool_name not in fastmcp_tools:
-                    return jsonrpc_error(METHOD_NOT_FOUND, f"Unknown tool: {tool_name}")
-                
-                tool = fastmcp_tools[tool_name]
-                tool_result = await tool.run(arguments)
-                
-                # Convert FastMCP ToolResult to MCP CallToolResult format
-                content_list, metadata = tool_result.to_mcp_result()
-                from mcp.types import CallToolResult
-                result = CallToolResult(
-                    content=content_list,
-                    isError=False
-                )
-            except Exception as exc:
-                if hasattr(exc, 'model_dump'):
-                    logger.error(f"MCP tool returned JSONRPCError: {exc}")
-                    return web.json_response(
-                        exc.model_dump(exclude_none=True),
-                        status=400,
-                    )
-                logger.error(f"Unexpected error calling tool {tool_name}: {exc}")
-                return web.json_response(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": request_id,
-                        "error": {"code": INTERNAL_ERROR, "message": f"Tool execution failed: {exc}"}
-                    },
-                    status=500,
-                )
-
-            return web.json_response({
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": result.model_dump(exclude_none=True)
-            })
-
-        return jsonrpc_error(METHOD_NOT_FOUND, f"Unknown method: {method}")
+    # MCP functionality handled by FastMCP
     
     async def notify_clients_file_change(self, file_path: str):
         """Notify all connected clients about file changes."""
@@ -933,11 +782,10 @@ async with httpx.AsyncClient() as client:
         app.router.add_post('/api/delete', self.handle_delete_file)
         app.router.add_post('/api/toggle-sticky', self.handle_toggle_sticky)
         app.router.add_get('/raw', self.handle_raw_markdown)
+        
+        # FastMCP - stdio only for now (HTTP integration needs investigation)
         if self.enable_mcp:
-            app.router.add_get('/mcp', self.handle_mcp_info)  # Discovery endpoint
-            app.router.add_post('/mcp', self.handle_mcp_http)
-            app.router.add_get('/mcp/chat/subscribe', self.handle_chat_sse)
-            app.router.add_post('/mcp/stream/chat', self.handle_mcp_stream_chat)  # HTTP streaming for chat
+            logger.info("FastMCP tools registered - use stdio mode for MCP client access")
 
         return app
 
