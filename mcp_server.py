@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-MCP Server for Markdown Live View
+FastMCP Server for Markdown Live View
 
-Provides Model Context Protocol (MCP) server functionality to allow AI assistants
+Provides Model Context Protocol (MCP) server functionality using FastMCP to allow AI assistants
 to directly create and manage markdown files that will be displayed in the live view system.
 """
 
@@ -14,15 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
+from fastmcp import FastMCP
 from mcp.types import (
     CallToolResult,
-    ListToolsResult,
-    Tool,
     TextContent,
     INTERNAL_ERROR,
-    METHOD_NOT_FOUND,
     JSONRPCError
 )
 
@@ -31,16 +27,20 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class MarkdownMCPServer:
-    """MCP Server for managing markdown files in the live view system."""
+    """FastMCP Server for managing markdown files in the live view system."""
     
     def __init__(self, markdown_dir: str = "markdown"):
-        """Initialize the MCP server.
+        """Initialize the FastMCP server.
         
         Args:
             markdown_dir: Directory where markdown files are stored
         """
         self.markdown_dir = Path(markdown_dir).resolve()
-        self.server = Server("markdown-liveview")
+        self.server = FastMCP(
+            name="markdown-liveview",
+            version="1.0.0",
+            instructions="FastMCP server for managing markdown files in the live view system"
+        )
         
         # Ensure the markdown directory exists
         self.markdown_dir.mkdir(exist_ok=True)
@@ -48,129 +48,40 @@ class MarkdownMCPServer:
         # Register tool handlers
         self._register_tools()
         
-        logger.info(f"MCP Server initialized for directory: {self.markdown_dir}")
+        logger.info(f"FastMCP Server initialized for directory: {self.markdown_dir}")
     
     def _register_tools(self):
-        """Register all available tools with the MCP server."""
+        """Register all available tools with FastMCP."""
         
-        @self.server.list_tools()
-        async def list_tools() -> ListToolsResult:
-            """List all available tools."""
-            tools = [
-                Tool(
-                    name="show_content",
-                    description="Create new markdown content that will appear in the live view",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "content": {
-                                "type": "string",
-                                "description": "Markdown content to write to the live view"
-                            },
-                            "title": {
-                                "type": "string",
-                                "description": "Optional short title used only for readability in the response"
-                            }
-                        },
-                        "required": ["content"]
-                    }
-                ),
-                Tool(
-                    name="list_content",
-                    description="List all markdown entries currently available",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": False
-                    }
-                ),
-                Tool(
-                    name="view_content",
-                    description="Read the content of a markdown entry using its File Id",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "fileId": {
-                                "type": "string",
-                                "description": "The File Id that was returned when the content was created"
-                            }
-                        },
-                        "required": ["fileId"]
-                    }
-                ),
-                Tool(
-                    name="update_content",
-                    description="Append to or replace an existing markdown entry",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "fileId": {
-                                "type": "string",
-                                "description": "The File Id returned by show_content"
-                            },
-                            "content": {
-                                "type": "string",
-                                "description": "Content to append or new content to replace"
-                            },
-                            "mode": {
-                                "type": "string",
-                                "enum": ["append", "replace"],
-                                "description": "Whether to append to existing content or replace it entirely",
-                                "default": "append"
-                            }
-                        },
-                        "required": ["fileId", "content"]
-                    }
-                ),
-                Tool(
-                    name="remove_content",
-                    description="Delete a markdown entry using its File Id",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "fileId": {
-                                "type": "string",
-                                "description": "The File Id returned by show_content"
-                            }
-                        },
-                        "required": ["fileId"]
-                    }
-                )
-            ]
-            return ListToolsResult(tools=tools)
-
-        @self.server.call_tool()
-        async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
-            """Handle tool calls."""
-            try:
-                if name == "show_content":
-                    return await self._show_content(
-                        content=arguments.get("content", ""),
-                        title=arguments.get("title")
-                    )
-                elif name == "list_content":
-                    return await self._list_content()
-                elif name == "view_content":
-                    return await self._view_content(
-                        fileId=arguments.get("fileId") or arguments.get("filename", "")
-                    )
-                elif name == "update_content":
-                    return await self._update_content(
-                        fileId=arguments.get("fileId") or arguments.get("filename", ""),
-                        content=arguments.get("content", ""),
-                        mode=arguments.get("mode", "append")
-                    )
-                elif name == "remove_content":
-                    return await self._remove_content(
-                        fileId=arguments.get("fileId") or arguments.get("filename", "")
-                    )
-                else:
-                    raise JSONRPCError(METHOD_NOT_FOUND, f"Unknown tool: {name}")
-            except JSONRPCError:
-                raise
-            except Exception as e:
-                logger.error(f"Error calling tool {name}: {e}")
-                raise JSONRPCError(INTERNAL_ERROR, str(e))
+        @self.server.tool()
+        async def show_content(content: str, title: str = None) -> str:
+            """Create new markdown content that will appear in the live view."""
+            result = await self._show_content(content, title)
+            return result.content[0].text if result.content else "Created"
+        
+        @self.server.tool()
+        async def list_content() -> str:
+            """List all markdown entries currently available."""
+            result = await self._list_content()
+            return result.content[0].text if result.content else "No content"
+        
+        @self.server.tool()
+        async def view_content(fileId: str) -> str:
+            """Read the content of a markdown entry using its File Id."""
+            result = await self._view_content(fileId)
+            return result.content[0].text if result.content else "Not found"
+        
+        @self.server.tool()
+        async def update_content(fileId: str, content: str, mode: str = "append") -> str:
+            """Append to or replace an existing markdown entry."""
+            result = await self._update_content(fileId, content, mode)
+            return result.content[0].text if result.content else "Updated"
+        
+        @self.server.tool()
+        async def remove_content(fileId: str) -> str:
+            """Delete a markdown entry using its File Id."""
+            result = await self._remove_content(fileId)
+            return result.content[0].text if result.content else "Removed"
 
     def _generate_file_id(self) -> str:
         """Generate a unique File Id ending with .md."""
@@ -344,10 +255,9 @@ class MarkdownMCPServer:
             raise JSONRPCError(INTERNAL_ERROR, f"Failed to delete file: {e}")
     
     async def run(self):
-        """Run the MCP server using stdio."""
-        logger.info("Starting MCP server...")
-        async with stdio_server() as streams:
-            await self.server.run(streams[0], streams[1], self.server.create_initialization_options())
+        """Run the FastMCP server using stdio."""
+        logger.info("Starting FastMCP server...")
+        await self.server.run_stdio_async()
 
 def main():
     """Main entry point for the MCP server."""
