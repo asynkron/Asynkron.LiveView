@@ -212,6 +212,42 @@
             gap: 8px;
         }
 
+        .layout-toggle-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-right: 1px solid #30363d;
+            padding-right: 12px;
+            margin-right: 12px;
+        }
+
+        .layout-toggle-group button {
+            padding: 10px 12px;
+        }
+
+        .layout-toggle-group button[aria-pressed="false"] {
+            background: transparent;
+            color: #8b949e;
+            border-color: #30363d;
+        }
+
+        .layout-toggle-group button[aria-pressed="false"] .file-button-icon {
+            color: inherit;
+        }
+
+        @media (max-width: 720px) {
+            .layout-toggle-group {
+                width: 100%;
+                justify-content: flex-end;
+                border-right: none;
+                border-bottom: 1px solid #30363d;
+                padding-right: 0;
+                padding-bottom: 8px;
+                margin-right: 0;
+                margin-bottom: 8px;
+            }
+        }
+
         .file-actions button {
             padding: 10px 14px;
             border-radius: 0;
@@ -557,35 +593,18 @@
             letter-spacing: 0.16em;
         }
 
-        .sidebar-header {
-            position: sticky;
-            top: 0;
-            background: #161b22;
-            z-index: 10;
-            padding: 20px 20px 12px 20px;
-            border-bottom: 1px solid #30363d;
-        }
-
-        .sidebar-title {
-            margin: 0;
-            font-size: 0.85rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: #c9d1d9;
-        }
-
         .sidebar-path {
             font-size: 0.8rem;
             color: #8b949e;
             word-break: break-all;
             line-height: 1.3;
+            padding: 16px 20px 0;
         }
 
         .toc-list {
             flex: 1;
             overflow-y: auto;
-            padding: 16px 20px 24px;
+            padding: 20px 20px 24px;
         }
 
         .toc-list ol {
@@ -832,56 +851,7 @@
         }
 
         .terminal-panel.is-collapsed {
-            height: 44px;
-        }
-
-        .terminal-panel.is-collapsed .terminal-resize-handle,
-        .terminal-panel.is-collapsed .terminal-body {
             display: none;
-        }
-
-        .terminal-toolbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8px 16px;
-            background: #161b22;
-            border-bottom: 1px solid #30363d;
-            gap: 12px;
-        }
-
-        .terminal-title {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-weight: 600;
-            color: #c9d1d9;
-        }
-
-        .terminal-status {
-            font-size: 0.8rem;
-            color: #8b949e;
-        }
-
-        .terminal-actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .terminal-actions button {
-            padding: 6px 10px;
-            border-radius: 4px;
-            border: 1px solid #30363d;
-            background: #21262d;
-            color: #c9d1d9;
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-        }
-
-        .terminal-actions button:hover:not(:disabled) {
-            background: #2d333b;
         }
 
         .terminal-resize-handle {
@@ -897,9 +867,36 @@
             overflow: hidden;
         }
 
+        .terminal-status-badge {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: rgba(22, 27, 34, 0.85);
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: #8b949e;
+            pointer-events: none;
+        }
+
         #terminal-container {
             position: absolute;
             inset: 0;
+        }
+
+        .file-title {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: 500;
+            color: #c9d1d9;
+        }
+
+        body.dockview-active .file-title {
+            display: none;
         }
     </style>
 </head>
@@ -907,17 +904,13 @@
 <body>
     <div id="dockview-root" class="dockview-theme-abyss hidden"></div>
     <div class="app-shell">
-        <aside class="sidebar sidebar--toc" data-sidebar="toc">
+        <aside class="sidebar sidebar--toc is-expanded" data-sidebar="toc">
             <div class="sidebar-collapsed-label" aria-hidden="true">ToC</div>
             <div class="sidebar-content">
-                <div class="sidebar-header">
-                    <h2 class="sidebar-title">Table of contents</h2>
-                </div>
                 <nav id="toc-list" class="toc-list" aria-label="Table of contents"></nav>
             </div>
         </aside>
-        <div id="toc-splitter" class="splitter splitter--toc" role="separator" aria-orientation="vertical" tabindex="0"
-            aria-label="Resize table of contents sidebar"></div>
+
         <section class="viewer">
             <header class="file-header">
                 <div class="file-meta">
@@ -925,6 +918,16 @@
                     <span id="status-message" class="status-message"></span>
                 </div>
                 <div class="file-actions">
+                    <div class="layout-toggle-group" role="group" aria-label="Toggle panels">
+                        <button id="toggle-toc-panel" type="button" data-panel-toggle="toc" aria-pressed="true"
+                            class="secondary" aria-label="Toggle table of contents panel" title="Toggle table of contents panel">
+                            <i class="fas fa-list file-button-icon" aria-hidden="true"></i>
+                        </button>
+                        <button id="toggle-files-panel" type="button" data-panel-toggle="files" aria-pressed="true"
+                            class="secondary" aria-label="Toggle files panel" title="Toggle files panel">
+                            <i class="fas fa-folder-tree file-button-icon" aria-hidden="true"></i>
+                        </button>
+                    </div>
                     <button id="edit-button" class="" title="Edit the current file"><i
                             class="fas fa-edit file-button-icon"></i></button>
                     <button id="preview-button" class=" hidden" title="Preview the pending changes"><i
@@ -942,9 +945,8 @@
             <div id="content" class="content-area"></div>
             <div id="editor-container" class="editor-container"></div>
         </section>
-        <div id="file-splitter" class="splitter splitter--files" role="separator" aria-orientation="vertical"
-            tabindex="0" aria-label="Resize file explorer sidebar"></div>
-        <aside class="sidebar sidebar--files" data-sidebar="files">
+
+        <aside class="sidebar sidebar--files is-expanded" data-sidebar="files">
             <div class="sidebar-collapsed-label" aria-hidden="true">Files</div>
             <div class="sidebar-content">
                 <div class="sidebar-header">
@@ -964,15 +966,7 @@
     </div>
 
     <div id="terminal-panel" class="terminal-panel">
-        <div class="terminal-toolbar">
-            <div class="terminal-title"><i class="fas fa-terminal"></i><span>Terminal</span></div>
-            <div class="terminal-actions">
-                <span id="terminal-status" class="terminal-status" role="status" aria-live="polite">Disconnected</span>
-                <button id="terminal-toggle" type="button" aria-expanded="true">Hide terminal</button>
-            </div>
-        </div>
-        <div id="terminal-resize-handle" class="terminal-resize-handle" role="separator" aria-orientation="horizontal"
-            tabindex="0" aria-label="Resize terminal panel"></div>
+
         <div class="terminal-body">
             <div id="terminal-container"></div>
         </div>
@@ -1023,7 +1017,7 @@
         referrerpolicy="no-referrer" defer></script>
     <script src="/static/dockview/dockview.min.js" defer></script>
     <script defer>
-        (function () {
+        function bootstrap() {
             const state = window.__INITIAL_STATE__ || {};
             const content = document.getElementById('content');
             const fileName = document.getElementById('file-name');
@@ -1053,6 +1047,23 @@
             const terminalStatusText = document.getElementById('terminal-status');
             const terminalResizeHandle = document.getElementById('terminal-resize-handle');
             const terminalStorageKey = 'terminalPanelHeight';
+            const panelToggleButtons = Array.from(document.querySelectorAll('[data-panel-toggle]'));
+            const panelToggleButtonMap = new Map();
+
+            panelToggleButtons.forEach((button) => {
+                const panelName = button.dataset.panelToggle;
+                if (!panelName) {
+                    return;
+                }
+
+                panelToggleButtonMap.set(panelName, button);
+                button.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    const currentlyVisible = getPanelVisibility(panelName);
+                    const nextVisible = !currentlyVisible;
+                    setPanelVisibility(panelName, nextVisible);
+                });
+            });
 
             if (content) {
                 content.addEventListener('click', handleHeadingActionClick);
@@ -1105,6 +1116,7 @@
             const knownDirectories = new Set();
             const dockviewSetup = initialiseDockviewLayout();
             const dockviewIsActive = Boolean(dockviewSetup);
+            refreshPanelToggleStates();
             let activeHeadingCollection = null;
             let documentSlugCounts = null;
             let terminalInstance = null;
@@ -1118,7 +1130,93 @@
             const terminalDecoder = new TextDecoder();
             let terminalLastStatusMessage = '';
 
+            function updatePanelToggleButtonState(name, isVisible) {
+                const button = panelToggleButtonMap.get(name);
+                if (!button) {
+                    return;
+                }
+                button.setAttribute('aria-pressed', String(Boolean(isVisible)));
+            }
+
+            function getPanelVisibility(name) {
+                if (dockviewSetup && dockviewSetup.panels && dockviewSetup.panels[name]) {
+                    const panel = dockviewSetup.panels[name];
+                    const groupApi = panel?.group?.api;
+                    if (groupApi && typeof groupApi.isVisible === 'boolean') {
+                        return groupApi.isVisible;
+                    }
+                    return panel?.api?.isVisible ?? true;
+                }
+
+                if (name === 'toc' && tocSidebar) {
+                    return !tocSidebar.classList.contains('hidden');
+                }
+
+                if (name === 'files' && fileSidebar) {
+                    return !fileSidebar.classList.contains('hidden');
+                }
+
+                return true;
+            }
+
+            function toggleLegacySidebar(name, visible) {
+                const targetSidebar = name === 'toc' ? tocSidebar : name === 'files' ? fileSidebar : null;
+                if (!targetSidebar) {
+                    return;
+                }
+
+                targetSidebar.classList.toggle('hidden', !visible);
+                targetSidebar.classList.toggle('is-expanded', visible);
+
+                const widthVar = name === 'toc' ? '--toc-sidebar-current-width' : '--file-sidebar-current-width';
+                const defaultWidth = name === 'toc' ? 'var(--toc-sidebar-width)' : 'var(--file-sidebar-width)';
+
+                rootElement.style.setProperty(
+                    widthVar,
+                    visible ? defaultWidth : 'var(--sidebar-collapsed-width)'
+                );
+
+                const splitter = name === 'toc' ? tocSplitter : fileSplitter;
+                if (splitter) {
+                    splitter.classList.toggle('hidden', !visible);
+                }
+            }
+
+            function setPanelVisibility(name, visible) {
+                if (dockviewSetup && dockviewSetup.panels && dockviewSetup.panels[name]) {
+                    const panel = dockviewSetup.panels[name];
+                    const groupApi = panel?.group?.api;
+
+                    if (groupApi && typeof groupApi.setVisible === 'function') {
+                        groupApi.setVisible(visible);
+                    } else if (panel?.api && typeof panel.api.setVisible === 'function') {
+                        panel.api.setVisible(visible);
+                    }
+                } else {
+                    toggleLegacySidebar(name, visible);
+                }
+
+                if (name === 'toc' && tocSidebar) {
+                    tocSidebar.classList.toggle('is-expanded', visible);
+                } else if (name === 'files' && fileSidebar) {
+                    fileSidebar.classList.toggle('is-expanded', visible);
+                }
+
+                updatePanelToggleButtonState(name, visible);
+                window.requestAnimationFrame(() => {
+                    updatePanelToggleButtonState(name, getPanelVisibility(name));
+                });
+            }
+
+            function refreshPanelToggleStates() {
+                panelToggleButtonMap.forEach((_button, name) => {
+                    updatePanelToggleButtonState(name, getPanelVisibility(name));
+                });
+            }
+
             function initialiseDockviewLayout() {
+                window.__dockviewSetup = null;
+
                 if (!dockviewRoot) {
                     return null;
                 }
@@ -1128,6 +1226,7 @@
                     if (appShell) {
                         appShell.classList.remove('hidden');
                     }
+                    window.__dockviewSetup = null;
                     return null;
                 }
 
@@ -1137,6 +1236,7 @@
                     if (appShell) {
                         appShell.classList.remove('hidden');
                     }
+                    window.__dockviewSetup = null;
                     return null;
                 }
 
@@ -1153,6 +1253,14 @@
                     files: fileSidebar,
                     terminal: terminalPanel,
                 };
+
+                if (tocSidebar) {
+                    tocSidebar.classList.add('is-expanded');
+                }
+
+                if (fileSidebar) {
+                    fileSidebar.classList.add('is-expanded');
+                }
 
                 const dockview = new window.dockview.DockviewComponent(dockviewRoot, {
                     hideBorders: true,
@@ -1210,7 +1318,7 @@
                     appShell.classList.add('hidden');
                 }
 
-                return {
+                const setup = {
                     instance: dockview,
                     panels: {
                         viewer: viewerPanel,
@@ -1219,6 +1327,24 @@
                         terminal: terminalDockviewPanel,
                     },
                 };
+
+                window.__dockviewSetup = setup;
+
+                [
+                    ['toc', tocPanel?.group?.api],
+                    ['files', filesPanel?.group?.api],
+                ].forEach(([name, api]) => {
+                    if (api && typeof api.onDidVisibilityChange === 'function') {
+                        api.onDidVisibilityChange(({ isVisible }) => {
+                            updatePanelToggleButtonState(name, isVisible);
+                        });
+                    }
+                });
+
+                updatePanelToggleButtonState('toc', true);
+                updatePanelToggleButtonState('files', true);
+
+                return setup;
             }
 
             function normaliseFileIndex({ filesValue, treeValue }) {
@@ -3656,7 +3782,13 @@
             if (initialFileFromLocation) {
                 loadFile(initialFileFromLocation, { replaceHistory: true });
             }
-        })();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+        } else {
+            bootstrap();
+        }
     </script>
 </body>
 
