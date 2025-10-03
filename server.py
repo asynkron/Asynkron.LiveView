@@ -5,12 +5,19 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
+import os
+import pty
+import signal
+import struct
+import termios
 from pathlib import Path
 from typing import Dict, Optional
 from urllib.parse import unquote
 
+import fcntl
 from aiohttp import WSMsgType, web
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -277,6 +284,100 @@ class UnifiedMarkdownServer:
         self.clients.pop(ws, None)
         return ws
 
+    async def terminal_websocket_handler(self, request: web.Request) -> web.StreamResponse:
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+
+        loop = asyncio.get_running_loop()
+
+        try:
+            pid, master_fd = pty.fork()
+        except OSError as exc:  # pragma: no cover - defensive logging
+            logger.exception("Failed to spawn terminal session: %s", exc)
+            await ws.send_json({"type": "state", "message": "Unable to start shell"})
+            await ws.close()
+            return ws
+
+        if pid == 0:  # Child process: replace with user shell
+            shell = os.environ.get("SHELL", "/bin/bash")
+            try:
+                os.execvp(shell, [shell])
+            except Exception:  # pragma: no cover - exec should not return
+                os.execvp("/bin/sh", ["/bin/sh"])
+            os._exit(1)
+
+        os.set_blocking(master_fd, False)
+        output_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
+
+        def _enqueue_output() -> None:
+            try:
+                data = os.read(master_fd, 4096)
+            except OSError:
+                data = b""
+
+            if data:
+                output_queue.put_nowait(data)
+            else:
+                with contextlib.suppress(Exception):
+                    loop.remove_reader(master_fd)
+                output_queue.put_nowait(None)
+
+        loop.add_reader(master_fd, _enqueue_output)
+        output_task = asyncio.create_task(self._forward_terminal_output(output_queue, ws))
+
+        await ws.send_json({"type": "state", "message": "Shell ready"})
+
+        exit_code: Optional[int] = None
+
+        try:
+            async for message in ws:
+                if message.type == WSMsgType.TEXT:
+                    if not message.data:
+                        continue
+                    try:
+                        payload = json.loads(message.data)
+                    except json.JSONDecodeError:
+                        os.write(master_fd, message.data.encode("utf-8"))
+                        continue
+
+                    msg_type = payload.get("type")
+                    if msg_type == "input":
+                        data = payload.get("data", "")
+                        if isinstance(data, str) and data:
+                            os.write(master_fd, data.encode("utf-8"))
+                    elif msg_type == "resize":
+                        cols = int(payload.get("cols") or 0)
+                        rows = int(payload.get("rows") or 0)
+                        self._resize_pty(master_fd, rows, cols)
+                elif message.type == WSMsgType.BINARY:
+                    if message.data:
+                        os.write(master_fd, message.data)
+                elif message.type == WSMsgType.ERROR:
+                    logger.error("Terminal websocket closed with error: %s", ws.exception())
+                    break
+        finally:
+            with contextlib.suppress(Exception):
+                loop.remove_reader(master_fd)
+            with contextlib.suppress(asyncio.QueueFull):
+                output_queue.put_nowait(None)
+            output_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await output_task
+
+            exit_code = await self._terminate_terminal_process(pid)
+
+            with contextlib.suppress(OSError):
+                os.close(master_fd)
+
+            if exit_code is not None and not ws.closed:
+                with contextlib.suppress(Exception):
+                    await ws.send_json({"type": "exit", "code": exit_code})
+
+            with contextlib.suppress(Exception):
+                await ws.close()
+
+        return ws
+
     async def _handle_ws_message(self, ws: web.WebSocketResponse, raw: str) -> None:
         try:
             payload = json.loads(raw)
@@ -355,6 +456,53 @@ class UnifiedMarkdownServer:
         observer.start()
         self.watchers[resolved] = observer
 
+    async def _forward_terminal_output(
+        self,
+        queue: asyncio.Queue[Optional[bytes]],
+        ws: web.WebSocketResponse,
+    ) -> None:
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                if ws.closed:
+                    break
+                await ws.send_bytes(chunk)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # pragma: no cover - best effort logging
+            logger.debug("Terminal output forwarding stopped: %s", exc)
+
+    def _resize_pty(self, master_fd: int, rows: int, cols: int) -> None:
+        if master_fd < 0 or rows <= 0 or cols <= 0:
+            return
+        try:
+            packed = struct.pack("HHHH", rows, cols, 0, 0)
+            fcntl.ioctl(master_fd, termios.TIOCSWINSZ, packed)
+        except OSError as exc:  # pragma: no cover - resize failures are non-fatal
+            logger.debug("Failed to resize PTY: rows=%s cols=%s error=%s", rows, cols, exc)
+
+    async def _terminate_terminal_process(self, pid: int) -> Optional[int]:
+        if pid <= 0:
+            return None
+
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGTERM)
+
+        try:
+            _, status = await asyncio.to_thread(os.waitpid, pid, 0)
+        except ChildProcessError:
+            return None
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.debug("waitpid failed for terminal process: %s", exc)
+            return None
+
+        try:
+            return os.waitstatus_to_exitcode(status)
+        except ValueError:
+            return None
+
     # ------------------------------------------------------------------
     # Server bootstrap helpers
     # ------------------------------------------------------------------
@@ -367,6 +515,7 @@ class UnifiedMarkdownServer:
         app.router.add_delete("/api/file", self.handle_delete_file)
         app.router.add_put("/api/file", self.handle_update_file)
         app.router.add_get("/ws", self.websocket_handler)
+        app.router.add_get("/ws/terminal", self.terminal_websocket_handler)
         app.on_startup.append(self.on_startup)
         app.on_shutdown.append(self.on_shutdown)
         return app
