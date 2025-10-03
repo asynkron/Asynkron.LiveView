@@ -202,20 +202,20 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 1.2em;
-            height: 1.2em;
-            margin-right: 8px;
+            width: auto;
+            height: auto;
+            margin-left: 8px;
             color: #8b949e;
             text-decoration: none;
             opacity: 0;
             transition: opacity 0.2s ease, color 0.2s ease;
+            font-size: 0.8em;
+            font-weight: normal;
         }
 
         .heading-anchor::before {
-            content: "\f0c1";
-            font-family: "Font Awesome 6 Free";
-            font-weight: 900;
-            font-size: 0.85em;
+            content: "#";
+            font-family: inherit;
         }
 
         .heading-anchor:hover,
@@ -1476,7 +1476,7 @@
                                 });
                             }
 
-                            return `<h${headingLevel} id="${slug}"><a class="heading-anchor" href="#${slug}" aria-label="${ariaLabel}"></a>${text}</h${headingLevel}>`;
+                            return `<h${headingLevel} id="${slug}">${text}<a class="heading-anchor" href="#${slug}" aria-label="${ariaLabel}"></a></h${headingLevel}>`;
                         },
                     },
                 });
