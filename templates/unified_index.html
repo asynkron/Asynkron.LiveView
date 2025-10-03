@@ -14,6 +14,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/darcula.min.css"
         integrity="sha512-kqCOYFDdyQF4JM8RddA6rMBi9oaLdR0aEACdB95Xl1EgaBhaXMIe8T4uxmPitfq4qRmHqo+nBU2d1l+M4zUx1g=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+        integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
         :root {
             color-scheme: dark;
@@ -82,9 +85,9 @@
             align-items: flex-start;
             justify-content: space-between;
             gap: 16px;
-            padding: 20px;
+            padding: 20px 20px 20px 24px;
             border-bottom: 1px solid #30363d;
-            background: linear-gradient(135deg, rgba(34, 45, 64, 0.9), rgba(19, 24, 32, 0.9));
+            background: #0d1117;
         }
 
         .file-header h1 {
@@ -111,9 +114,9 @@
 
         .file-actions button {
             padding: 10px 14px;
-            border-radius: 8px;
+            border-radius: 0;
             border: 1px solid transparent;
-            background: #238636;
+            background: #ffffff10;
             color: #fff;
             font-weight: 600;
             cursor: pointer;
@@ -332,8 +335,7 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 4px 6px;
-            border-radius: 6px;
+            padding: 2px 4px;
             background: transparent;
             transition: background 0.2s ease;
         }
@@ -369,10 +371,20 @@
             color: inherit;
             text-align: left;
             cursor: pointer;
-            padding: 6px 8px;
-            border-radius: 6px;
+            padding: 4px 6px;
             font: inherit;
             font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .directory-icon {
+            font-size: 0.9rem;
+            color: #58a6ff;
+            flex-shrink: 0;
+            min-width: 20px;
+            text-align: center;
         }
 
         .directory-label {
@@ -387,13 +399,24 @@
             width: 100%;
             background: transparent;
             border: 1px solid transparent;
-            border-radius: 8px;
             color: inherit;
-            padding: 8px 12px;
+            padding: 6px 10px;
             text-align: left;
             cursor: pointer;
             transition: border 0.2s ease, background 0.2s ease;
             font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .file-icon {
+            font-size: 0.9rem;
+            color: #58a6ff;
+            flex-shrink: 0;
+            min-width: 20px;
+            text-align: center;
+            margin-left: 8px;
         }
 
         .file-button:hover {
@@ -492,13 +515,12 @@
                     <span id="status-message" class="status-message"></span>
                 </div>
                 <div class="file-actions">
-                    <button id="edit-button" class="secondary" title="Edit the current file">Edit</button>
-                    <button id="preview-button" class="secondary hidden"
-                        title="Preview the pending changes">Preview</button>
+                    <button id="edit-button" class="" title="Edit the current file">Edit</button>
+                    <button id="preview-button" class=" hidden" title="Preview the pending changes">Preview</button>
                     <button id="save-button" class="hidden" title="Save your changes">Save</button>
-                    <button id="cancel-button" class="secondary hidden" title="Cancel editing">Cancel</button>
+                    <button id="cancel-button" class=" hidden" title="Cancel editing">Cancel</button>
                     <button id="download-button" title="Download the current file">Download</button>
-                    <button id="delete-button" class="danger" title="Delete the current file">Delete</button>
+                    <button id="delete-button" class="" title="Delete the current file">Delete</button>
                 </div>
             </header>
             <div id="content" class="content-area"></div>
@@ -1863,7 +1885,19 @@
                     const label = document.createElement('button');
                     label.type = 'button';
                     label.className = 'tree-label directory-label';
-                    label.textContent = node.name;
+
+                    // Create folder icon element
+                    const folderIcon = document.createElement('i');
+                    folderIcon.className = isExpanded ? 'directory-icon fas fa-folder-open' : 'directory-icon fas fa-folder';
+
+                    // Create text element
+                    const labelText = document.createElement('span');
+                    labelText.textContent = node.name;
+
+                    // Append icon and text to label
+                    label.appendChild(folderIcon);
+                    label.appendChild(labelText);
+
                     label.addEventListener('click', (event) => {
                         event.preventDefault();
                         toggleDirectory(pathKey);
@@ -1889,7 +1923,19 @@
                 const button = document.createElement('button');
                 button.className = 'file-button';
                 button.type = 'button';
-                button.textContent = node.name;
+
+                // Create icon element
+                const icon = document.createElement('i');
+                icon.className = 'file-icon fab fa-markdown'; // Font Awesome markdown icon
+
+                // Create text element
+                const text = document.createElement('span');
+                text.textContent = node.name;
+
+                // Append icon and text to button
+                button.appendChild(icon);
+                button.appendChild(text);
+
                 button.dataset.file = node.relativePath;
                 button.style.paddingLeft = `${depth * 16 + 24}px`;
                 button.addEventListener('click', () => {
