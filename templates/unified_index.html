@@ -20,9 +20,15 @@
     <style>
         :root {
             color-scheme: dark;
-            --sidebar-width: 320px;
-            --sidebar-min-width: 220px;
-            --sidebar-max-width: 520px;
+            --file-sidebar-width: 320px;
+            --file-sidebar-min-width: 220px;
+            --file-sidebar-max-width: 520px;
+            --toc-sidebar-width: 260px;
+            --toc-sidebar-min-width: 180px;
+            --toc-sidebar-max-width: 420px;
+            --sidebar-collapsed-width: 20px;
+            --file-sidebar-current-width: var(--sidebar-collapsed-width);
+            --toc-sidebar-current-width: var(--sidebar-collapsed-width);
         }
 
         path {
@@ -55,7 +61,7 @@
 
         .app-shell {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 10px minmax(var(--sidebar-min-width), var(--sidebar-width));
+            grid-template-columns: var(--toc-sidebar-current-width) 10px minmax(0, 1fr) 10px var(--file-sidebar-current-width);
             gap: 0;
             padding: 0;
             height: 100vh;
@@ -65,14 +71,26 @@
         @media (max-width: 980px) {
             .app-shell {
                 grid-template-columns: 1fr;
+                grid-auto-rows: auto;
             }
 
             .splitter {
                 display: none;
             }
 
+            .sidebar,
+            .viewer {
+                grid-column: 1 / -1;
+            }
+
+            .viewer {
+                order: 0;
+            }
+
             .sidebar {
-                order: -1;
+                order: 1;
+                height: auto;
+                min-height: 0;
             }
         }
 
@@ -177,6 +195,48 @@
         .content-area h5,
         .content-area h6 {
             color: #f0f6fc;
+            position: relative;
+        }
+
+        .heading-anchor {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.2em;
+            height: 1.2em;
+            margin-right: 8px;
+            color: #8b949e;
+            text-decoration: none;
+            opacity: 0;
+            transition: opacity 0.2s ease, color 0.2s ease;
+        }
+
+        .heading-anchor::before {
+            content: "\f0c1";
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            font-size: 0.85em;
+        }
+
+        .heading-anchor:hover,
+        .heading-anchor:focus-visible {
+            color: #58a6ff;
+            outline: none;
+        }
+
+        .content-area h1:hover .heading-anchor,
+        .content-area h1:focus-within .heading-anchor,
+        .content-area h2:hover .heading-anchor,
+        .content-area h2:focus-within .heading-anchor,
+        .content-area h3:hover .heading-anchor,
+        .content-area h3:focus-within .heading-anchor,
+        .content-area h4:hover .heading-anchor,
+        .content-area h4:focus-within .heading-anchor,
+        .content-area h5:hover .heading-anchor,
+        .content-area h5:focus-within .heading-anchor,
+        .content-area h6:hover .heading-anchor,
+        .content-area h6:focus-within .heading-anchor {
+            opacity: 1;
         }
 
         .content-area code {
@@ -300,6 +360,7 @@
         }
 
         .sidebar {
+            position: relative;
             display: flex;
             flex-direction: column;
             background: #161b22;
@@ -309,6 +370,59 @@
             gap: 0;
             height: 100vh;
             overflow: hidden;
+            transition: box-shadow 0.2s ease;
+        }
+
+        .sidebar.is-expanded {
+            box-shadow: inset 0 0 0 1px rgba(88, 166, 255, 0.2);
+        }
+
+        .sidebar-content {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            height: 100%;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .sidebar.is-expanded .sidebar-content {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .sidebar-collapsed-label {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            writing-mode: vertical-rl;
+            transform: rotate(180deg);
+            font-size: 0.7rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: #8b949e;
+            pointer-events: none;
+            opacity: 0.65;
+            transition: opacity 0.2s ease;
+        }
+
+        .sidebar.is-expanded .sidebar-collapsed-label {
+            opacity: 0;
+        }
+
+        .sidebar.is-expanded .sidebar-collapsed-label::after {
+            content: '';
+        }
+
+        .sidebar--toc .sidebar-collapsed-label {
+            letter-spacing: 0.2em;
+        }
+
+        .sidebar--files .sidebar-collapsed-label {
+            letter-spacing: 0.16em;
         }
 
         .sidebar-header {
@@ -320,11 +434,59 @@
             border-bottom: 1px solid #30363d;
         }
 
+        .sidebar-title {
+            margin: 0;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #c9d1d9;
+        }
+
         .sidebar-path {
             font-size: 0.8rem;
             color: #8b949e;
             word-break: break-all;
             line-height: 1.3;
+        }
+
+        .toc-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px 24px;
+        }
+
+        .toc-list ol {
+            list-style: none;
+            margin: 0;
+            padding-left: 0;
+        }
+
+        .toc-entry {
+            margin: 2px 0;
+        }
+
+        .toc-link {
+            display: block;
+            padding: 6px 10px;
+            border-radius: 6px;
+            color: #c9d1d9;
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+
+        .toc-link:hover,
+        .toc-link:focus-visible {
+            background: #1f242e;
+            color: #58a6ff;
+            outline: none;
+        }
+
+        .toc-empty-state {
+            color: #8b949e;
+            font-size: 0.85rem;
+            padding: 8px 4px;
         }
 
         .file-list {
@@ -529,6 +691,17 @@
 
 <body>
     <div class="app-shell">
+        <aside class="sidebar sidebar--toc" data-sidebar="toc">
+            <div class="sidebar-collapsed-label" aria-hidden="true">ToC</div>
+            <div class="sidebar-content">
+                <div class="sidebar-header">
+                    <h2 class="sidebar-title">Table of contents</h2>
+                </div>
+                <nav id="toc-list" class="toc-list" aria-label="Table of contents"></nav>
+            </div>
+        </aside>
+        <div id="toc-splitter" class="splitter splitter--toc" role="separator" aria-orientation="vertical" tabindex="0"
+            aria-label="Resize table of contents sidebar"></div>
         <section class="viewer">
             <header class="file-header">
                 <div class="file-meta">
@@ -553,13 +726,16 @@
             <div id="content" class="content-area"></div>
             <div id="editor-container" class="editor-container"></div>
         </section>
-        <div id="splitter" class="splitter" role="separator" aria-orientation="vertical" tabindex="0"
-            aria-label="Resize sidebar"></div>
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-path" id="sidebar-path"></div>
+        <div id="file-splitter" class="splitter splitter--files" role="separator" aria-orientation="vertical" tabindex="0"
+            aria-label="Resize file explorer sidebar"></div>
+        <aside class="sidebar sidebar--files" data-sidebar="files">
+            <div class="sidebar-collapsed-label" aria-hidden="true">Files</div>
+            <div class="sidebar-content">
+                <div class="sidebar-header">
+                    <div class="sidebar-path" id="sidebar-path"></div>
+                </div>
+                <ul id="file-list" class="file-list" role="tree"></ul>
             </div>
-            <ul id="file-list" class="file-list" role="tree"></ul>
         </aside>
     </div>
 
@@ -626,13 +802,13 @@
             const cancelButton = document.getElementById('cancel-button');
             const editorContainer = document.getElementById('editor-container');
             const offlineOverlay = document.getElementById('offline-overlay');
-            const splitter = document.getElementById('splitter');
-            const sidebar = document.querySelector('.sidebar');
-
-            // Sidebar width constants - must be defined before clampSidebarWidth is called
-            const SIDEBAR_WIDTH_KEY = 'liveview.sidebarWidth';
-            const SIDEBAR_MIN_WIDTH = 220;
-            const SIDEBAR_MAX_WIDTH = 520;
+            const tocList = document.getElementById('toc-list');
+            const tocSidebar = document.querySelector('.sidebar--toc');
+            const fileSidebar = document.querySelector('.sidebar--files');
+            const tocSplitter = document.getElementById('toc-splitter');
+            const fileSplitter = document.getElementById('file-splitter');
+            const rootElement = document.documentElement;
+            const collapsedSidebarWidth = getCssNumber('--sidebar-collapsed-width', 18);
 
             const initialIndex = normaliseFileIndex({
                 filesValue: state.files,
@@ -641,7 +817,6 @@
             let currentFile = state.selectedFile || null;
             let files = initialIndex.files;
             let fileTree = initialIndex.tree;
-            let sidebarWidth = clampSidebarWidth(loadStoredSidebarWidth());
             let websocket = null;
             let reconnectTimer = null;
             let isEditing = false;
@@ -677,6 +852,8 @@
             const relativeLinkProtocolRelativePattern = /^\/\//;
             const expandedDirectories = new Set();
             const knownDirectories = new Set();
+            const sidebarControllers = { toc: null, files: null };
+            let activeHeadingCollection = null;
 
             function normaliseFileIndex({ filesValue, treeValue }) {
                 let flat = [];
@@ -812,83 +989,237 @@
                 });
             }
 
-            function loadStoredSidebarWidth() {
-                try {
-                    const storedValue = parseFloat(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
-                    return Number.isFinite(storedValue) ? storedValue : NaN;
-                } catch (error) {
-                    return NaN;
-                }
+            function initialiseSidebars() {
+                sidebarControllers.toc = setupSidebarController({
+                    sidebar: tocSidebar,
+                    splitter: tocSplitter,
+                    storageKey: 'liveview.tocSidebarWidth',
+                    minWidth: 180,
+                    maxWidth: 420,
+                    widthVar: '--toc-sidebar-width',
+                    currentVar: '--toc-sidebar-current-width',
+                    dragDirection: 1,
+                    keyboardDirections: {
+                        ArrowLeft: -1,
+                        ArrowRight: 1,
+                    },
+                });
+
+                sidebarControllers.files = setupSidebarController({
+                    sidebar: fileSidebar,
+                    splitter: fileSplitter,
+                    storageKey: 'liveview.fileSidebarWidth',
+                    legacyKeys: ['liveview.sidebarWidth'],
+                    minWidth: 220,
+                    maxWidth: 520,
+                    widthVar: '--file-sidebar-width',
+                    currentVar: '--file-sidebar-current-width',
+                    dragDirection: -1,
+                    keyboardDirections: {
+                        ArrowLeft: 1,
+                        ArrowRight: -1,
+                    },
+                });
             }
 
-            function persistSidebarWidth(width) {
-                try {
-                    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
-                } catch (error) {
-                    return;
-                }
-            }
-
-            function clampSidebarWidth(width) {
-                if (!Number.isFinite(width)) {
-                    const computed = parseFloat(
-                        getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')
-                    );
-                    width = Number.isFinite(computed) ? computed : 320;
-                }
-                return Math.min(Math.max(width, SIDEBAR_MIN_WIDTH), SIDEBAR_MAX_WIDTH);
-            }
-
-            function applySidebarWidth(width) {
-                const clamped = clampSidebarWidth(width);
-                document.documentElement.style.setProperty('--sidebar-width', `${clamped}px`);
-                return clamped;
-            }
-
-            function initialiseSplitView() {
-                if (!splitter || !sidebar) {
-                    return;
+            function setupSidebarController(config) {
+                if (!config || !config.sidebar || !config.splitter) {
+                    return null;
                 }
 
-                sidebarWidth = applySidebarWidth(sidebarWidth);
+                const { sidebar, splitter } = config;
+                const storageKeys = [config.storageKey].concat(Array.isArray(config.legacyKeys) ? config.legacyKeys : []);
+                const dragDirection = typeof config.dragDirection === 'number' ? config.dragDirection : 1;
+                const keyboardDirections = config.keyboardDirections || {};
+                const responsiveQuery = window.matchMedia('(max-width: 980px)');
+                let collapseTimer = null;
 
-                splitter.addEventListener('pointerdown', (event) => {
-                    if (window.matchMedia('(max-width: 980px)').matches) {
+                function clampWidth(value) {
+                    const numeric = Number.parseFloat(value);
+                    if (!Number.isFinite(numeric)) {
+                        return config.minWidth;
+                    }
+                    return Math.min(config.maxWidth, Math.max(config.minWidth, numeric));
+                }
+
+                function loadStoredWidth() {
+                    for (let index = 0; index < storageKeys.length; index += 1) {
+                        const key = storageKeys[index];
+                        if (!key) {
+                            continue;
+                        }
+                        try {
+                            const raw = window.localStorage.getItem(key);
+                            if (raw !== null) {
+                                const parsed = Number.parseFloat(raw);
+                                if (Number.isFinite(parsed)) {
+                                    return clampWidth(parsed);
+                                }
+                            }
+                        } catch (error) {
+                            console.warn('Unable to read stored sidebar width', error);
+                            break;
+                        }
+                    }
+
+                    const fallbackWidth = getCssNumber(config.widthVar, config.minWidth);
+                    return clampWidth(fallbackWidth);
+                }
+
+                function isCompactLayout() {
+                    return responsiveQuery.matches;
+                }
+
+                function cancelScheduledCollapse() {
+                    if (collapseTimer !== null) {
+                        window.clearTimeout(collapseTimer);
+                        collapseTimer = null;
+                    }
+                }
+
+                function scheduleCollapse(controller) {
+                    cancelScheduledCollapse();
+                    collapseTimer = window.setTimeout(() => {
+                        collapseTimer = null;
+                        controller.collapseIfInactive();
+                    }, 200);
+                }
+
+                const controller = {
+                    collapsed: true,
+                    width: clampWidth(loadStoredWidth()),
+                    setWidth(newWidth) {
+                        const clamped = clampWidth(newWidth);
+                        controller.width = clamped;
+                        rootElement.style.setProperty(config.widthVar, `${clamped}px`);
+                        if (!controller.collapsed || isCompactLayout()) {
+                            rootElement.style.setProperty(config.currentVar, `${clamped}px`);
+                        }
+                        return clamped;
+                    },
+                    persistWidth() {
+                        try {
+                            window.localStorage.setItem(config.storageKey, String(controller.width));
+                        } catch (error) {
+                            console.warn('Unable to persist sidebar width', error);
+                        }
+                    },
+                    setCollapsed(collapsed) {
+                        controller.collapsed = Boolean(collapsed);
+                        const shouldCollapse = controller.collapsed && !isCompactLayout();
+                        const targetWidth = shouldCollapse ? collapsedSidebarWidth : controller.width;
+                        sidebar.classList.toggle('is-expanded', !shouldCollapse);
+                        rootElement.style.setProperty(config.currentVar, `${targetWidth}px`);
+                        if (!shouldCollapse) {
+                            rootElement.style.setProperty(config.widthVar, `${controller.width}px`);
+                        }
+                    },
+                    ensureExpanded() {
+                        cancelScheduledCollapse();
+                        controller.setCollapsed(false);
+                    },
+                    collapseIfInactive() {
+                        if (isCompactLayout()) {
+                            controller.setCollapsed(false);
+                            return;
+                        }
+
+                        if (!sidebar.matches(':hover') && !sidebar.matches(':focus-within')) {
+                            controller.setCollapsed(true);
+                        }
+                    },
+                };
+
+                controller.setWidth(controller.width);
+                controller.setCollapsed(true);
+
+                const handlePointerDown = (event) => {
+                    if (event.button !== 0 || isCompactLayout()) {
                         return;
                     }
 
                     event.preventDefault();
+                    controller.ensureExpanded();
                     splitter.classList.add('dragging');
                     const startX = event.clientX;
                     const startWidth = sidebar.getBoundingClientRect().width;
 
                     const handleMove = (moveEvent) => {
-                        const delta = startX - moveEvent.clientX;
-                        sidebarWidth = applySidebarWidth(startWidth + delta);
+                        const delta = moveEvent.clientX - startX;
+                        controller.setWidth(startWidth + delta * dragDirection);
                     };
 
                     const handleStop = () => {
                         splitter.classList.remove('dragging');
                         document.removeEventListener('pointermove', handleMove);
                         document.removeEventListener('pointerup', handleStop);
-                        persistSidebarWidth(sidebarWidth);
+                        controller.persistWidth();
+                        controller.collapseIfInactive();
                     };
 
                     document.addEventListener('pointermove', handleMove);
                     document.addEventListener('pointerup', handleStop);
-                });
+                };
 
-                splitter.addEventListener('keydown', (event) => {
-                    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+                const handleKeyDown = (event) => {
+                    const direction = keyboardDirections[event.key];
+                    if (!direction) {
                         return;
                     }
 
                     event.preventDefault();
                     const step = event.shiftKey ? 48 : 16;
-                    const direction = event.key === 'ArrowLeft' ? 1 : -1;
-                    sidebarWidth = applySidebarWidth(sidebarWidth + direction * step);
-                    persistSidebarWidth(sidebarWidth);
-                });
+                    controller.ensureExpanded();
+                    controller.setWidth(controller.width + direction * step);
+                    controller.persistWidth();
+                };
+
+                const handleMouseEnter = () => {
+                    controller.ensureExpanded();
+                };
+
+                const handleMouseLeave = () => {
+                    scheduleCollapse(controller);
+                };
+
+                const handleFocusIn = () => {
+                    controller.ensureExpanded();
+                };
+
+                const handleFocusOut = () => {
+                    scheduleCollapse(controller);
+                };
+
+                const handleResponsiveChange = () => {
+                    if (isCompactLayout()) {
+                        cancelScheduledCollapse();
+                        controller.setCollapsed(false);
+                    } else {
+                        controller.collapseIfInactive();
+                    }
+                };
+
+                splitter.addEventListener('pointerdown', handlePointerDown);
+                splitter.addEventListener('keydown', handleKeyDown);
+                splitter.addEventListener('mouseenter', handleMouseEnter);
+                splitter.addEventListener('mouseleave', handleMouseLeave);
+                splitter.addEventListener('focusin', handleFocusIn);
+                splitter.addEventListener('focusout', handleFocusOut);
+                sidebar.addEventListener('mouseenter', handleMouseEnter);
+                sidebar.addEventListener('pointerdown', handleMouseEnter);
+                sidebar.addEventListener('mouseleave', handleMouseLeave);
+                sidebar.addEventListener('focusin', handleFocusIn);
+                sidebar.addEventListener('focusout', handleFocusOut);
+
+                if (typeof responsiveQuery.addEventListener === 'function') {
+                    responsiveQuery.addEventListener('change', handleResponsiveChange);
+                } else if (typeof responsiveQuery.addListener === 'function') {
+                    responsiveQuery.addListener(handleResponsiveChange);
+                }
+
+                handleResponsiveChange();
+
+                return controller;
             }
 
             function updateRelativeLinkBase(filePath) {
@@ -1059,6 +1390,24 @@
                 },
             };
 
+            function getCssNumber(variableName, fallback) {
+                if (typeof variableName !== 'string' || !variableName) {
+                    return typeof fallback === 'number' ? fallback : 0;
+                }
+
+                try {
+                    const computed = getComputedStyle(rootElement).getPropertyValue(variableName);
+                    const parsed = Number.parseFloat(computed);
+                    if (Number.isFinite(parsed)) {
+                        return parsed;
+                    }
+                } catch (error) {
+                    console.warn('Failed to read CSS variable', variableName, error);
+                }
+
+                return typeof fallback === 'number' ? fallback : 0;
+            }
+
             function configureMarked() {
                 if (typeof marked === 'undefined' || markedConfigured) {
                     return;
@@ -1104,6 +1453,30 @@
                     },
                 });
 
+                marked.use({
+                    headerIds: true,
+                    mangle: false,
+                    renderer: {
+                        heading(text, level, raw, slugger) {
+                            const headingLevel = Math.min(Math.max(level || 1, 1), 6);
+                            const slug = slugger.slug(typeof raw === 'string' ? raw : text);
+                            const plainText = normaliseHeadingText(text, raw);
+                            const ariaSource = plainText || (typeof raw === 'string' ? raw : 'heading');
+                            const ariaLabel = escapeHtml(`Link to section ${ariaSource}`);
+
+                            if (Array.isArray(activeHeadingCollection)) {
+                                activeHeadingCollection.push({
+                                    level: headingLevel,
+                                    text: plainText || ariaSource,
+                                    slug,
+                                });
+                            }
+
+                            return `<h${headingLevel} id="${slug}"><a class="heading-anchor" href="#${slug}" aria-label="${ariaLabel}"></a>${text}</h${headingLevel}>`;
+                        },
+                    },
+                });
+
                 marked.setOptions({
                     breaks: true,
                     gfm: true,
@@ -1129,6 +1502,26 @@
                 }
 
                 markedConfigured = true;
+            }
+
+            function normaliseHeadingText(rendered, raw) {
+                if (typeof rendered === 'string' && rendered.trim()) {
+                    const temp = document.createElement('div');
+                    temp.innerHTML = rendered;
+                    const textContent = (temp.textContent || temp.innerText || '').trim();
+                    if (textContent) {
+                        return textContent;
+                    }
+                }
+
+                if (typeof raw === 'string') {
+                    const trimmed = raw.trim();
+                    if (trimmed) {
+                        return trimmed;
+                    }
+                }
+
+                return '';
             }
 
             function escapeHtml(value) {
@@ -1684,8 +2077,10 @@
                 const updateCurrent = Boolean(options.updateCurrent);
 
                 if (typeof marked === 'undefined') {
+                    activeHeadingCollection = null;
                     pendingMarkdown = sourceText;
                     content.textContent = sourceText;
+                    updateTableOfContents([]);
                     waitForCoreLibraries().then(() => {
                         if (pendingMarkdown !== null) {
                             const textToRender = pendingMarkdown;
@@ -1699,7 +2094,10 @@
                     return;
                 }
 
+                activeHeadingCollection = [];
                 content.innerHTML = marked.parse(sourceText);
+                const headings = Array.isArray(activeHeadingCollection) ? [...activeHeadingCollection] : [];
+                activeHeadingCollection = null;
                 pendingMarkdown = null;
 
                 if (typeof hljs !== 'undefined') {
@@ -1715,10 +2113,94 @@
                     });
                 }
 
+                updateTableOfContents(headings);
                 renderAllDiagrams();
                 if (updateCurrent) {
                     currentContent = sourceText;
                 }
+            }
+
+            function updateTableOfContents(headings) {
+                if (!tocList) {
+                    return;
+                }
+
+                tocList.innerHTML = '';
+
+                if (!Array.isArray(headings) || headings.length === 0) {
+                    const emptyState = document.createElement('p');
+                    emptyState.className = 'toc-empty-state';
+                    emptyState.textContent = 'No headings found in this document yet.';
+                    tocList.appendChild(emptyState);
+                    return;
+                }
+
+                const minLevel = headings.reduce((accumulator, entry) => {
+                    const level = typeof entry.level === 'number' ? entry.level : 1;
+                    return Math.min(accumulator, Math.max(1, Math.min(6, level)));
+                }, 6);
+
+                const list = document.createElement('ol');
+                list.setAttribute('role', 'list');
+
+                headings.forEach((entry) => {
+                    const level = Math.max(1, Math.min(6, entry.level || 1));
+                    const item = document.createElement('li');
+                    item.className = 'toc-entry';
+
+                    const link = document.createElement('a');
+                    link.className = 'toc-link';
+                    link.href = `#${entry.slug}`;
+                    link.textContent = entry.text || entry.slug || 'Untitled section';
+                    link.setAttribute('aria-level', String(level));
+                    link.dataset.level = String(level);
+                    const indentLevel = Math.max(0, level - minLevel);
+                    link.style.paddingLeft = `${10 + indentLevel * 16}px`;
+
+                    item.appendChild(link);
+                    list.appendChild(item);
+                });
+
+                tocList.appendChild(list);
+            }
+
+            function handleTocClick(event) {
+                const link = event.target.closest('a.toc-link');
+                if (!link) {
+                    return;
+                }
+
+                const hash = link.getAttribute('href');
+                if (typeof hash !== 'string' || !hash.startsWith('#')) {
+                    return;
+                }
+
+                const targetId = hash.slice(1);
+                if (!targetId) {
+                    return;
+                }
+
+                const targetElement = document.getElementById(targetId);
+                if (!targetElement) {
+                    return;
+                }
+
+                event.preventDefault();
+
+                try {
+                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } catch (error) {
+                    targetElement.scrollIntoView();
+                }
+
+                if (typeof history !== 'undefined' && typeof history.replaceState === 'function') {
+                    const newUrl = `${window.location.pathname}${window.location.search}#${targetId}`;
+                    history.replaceState(history.state, '', newUrl);
+                }
+            }
+
+            if (tocList) {
+                tocList.addEventListener('click', handleTocClick);
             }
 
             // ------------------------------------------------------------------
@@ -2252,7 +2734,7 @@
 
             function initialise() {
                 const initialFallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
-                initialiseSplitView();
+                initialiseSidebars();
                 renderMarkdown(state.content || initialFallback, { updateCurrent: true });
                 renderFileList();
                 updateHeader();
