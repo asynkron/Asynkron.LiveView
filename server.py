@@ -78,7 +78,10 @@ class UnifiedMarkdownServer:
         self.default_root = Path(markdown_dir).expanduser().resolve()
         self.port = port
         self.file_manager = FileManager()
-        self.template_path = Path(__file__).resolve().parent / "templates" / "unified_index.html"
+        base_path = Path(__file__).resolve().parent
+        self.template_path = base_path / "templates" / "unified_index.html"
+        # Keep a dedicated directory for vendor assets so we do not rely on flaky CDNs.
+        self.static_assets_path = base_path / "templates" / "static"
 
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.clients: Dict[web.WebSocketResponse, str] = {}
@@ -516,6 +519,9 @@ class UnifiedMarkdownServer:
         app.router.add_put("/api/file", self.handle_update_file)
         app.router.add_get("/ws", self.websocket_handler)
         app.router.add_get("/ws/terminal", self.terminal_websocket_handler)
+        # Serve vendored assets (e.g. dockview) directly from disk to avoid CDN outages.
+        if self.static_assets_path.exists():
+            app.router.add_static("/static/", self.static_assets_path)
         app.on_startup.append(self.on_startup)
         app.on_shutdown.append(self.on_shutdown)
         return app
