@@ -240,7 +240,15 @@ function bootstrap() {
 
         try {
             const savedLayout = JSON.parse(rawLayout);
-            instance.restoreLayout(savedLayout);
+
+            if (typeof instance.restoreLayout === 'function') {
+                instance.restoreLayout(savedLayout);
+            } else if (typeof instance.fromJSON === 'function') {
+                // Dockview >= 1.12 exposes fromJSON instead of restoreLayout
+                instance.fromJSON(savedLayout);
+            } else {
+                throw new Error('Dockview instance cannot restore layouts');
+            }
             return true;
         } catch (error) {
             console.warn('Failed to restore dockview layout; clearing saved state.', error);
@@ -260,7 +268,12 @@ function bootstrap() {
         }
 
         try {
-            const layoutState = dockviewSetup.instance.saveLayout();
+            const { instance } = dockviewSetup;
+            const layoutState = (typeof instance.saveLayout === 'function')
+                ? instance.saveLayout()
+                : (typeof instance.toJSON === 'function')
+                    ? instance.toJSON()
+                    : (() => { throw new Error('Dockview instance cannot serialise layouts'); })();
             const serialisedLayout = JSON.stringify(layoutState);
             window.localStorage.setItem(dockviewLayoutStorageKey, serialisedLayout);
         } catch (error) {
