@@ -1094,6 +1094,7 @@
             const knownDirectories = new Set();
             const dockviewSetup = initialiseDockviewLayout();
             const dockviewIsActive = Boolean(dockviewSetup);
+            document.body.classList.toggle('dockview-active', dockviewIsActive);
             refreshPanelToggleStates();
             let activeHeadingCollection = null;
             let documentSlugCounts = null;
@@ -1264,10 +1265,14 @@
                     },
                 });
 
+                const currentViewerTitle = (typeof currentFile === 'string' && currentFile.length)
+                    ? currentFile
+                    : 'Document';
+
                 const viewerPanel = dockview.addPanel({
                     id: 'dockview-viewer',
                     component: 'viewer',
-                    title: 'Document',
+                    title: currentViewerTitle,
                 });
 
                 const tocPanel = dockview.addPanel({
@@ -2532,8 +2537,37 @@
                 offlineOverlay.classList.toggle('visible', !connected);
             }
 
+            function updateDocumentPanelTitle() {
+                const viewerPanel = dockviewSetup?.panels?.viewer;
+                if (!viewerPanel) {
+                    return;
+                }
+
+                const title = currentFile || 'Document';
+                const panelApi = viewerPanel?.api;
+
+                if (panelApi && typeof panelApi.setTitle === 'function') {
+                    panelApi.setTitle(title);
+                } else if (typeof viewerPanel.setTitle === 'function') {
+                    viewerPanel.setTitle(title);
+                }
+            }
+
             function updateHeader() {
-                fileName.textContent = currentFile || 'No file selected';
+                if (fileName) {
+                    if (dockviewIsActive) {
+                        if (currentFile) {
+                            fileName.textContent = 'Markdown Viewer';
+                            fileName.classList.add('hidden');
+                        } else {
+                            fileName.textContent = 'No file selected';
+                            fileName.classList.remove('hidden');
+                        }
+                    } else {
+                        fileName.classList.remove('hidden');
+                        fileName.textContent = currentFile || 'No file selected';
+                    }
+                }
                 sidebarPath.textContent = resolvedRootPath || originalPathArgument || 'Unknown';
                 const hasFile = Boolean(currentFile);
                 downloadButton.disabled = !hasFile;
@@ -2543,6 +2577,7 @@
                 saveButton.disabled = !hasFile;
                 cancelButton.disabled = false;
                 updateActionVisibility();
+                updateDocumentPanelTitle();
             }
 
             function updateActionVisibility() {
