@@ -124,8 +124,17 @@
             background-color: #161b22 !important;
         }
 
-        .dv-tabs-and-actions-container{
-            background-color: #232c37 !important
+        .dv-tabs-and-actions-container {
+            background-color: #11151a !important;
+        }
+
+        .dv-tab .dv-default-tab .dv-default-tab-action,
+        .dv-tabs-and-actions-container .dv-right-actions-container {
+            display: none !important;
+        }
+
+        .dv-tab .dv-default-tab .dv-default-tab-content {
+            margin-right: 0;
         }
 
         .panel-missing {
@@ -898,6 +907,93 @@
             margin: 0 auto 16px;
         }
 
+        body.modal-open {
+            overflow: hidden;
+        }
+
+        .dialog-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(13, 17, 23, 0.85);
+            z-index: 10000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(2px);
+        }
+
+        .dialog-overlay.visible {
+            display: flex;
+        }
+
+        .dialog-window {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 28px;
+            width: min(420px, 92vw);
+            box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+            color: #c9d1d9;
+        }
+
+        .dialog-window h3 {
+            margin: 0 0 12px;
+            font-size: 1.25rem;
+            color: #f0f6fc;
+        }
+
+        .dialog-window p {
+            margin: 0 0 20px;
+            color: #8b949e;
+            line-height: 1.5;
+        }
+
+        .dialog-detail {
+            margin-top: -8px;
+            margin-bottom: 24px;
+        }
+
+        .dialog-filename {
+            color: #f0f6fc;
+            font-weight: 600;
+        }
+
+        .dialog-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .dialog-actions button {
+            padding: 10px 18px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            font-weight: 600;
+            cursor: pointer;
+            background: #21262d;
+            color: #c9d1d9;
+            transition: background 0.2s ease, transform 0.1s ease, border-color 0.2s ease;
+        }
+
+        .dialog-actions button:hover,
+        .dialog-actions button:focus-visible {
+            background: #2b3440;
+            border-color: #30363d;
+            transform: translateY(-1px);
+            outline: none;
+        }
+
+        .dialog-actions .primary {
+            background: #238636;
+            color: #ffffff;
+        }
+
+        .dialog-actions .primary:hover,
+        .dialog-actions .primary:focus-visible {
+            background: #2ea043;
+            border-color: #3fb950;
+        }
+
         @keyframes spin {
             0% {
                 transform: rotate(0deg);
@@ -1048,6 +1144,22 @@
         </div>
     </div>
 
+    <div id="unsaved-changes-modal" class="dialog-overlay" role="dialog" aria-modal="true"
+        aria-labelledby="unsaved-changes-title" aria-describedby="unsaved-changes-message" tabindex="-1">
+        <div class="dialog-window">
+            <h3 id="unsaved-changes-title">Unsaved changes</h3>
+            <p id="unsaved-changes-message">You have unsaved changes in
+                <span id="unsaved-changes-filename" class="dialog-filename"></span>.
+            </p>
+            <p id="unsaved-changes-detail" class="dialog-detail">What would you like to do?</p>
+            <div class="dialog-actions">
+                <button type="button" id="unsaved-changes-save" class="primary">Save changes</button>
+                <button type="button" id="unsaved-changes-discard" class="secondary">Discard</button>
+                <button type="button" id="unsaved-changes-cancel" class="secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <div id="terminal-panel" class="terminal-panel">
 
         <div class="terminal-body">
@@ -1115,6 +1227,13 @@
             const cancelButton = document.getElementById('cancel-button');
             const editorContainer = document.getElementById('editor-container');
             const offlineOverlay = document.getElementById('offline-overlay');
+            const unsavedChangesModal = document.getElementById('unsaved-changes-modal');
+            const unsavedChangesFilename = document.getElementById('unsaved-changes-filename');
+            const unsavedChangesMessage = document.getElementById('unsaved-changes-message');
+            const unsavedChangesDetail = document.getElementById('unsaved-changes-detail');
+            const unsavedChangesSaveButton = document.getElementById('unsaved-changes-save');
+            const unsavedChangesDiscardButton = document.getElementById('unsaved-changes-discard');
+            const unsavedChangesCancelButton = document.getElementById('unsaved-changes-cancel');
             const tocList = document.getElementById('toc-list');
             const tocSidebar = document.querySelector('.sidebar--toc');
             const fileSidebar = document.querySelector('.sidebar--files');
@@ -1166,6 +1285,9 @@
             let editorInstance = null;
             let draftContent = '';
             let currentContent = typeof state.content === 'string' ? state.content : '';
+            let hasPendingChanges = false;
+            let suppressEditorChangeEvents = false;
+            let activeUnsavedPrompt = null;
 
             const originalPathArgument = state.pathArgument || '';
             let resolvedRootPath = state.rootPath || '';
@@ -2643,13 +2765,24 @@
                 offlineOverlay.classList.toggle('visible', !connected);
             }
 
+            function setHasPendingChanges(value) {
+                const nextValue = Boolean(value);
+                if (nextValue === hasPendingChanges) {
+                    return;
+                }
+                hasPendingChanges = nextValue;
+                document.body.classList.toggle('document-has-pending-changes', hasPendingChanges);
+                updateHeader();
+            }
+
             function updateDocumentPanelTitle() {
                 const viewerPanel = dockviewSetup?.panels?.viewer;
                 if (!viewerPanel) {
                     return;
                 }
 
-                const title = currentFile || 'Document';
+                const baseTitle = currentFile || 'Document';
+                const title = hasPendingChanges && currentFile ? `${baseTitle} ●` : baseTitle;
                 const panelApi = viewerPanel?.api;
 
                 if (panelApi && typeof panelApi.setTitle === 'function') {
@@ -2659,11 +2792,108 @@
                 }
             }
 
+            function promptUnsavedChanges(context = {}) {
+                if (!unsavedChangesModal) {
+                    return Promise.resolve('cancel');
+                }
+
+                if (activeUnsavedPrompt) {
+                    return activeUnsavedPrompt;
+                }
+
+                const nextFile = typeof context.nextFile === 'string' ? context.nextFile : '';
+                const displayName = currentFile || 'this document';
+                if (unsavedChangesFilename) {
+                    unsavedChangesFilename.textContent = displayName;
+                }
+                if (unsavedChangesMessage) {
+                    unsavedChangesMessage.setAttribute('data-current-file', displayName);
+                }
+                if (unsavedChangesDetail) {
+                    if (nextFile && nextFile !== currentFile) {
+                        unsavedChangesDetail.textContent = `Switch to “${nextFile}” without saving?`;
+                    } else {
+                        unsavedChangesDetail.textContent = 'What would you like to do?';
+                    }
+                }
+
+                unsavedChangesModal.classList.add('visible');
+                document.body.classList.add('modal-open');
+
+                const promise = new Promise((resolve) => {
+                    const cleanup = () => {
+                        unsavedChangesModal.classList.remove('visible');
+                        document.body.classList.remove('modal-open');
+                        if (unsavedChangesSaveButton) {
+                            unsavedChangesSaveButton.removeEventListener('click', onSave);
+                        }
+                        if (unsavedChangesDiscardButton) {
+                            unsavedChangesDiscardButton.removeEventListener('click', onDiscard);
+                        }
+                        if (unsavedChangesCancelButton) {
+                            unsavedChangesCancelButton.removeEventListener('click', onCancel);
+                        }
+                        unsavedChangesModal.removeEventListener('keydown', onKeyDown, true);
+                        unsavedChangesModal.removeEventListener('click', onOverlayClick);
+                        activeUnsavedPrompt = null;
+                    };
+
+                    const choose = (result) => {
+                        cleanup();
+                        resolve(result);
+                    };
+
+                    const onSave = () => choose('save');
+                    const onDiscard = () => choose('discard');
+                    const onCancel = () => choose('cancel');
+                    const onKeyDown = (event) => {
+                        if (event.key === 'Escape') {
+                            event.preventDefault();
+                            choose('cancel');
+                        }
+                    };
+                    const onOverlayClick = (event) => {
+                        if (event.target === unsavedChangesModal) {
+                            choose('cancel');
+                        }
+                    };
+
+                    if (unsavedChangesSaveButton) {
+                        unsavedChangesSaveButton.addEventListener('click', onSave);
+                    }
+                    if (unsavedChangesDiscardButton) {
+                        unsavedChangesDiscardButton.addEventListener('click', onDiscard);
+                    }
+                    if (unsavedChangesCancelButton) {
+                        unsavedChangesCancelButton.addEventListener('click', onCancel);
+                    }
+
+                    unsavedChangesModal.addEventListener('keydown', onKeyDown, true);
+                    unsavedChangesModal.addEventListener('click', onOverlayClick);
+
+                    window.setTimeout(() => {
+                        if (typeof unsavedChangesSaveButton?.focus === 'function') {
+                            unsavedChangesSaveButton.focus();
+                        } else if (typeof unsavedChangesDiscardButton?.focus === 'function') {
+                            unsavedChangesDiscardButton.focus();
+                        } else {
+                            unsavedChangesModal.focus({ preventScroll: true });
+                        }
+                    }, 0);
+                });
+
+                activeUnsavedPrompt = promise;
+                return promise;
+            }
+
             function updateHeader() {
+                const hasFile = Boolean(currentFile);
+                const indicator = hasPendingChanges && hasFile ? ' ●' : '';
+
                 if (fileName) {
                     if (dockviewIsActive) {
-                        if (currentFile) {
-                            fileName.textContent = 'Markdown Viewer';
+                        if (hasFile) {
+                            fileName.textContent = `Markdown Viewer${indicator}`;
                             fileName.classList.add('hidden');
                         } else {
                             fileName.textContent = 'No file selected';
@@ -2671,11 +2901,12 @@
                         }
                     } else {
                         fileName.classList.remove('hidden');
-                        fileName.textContent = currentFile || 'No file selected';
+                        const baseName = hasFile ? currentFile : 'No file selected';
+                        fileName.textContent = hasFile ? `${baseName}${indicator}` : baseName;
                     }
                 }
+
                 sidebarPath.textContent = resolvedRootPath || originalPathArgument || 'Unknown';
-                const hasFile = Boolean(currentFile);
                 downloadButton.disabled = !hasFile;
                 deleteButton.disabled = !hasFile;
                 editButton.disabled = !hasFile && !isEditing;
@@ -2887,16 +3118,31 @@
                 }
 
                 editorContainer.innerHTML = '';
-                editorInstance = window.CodeMirror(editorContainer, {
-                    value: draftContent,
-                    mode: 'markdown',
-                    theme: 'one-dark',
-                    lineNumbers: true,
-                    lineWrapping: true,
-                    autofocus: true,
-                });
-                editorInstance.setSize('100%', '100%');
+                suppressEditorChangeEvents = true;
+                try {
+                    editorInstance = window.CodeMirror(editorContainer, {
+                        value: draftContent,
+                        mode: 'markdown',
+                        theme: 'one-dark',
+                        lineNumbers: true,
+                        lineWrapping: true,
+                        autofocus: true,
+                    });
+                    editorInstance.setSize('100%', '100%');
+                    editorInstance.on('change', handleEditorContentChange);
+                } finally {
+                    suppressEditorChangeEvents = false;
+                }
+                setHasPendingChanges(draftContent !== currentContent);
                 return editorInstance;
+            }
+
+            function handleEditorContentChange(instance) {
+                if (!instance || suppressEditorChangeEvents) {
+                    return;
+                }
+                draftContent = instance.getValue();
+                setHasPendingChanges(draftContent !== currentContent);
             }
 
             function enterEditMode() {
@@ -2919,7 +3165,13 @@
                     return;
                 }
 
-                editor.setValue(draftContent);
+                suppressEditorChangeEvents = true;
+                try {
+                    editor.setValue(draftContent);
+                } finally {
+                    suppressEditorChangeEvents = false;
+                }
+                setHasPendingChanges(false);
                 window.setTimeout(() => {
                     editor.refresh();
                     editor.focus();
@@ -2939,6 +3191,7 @@
                 if (editor) {
                     draftContent = editor.getValue();
                 }
+                setHasPendingChanges(draftContent !== currentContent);
                 isPreviewing = true;
                 renderMarkdown(draftContent, { updateCurrent: false });
                 editorContainer.classList.remove('visible');
@@ -2981,6 +3234,7 @@
                 if (restoreContent) {
                     renderMarkdown(currentContent, { updateCurrent: true });
                 }
+                setHasPendingChanges(false);
                 updateHeader();
             }
 
@@ -3218,6 +3472,7 @@
                     resolvedRootPath = data.rootPath || resolvedRootPath;
                     currentFile = data.file || file;
                     renderMarkdown(data.content || '', { updateCurrent: true });
+                    setHasPendingChanges(false);
                     updateActiveFileHighlight();
                     updateHeader();
                     updateLocation(currentFile, { replace: replaceHistory || skipHistory });
@@ -3227,12 +3482,53 @@
                 }
             }
 
+            async function saveCurrentFile() {
+                if (!isEditing || !currentFile) {
+                    return false;
+                }
+
+                const editor = ensureEditorInstance();
+                if (editor && !isPreviewing) {
+                    draftContent = editor.getValue();
+                }
+
+                const contentToSave = draftContent;
+                setStatus('Saving changes…');
+
+                try {
+                    await fetchJson(`/api/file${buildQuery({ file: currentFile })}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ content: contentToSave }),
+                    });
+                    currentContent = contentToSave;
+                    exitEditMode();
+                    setStatus('Changes saved.');
+                    updateActiveFileHighlight();
+                    return true;
+                } catch (err) {
+                    setStatus(err.message);
+                    console.error('Save failed', err);
+                    return false;
+                }
+            }
+
             async function selectFile(file) {
-                if (isEditing || isPreviewing) {
-                    const discard = window.confirm('Discard unsaved changes?');
-                    if (!discard) {
+                if (hasPendingChanges) {
+                    const decision = await promptUnsavedChanges({ nextFile: file });
+                    if (decision === 'cancel') {
                         return;
                     }
+                    if (decision === 'save') {
+                        const saved = await saveCurrentFile();
+                        if (!saved) {
+                            return;
+                        }
+                    } else if (decision === 'discard') {
+                        exitEditMode();
+                        setStatus('Changes discarded.');
+                    }
+                } else if (isEditing || isPreviewing) {
                     exitEditMode();
                 }
                 await loadFile(file);
@@ -3265,31 +3561,7 @@
                 });
 
                 saveButton.addEventListener('click', async () => {
-                    if (!isEditing || !currentFile) {
-                        return;
-                    }
-                    const editor = ensureEditorInstance();
-                    if (editor && !isPreviewing) {
-                        draftContent = editor.getValue();
-                    }
-                    const contentToSave = isPreviewing ? draftContent : draftContent || (editor ? editor.getValue() : '');
-
-                    setStatus('Saving changes…');
-                    try {
-                        await fetchJson(`/api/file${buildQuery({ file: currentFile })}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ content: contentToSave }),
-                        });
-                        currentContent = contentToSave;
-                        exitEditMode();
-                        setStatus('Changes saved.');
-                        updateActiveFileHighlight();
-                        updateHeader();
-                    } catch (err) {
-                        setStatus(err.message);
-                        console.error('Save failed', err);
-                    }
+                    await saveCurrentFile();
                 });
 
                 downloadButton.addEventListener('click', async () => {
