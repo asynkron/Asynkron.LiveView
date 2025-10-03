@@ -14,6 +14,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/darcula.min.css"
         integrity="sha512-kqCOYFDdyQF4JM8RddA6rMBi9oaLdR0aEACdB95Xl1EgaBhaXMIe8T4uxmPitfq4qRmHqo+nBU2d1l+M4zUx1g=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://unpkg.com/dockview@1.19.0/dist/styles/dockview.css" crossorigin="anonymous"
+        referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
         integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
@@ -29,8 +31,8 @@
             --toc-sidebar-min-width: 180px;
             --toc-sidebar-max-width: 420px;
             --sidebar-collapsed-width: 20px;
-            --file-sidebar-current-width: var(--sidebar-collapsed-width);
-            --toc-sidebar-current-width: var(--sidebar-collapsed-width);
+            --file-sidebar-current-width: var(--file-sidebar-width);
+            --toc-sidebar-current-width: var(--toc-sidebar-width);
         }
 
         path {
@@ -65,6 +67,52 @@
             min-height: 0;
             height: 100%;
             overflow: hidden;
+        }
+
+        #dockview-root {
+            flex: 1 1 auto;
+            min-height: 0;
+            height: 100%;
+        }
+
+        #dockview-root.hidden {
+            display: none;
+        }
+
+        .dockview-panel-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .dockview-panel-container > * {
+            flex: 1 1 auto;
+            min-height: 0;
+            min-width: 0;
+        }
+
+        .dockview-panel-terminal .terminal-panel {
+            height: 100%;
+            max-height: none;
+            flex: 1 1 auto;
+        }
+
+        .dockview-panel-terminal .terminal-body {
+            flex: 1 1 auto;
+        }
+
+        .dockview-panel-container .terminal-toolbar {
+            flex: 0 0 auto;
+        }
+
+        .panel-missing {
+            padding: 16px;
+            color: #ff7b72;
+            font-size: 0.9rem;
         }
 
         a {
@@ -792,6 +840,7 @@
 </head>
 
 <body>
+    <div id="dockview-root" class="dockview-theme-abyss hidden"></div>
     <div class="app-shell">
         <aside class="sidebar sidebar--toc" data-sidebar="toc">
             <div class="sidebar-collapsed-label" aria-hidden="true">ToC</div>
@@ -907,6 +956,8 @@
         referrerpolicy="no-referrer" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js" crossorigin="anonymous"
         referrerpolicy="no-referrer" defer></script>
+    <script src="https://unpkg.com/dockview@1.19.0/dist/dockview.min.js" crossorigin="anonymous"
+        referrerpolicy="no-referrer" defer></script>
     <script defer>
         (function () {
             const state = window.__INITIAL_STATE__ || {};
@@ -928,8 +979,10 @@
             const fileSidebar = document.querySelector('.sidebar--files');
             const tocSplitter = document.getElementById('toc-splitter');
             const fileSplitter = document.getElementById('file-splitter');
+            const dockviewRoot = document.getElementById('dockview-root');
+            const appShell = document.querySelector('.app-shell');
             const rootElement = document.documentElement;
-            const collapsedSidebarWidth = getCssNumber('--sidebar-collapsed-width', 18);
+            const viewerSection = document.querySelector('.viewer');
             const terminalPanel = document.getElementById('terminal-panel');
             const terminalContainer = document.getElementById('terminal-container');
             const terminalToggleButton = document.getElementById('terminal-toggle');
@@ -979,7 +1032,8 @@
             const relativeLinkProtocolRelativePattern = /^\/\//;
             const expandedDirectories = new Set();
             const knownDirectories = new Set();
-            const sidebarControllers = { toc: null, files: null };
+            const dockviewSetup = initialiseDockviewLayout();
+            const dockviewIsActive = Boolean(dockviewSetup);
             let activeHeadingCollection = null;
             let documentSlugCounts = null;
             let terminalInstance = null;
@@ -992,6 +1046,109 @@
             let pendingTerminalFitFrame = null;
             const terminalDecoder = new TextDecoder();
             let terminalLastStatusMessage = '';
+
+            function initialiseDockviewLayout() {
+                if (!dockviewRoot) {
+                    return null;
+                }
+
+                if (!window.dockview || !window.dockview.DockviewComponent) {
+                    dockviewRoot.classList.add('hidden');
+                    if (appShell) {
+                        appShell.classList.remove('hidden');
+                    }
+                    return null;
+                }
+
+                if (!viewerSection || !tocSidebar || !fileSidebar || !terminalPanel) {
+                    console.warn('Dockview initialisation skipped: missing panel sources.');
+                    dockviewRoot.classList.add('hidden');
+                    if (appShell) {
+                        appShell.classList.remove('hidden');
+                    }
+                    return null;
+                }
+
+                if (tocSplitter && tocSplitter.parentElement) {
+                    tocSplitter.parentElement.removeChild(tocSplitter);
+                }
+                if (fileSplitter && fileSplitter.parentElement) {
+                    fileSplitter.parentElement.removeChild(fileSplitter);
+                }
+
+                const panelSources = {
+                    viewer: viewerSection,
+                    toc: tocSidebar,
+                    files: fileSidebar,
+                    terminal: terminalPanel,
+                };
+
+                const dockview = new window.dockview.DockviewComponent(dockviewRoot, {
+                    hideBorders: true,
+                    createComponent({ name }) {
+                        const element = document.createElement('div');
+                        element.classList.add('dockview-panel-container', `dockview-panel-${name}`);
+
+                        const source = panelSources[name];
+                        if (source) {
+                            element.appendChild(source);
+                        } else {
+                            const placeholder = document.createElement('div');
+                            placeholder.className = 'panel-missing';
+                            placeholder.textContent = `Missing panel: ${name}`;
+                            element.appendChild(placeholder);
+                        }
+
+                        return {
+                            element,
+                            init() { },
+                            dispose() { },
+                        };
+                    },
+                });
+
+                const viewerPanel = dockview.addPanel({
+                    id: 'dockview-viewer',
+                    component: 'viewer',
+                    title: 'Document',
+                });
+
+                const tocPanel = dockview.addPanel({
+                    id: 'dockview-toc',
+                    component: 'toc',
+                    title: 'Table of contents',
+                    position: { referencePanel: viewerPanel, direction: 'left' },
+                });
+
+                const filesPanel = dockview.addPanel({
+                    id: 'dockview-files',
+                    component: 'files',
+                    title: 'Files',
+                    position: { referencePanel: viewerPanel, direction: 'right' },
+                });
+
+                const terminalDockviewPanel = dockview.addPanel({
+                    id: 'dockview-terminal',
+                    component: 'terminal',
+                    title: 'Terminal',
+                    position: { referencePanel: viewerPanel, direction: 'bottom' },
+                });
+
+                dockviewRoot.classList.remove('hidden');
+                if (appShell) {
+                    appShell.classList.add('hidden');
+                }
+
+                return {
+                    instance: dockview,
+                    panels: {
+                        viewer: viewerPanel,
+                        toc: tocPanel,
+                        files: filesPanel,
+                        terminal: terminalDockviewPanel,
+                    },
+                };
+            }
 
             function normaliseFileIndex({ filesValue, treeValue }) {
                 let flat = [];
@@ -1125,239 +1282,6 @@
                         sortTree(node.children);
                     }
                 });
-            }
-
-            function initialiseSidebars() {
-                sidebarControllers.toc = setupSidebarController({
-                    sidebar: tocSidebar,
-                    splitter: tocSplitter,
-                    storageKey: 'liveview.tocSidebarWidth',
-                    minWidth: 180,
-                    maxWidth: 420,
-                    widthVar: '--toc-sidebar-width',
-                    currentVar: '--toc-sidebar-current-width',
-                    dragDirection: 1,
-                    keyboardDirections: {
-                        ArrowLeft: -1,
-                        ArrowRight: 1,
-                    },
-                });
-
-                sidebarControllers.files = setupSidebarController({
-                    sidebar: fileSidebar,
-                    splitter: fileSplitter,
-                    storageKey: 'liveview.fileSidebarWidth',
-                    legacyKeys: ['liveview.sidebarWidth'],
-                    minWidth: 220,
-                    maxWidth: 520,
-                    widthVar: '--file-sidebar-width',
-                    currentVar: '--file-sidebar-current-width',
-                    dragDirection: -1,
-                    keyboardDirections: {
-                        ArrowLeft: 1,
-                        ArrowRight: -1,
-                    },
-                });
-            }
-
-            function setupSidebarController(config) {
-                if (!config || !config.sidebar || !config.splitter) {
-                    return null;
-                }
-
-                const { sidebar, splitter } = config;
-                const storageKeys = [config.storageKey].concat(Array.isArray(config.legacyKeys) ? config.legacyKeys : []);
-                const dragDirection = typeof config.dragDirection === 'number' ? config.dragDirection : 1;
-                const keyboardDirections = config.keyboardDirections || {};
-                const responsiveQuery = window.matchMedia('(max-width: 980px)');
-                let collapseTimer = null;
-
-                function clampWidth(value) {
-                    const numeric = Number.parseFloat(value);
-                    if (!Number.isFinite(numeric)) {
-                        return config.minWidth;
-                    }
-                    return Math.min(config.maxWidth, Math.max(config.minWidth, numeric));
-                }
-
-                function loadStoredWidth() {
-                    for (let index = 0; index < storageKeys.length; index += 1) {
-                        const key = storageKeys[index];
-                        if (!key) {
-                            continue;
-                        }
-                        try {
-                            const raw = window.localStorage.getItem(key);
-                            if (raw !== null) {
-                                const parsed = Number.parseFloat(raw);
-                                if (Number.isFinite(parsed)) {
-                                    return clampWidth(parsed);
-                                }
-                            }
-                        } catch (error) {
-                            console.warn('Unable to read stored sidebar width', error);
-                            break;
-                        }
-                    }
-
-                    const fallbackWidth = getCssNumber(config.widthVar, config.minWidth);
-                    return clampWidth(fallbackWidth);
-                }
-
-                function isCompactLayout() {
-                    return responsiveQuery.matches;
-                }
-
-                function cancelScheduledCollapse() {
-                    if (collapseTimer !== null) {
-                        window.clearTimeout(collapseTimer);
-                        collapseTimer = null;
-                    }
-                }
-
-                function scheduleCollapse(controller) {
-                    cancelScheduledCollapse();
-                    collapseTimer = window.setTimeout(() => {
-                        collapseTimer = null;
-                        controller.collapseIfInactive();
-                    }, 200);
-                }
-
-                const controller = {
-                    collapsed: true,
-                    width: clampWidth(loadStoredWidth()),
-                    setWidth(newWidth) {
-                        const clamped = clampWidth(newWidth);
-                        controller.width = clamped;
-                        rootElement.style.setProperty(config.widthVar, `${clamped}px`);
-                        if (!controller.collapsed || isCompactLayout()) {
-                            rootElement.style.setProperty(config.currentVar, `${clamped}px`);
-                        }
-                        return clamped;
-                    },
-                    persistWidth() {
-                        try {
-                            window.localStorage.setItem(config.storageKey, String(controller.width));
-                        } catch (error) {
-                            console.warn('Unable to persist sidebar width', error);
-                        }
-                    },
-                    setCollapsed(collapsed) {
-                        controller.collapsed = Boolean(collapsed);
-                        const shouldCollapse = controller.collapsed && !isCompactLayout();
-                        const targetWidth = shouldCollapse ? collapsedSidebarWidth : controller.width;
-                        sidebar.classList.toggle('is-expanded', !shouldCollapse);
-                        rootElement.style.setProperty(config.currentVar, `${targetWidth}px`);
-                        if (!shouldCollapse) {
-                            rootElement.style.setProperty(config.widthVar, `${controller.width}px`);
-                        }
-                    },
-                    ensureExpanded() {
-                        cancelScheduledCollapse();
-                        controller.setCollapsed(false);
-                    },
-                    collapseIfInactive() {
-                        if (isCompactLayout()) {
-                            controller.setCollapsed(false);
-                            return;
-                        }
-
-                        if (!sidebar.matches(':hover') && !sidebar.matches(':focus-within')) {
-                            controller.setCollapsed(true);
-                        }
-                    },
-                };
-
-                controller.setWidth(controller.width);
-                controller.setCollapsed(true);
-
-                const handlePointerDown = (event) => {
-                    if (event.button !== 0 || isCompactLayout()) {
-                        return;
-                    }
-
-                    event.preventDefault();
-                    controller.ensureExpanded();
-                    splitter.classList.add('dragging');
-                    const startX = event.clientX;
-                    const startWidth = sidebar.getBoundingClientRect().width;
-
-                    const handleMove = (moveEvent) => {
-                        const delta = moveEvent.clientX - startX;
-                        controller.setWidth(startWidth + delta * dragDirection);
-                    };
-
-                    const handleStop = () => {
-                        splitter.classList.remove('dragging');
-                        document.removeEventListener('pointermove', handleMove);
-                        document.removeEventListener('pointerup', handleStop);
-                        controller.persistWidth();
-                        controller.collapseIfInactive();
-                    };
-
-                    document.addEventListener('pointermove', handleMove);
-                    document.addEventListener('pointerup', handleStop);
-                };
-
-                const handleKeyDown = (event) => {
-                    const direction = keyboardDirections[event.key];
-                    if (!direction) {
-                        return;
-                    }
-
-                    event.preventDefault();
-                    const step = event.shiftKey ? 48 : 16;
-                    controller.ensureExpanded();
-                    controller.setWidth(controller.width + direction * step);
-                    controller.persistWidth();
-                };
-
-                const handleMouseEnter = () => {
-                    controller.ensureExpanded();
-                };
-
-                const handleMouseLeave = () => {
-                    scheduleCollapse(controller);
-                };
-
-                const handleFocusIn = () => {
-                    controller.ensureExpanded();
-                };
-
-                const handleFocusOut = () => {
-                    scheduleCollapse(controller);
-                };
-
-                const handleResponsiveChange = () => {
-                    if (isCompactLayout()) {
-                        cancelScheduledCollapse();
-                        controller.setCollapsed(false);
-                    } else {
-                        controller.collapseIfInactive();
-                    }
-                };
-
-                splitter.addEventListener('pointerdown', handlePointerDown);
-                splitter.addEventListener('keydown', handleKeyDown);
-                splitter.addEventListener('mouseenter', handleMouseEnter);
-                splitter.addEventListener('mouseleave', handleMouseLeave);
-                splitter.addEventListener('focusin', handleFocusIn);
-                splitter.addEventListener('focusout', handleFocusOut);
-                sidebar.addEventListener('mouseenter', handleMouseEnter);
-                sidebar.addEventListener('pointerdown', handleMouseEnter);
-                sidebar.addEventListener('mouseleave', handleMouseLeave);
-                sidebar.addEventListener('focusin', handleFocusIn);
-                sidebar.addEventListener('focusout', handleFocusOut);
-
-                if (typeof responsiveQuery.addEventListener === 'function') {
-                    responsiveQuery.addEventListener('change', handleResponsiveChange);
-                } else if (typeof responsiveQuery.addListener === 'function') {
-                    responsiveQuery.addListener(handleResponsiveChange);
-                }
-
-                handleResponsiveChange();
-
-                return controller;
             }
 
             function updateRelativeLinkBase(filePath) {
@@ -3173,6 +3097,24 @@
                     return;
                 }
 
+                if (dockviewIsActive) {
+                    terminalCollapsed = false;
+                    terminalPanel.style.height = '';
+                    terminalPanel.style.maxHeight = '';
+                    terminalPanel.classList.remove('is-collapsed');
+                    if (terminalResizeHandle) {
+                        terminalResizeHandle.remove();
+                    }
+                    if (terminalToggleButton) {
+                        terminalToggleButton.disabled = true;
+                        terminalToggleButton.textContent = 'Terminal (layout-managed)';
+                        terminalToggleButton.setAttribute('aria-expanded', 'true');
+                    }
+                    ensureTerminalInstance();
+                    connectTerminal();
+                    return;
+                }
+
                 const minHeight = 140;
 
                 const clampHeight = (value) => {
@@ -3353,7 +3295,6 @@
 
             function initialise() {
                 const initialFallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
-                initialiseSidebars();
                 renderMarkdown(state.content || initialFallback, { updateCurrent: true });
                 renderFileList();
                 updateHeader();
