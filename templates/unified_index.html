@@ -48,6 +48,18 @@
             box-sizing: border-box;
         }
 
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
         .hidden {
             display: none !important;
         }
@@ -288,6 +300,43 @@
             outline: none;
         }
 
+        .heading-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 12px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .heading-action-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: #8b949e;
+            font-size: 0.7em;
+            line-height: 1;
+            cursor: pointer;
+            transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+        }
+
+        .heading-action-button i {
+            pointer-events: none;
+        }
+
+        .heading-action-button:hover,
+        .heading-action-button:focus-visible {
+            color: #58a6ff;
+            background: #ffffff10;
+            border-color: #30363d;
+            outline: none;
+        }
+
         .content-area h1:hover .heading-anchor,
         .content-area h1:focus-within .heading-anchor,
         .content-area h2:hover .heading-anchor,
@@ -299,8 +348,24 @@
         .content-area h5:hover .heading-anchor,
         .content-area h5:focus-within .heading-anchor,
         .content-area h6:hover .heading-anchor,
-        .content-area h6:focus-within .heading-anchor {
+        .content-area h6:focus-within .heading-anchor,
+        .content-area h1:hover .heading-actions,
+        .content-area h1:focus-within .heading-actions,
+        .content-area h2:hover .heading-actions,
+        .content-area h2:focus-within .heading-actions,
+        .content-area h3:hover .heading-actions,
+        .content-area h3:focus-within .heading-actions,
+        .content-area h4:hover .heading-actions,
+        .content-area h4:focus-within .heading-actions,
+        .content-area h5:hover .heading-actions,
+        .content-area h5:focus-within .heading-actions,
+        .content-area h6:hover .heading-actions,
+        .content-area h6:focus-within .heading-actions {
             opacity: 1;
+        }
+
+        .CodeMirror .heading-target-line {
+            background: rgba(88, 166, 255, 0.25);
         }
 
         .content-area code {
@@ -990,6 +1055,10 @@
             const terminalResizeHandle = document.getElementById('terminal-resize-handle');
             const terminalStorageKey = 'terminalPanelHeight';
 
+            if (content) {
+                content.addEventListener('click', handleHeadingActionClick);
+            }
+
             const initialIndex = normaliseFileIndex({
                 filesValue: state.files,
                 treeValue: state.fileTree,
@@ -1027,6 +1096,9 @@
             let relativeLinkBasePath = '';
             let relativeLinkBaseWalker = null;
             let relativeLinkExtensionRegistered = false;
+            let headingLocationMap = new Map();
+            let headingHighlightLine = null;
+            let headingHighlightTimeout = null;
             const relativeLinkDummyOrigin = 'http://__dummy__/';
             const relativeLinkSchemePattern = /^[a-zA-Z][\w+.-]*:/;
             const relativeLinkProtocolRelativePattern = /^\/\//;
@@ -1528,6 +1600,11 @@
                             const plainText = normaliseHeadingText(text, raw);
                             const ariaSource = plainText || (typeof raw === 'string' ? raw : 'heading');
                             const ariaLabel = escapeHtml(`Link to section ${ariaSource}`);
+                            const headingLabel = plainText || ariaSource || 'this section';
+                            const safeSlug = escapeHtml(slug);
+                            const actionsAriaLabel = escapeHtml(`Section actions for ${headingLabel}`);
+                            const editLabel = escapeHtml(`Edit section "${headingLabel}" in the editor`);
+                            const copyLabel = escapeHtml(`Copy link to section "${headingLabel}"`);
 
                             if (Array.isArray(activeHeadingCollection)) {
                                 activeHeadingCollection.push({
@@ -1537,7 +1614,7 @@
                                 });
                             }
 
-                            return `<h${headingLevel} id="${slug}">${text}<a class="heading-anchor" href="#${slug}" aria-label="${ariaLabel}"></a></h${headingLevel}>`;
+                            return `<h${headingLevel} id="${safeSlug}">${text}<span class="heading-actions" role="group" aria-label="${actionsAriaLabel}"><button type="button" class="heading-action-button heading-action-edit" data-heading-action="edit" data-heading-slug="${safeSlug}" title="${editLabel}"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span class="sr-only">${editLabel}</span></button><button type="button" class="heading-action-button heading-action-copy" data-heading-action="copy" data-heading-slug="${safeSlug}" title="${copyLabel}"><i class="fa-solid fa-link" aria-hidden="true"></i><span class="sr-only">${copyLabel}</span></button></span><a class="heading-anchor" href="#${safeSlug}" aria-label="${ariaLabel}"></a></h${headingLevel}>`;
                         },
                     },
                 });
@@ -1598,37 +1675,286 @@
                     .replace(/'/g, '&#39;');
             }
 
-            function createSlug(text) {
-                if (!text) return '';
+            function computeBaseSlug(text) {
+                if (!text) {
+                    return '';
+                }
 
-                // Remove HTML tags first
                 const temp = document.createElement('div');
                 temp.innerHTML = text;
                 const cleanText = temp.textContent || temp.innerText || text;
 
-                // Create slug: lowercase, remove special chars, replace spaces with hyphens
-                let slug = cleanText
+                return cleanText
                     .toLowerCase()
                     .trim()
-                    .replace(/[^\w\s-]/g, '') // Remove special characters except word chars, spaces, and hyphens
-                    .replace(/\s+/g, '-')     // Replace spaces with hyphens
-                    .replace(/-+/g, '-')      // Replace multiple hyphens with single hyphen
-                    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+                    .replace(/[^\w\s-]/g, '')
+                    .replace(/\s+/g, '-')
+                    .replace(/-+/g, '-')
+                    .replace(/^-+|-+$/g, '');
+            }
+
+            function createSlug(text) {
+                let slug = computeBaseSlug(text);
 
                 if (!slug) {
                     slug = 'heading';
                 }
 
-                // Ensure uniqueness within the document
-                if (documentSlugCounts && documentSlugCounts.has(slug)) {
-                    const count = documentSlugCounts.get(slug) + 1;
-                    documentSlugCounts.set(slug, count);
-                    slug = `${slug}-${count}`;
-                } else if (documentSlugCounts) {
+                if (documentSlugCounts) {
+                    if (documentSlugCounts.has(slug)) {
+                        const count = documentSlugCounts.get(slug) + 1;
+                        documentSlugCounts.set(slug, count);
+                        return `${slug}-${count}`;
+                    }
+
                     documentSlugCounts.set(slug, 0);
                 }
 
                 return slug;
+            }
+
+            function captureHeadingLocations(markdownSource) {
+                headingLocationMap = new Map();
+
+                if (typeof markdownSource !== 'string' || !markdownSource) {
+                    return;
+                }
+
+                const slugCounts = new Map();
+                const lines = markdownSource.split(/\r?\n/);
+
+                lines.forEach((line, index) => {
+                    const match = line.match(/^(#{1,6})\s+(.*)$/);
+                    if (!match) {
+                        return;
+                    }
+
+                    const rawHeading = match[2].trim();
+                    let baseSlug = computeBaseSlug(rawHeading);
+                    if (!baseSlug) {
+                        baseSlug = 'heading';
+                    }
+
+                    let slug = baseSlug;
+                    if (slugCounts.has(baseSlug)) {
+                        const count = slugCounts.get(baseSlug) + 1;
+                        slugCounts.set(baseSlug, count);
+                        slug = `${baseSlug}-${count}`;
+                    } else {
+                        slugCounts.set(baseSlug, 0);
+                    }
+
+                    headingLocationMap.set(slug, {
+                        line: index,
+                        column: 0,
+                        level: match[1].length,
+                        text: rawHeading,
+                    });
+                });
+            }
+
+            function clearEditorHeadingHighlight() {
+                if (!editorInstance || headingHighlightLine === null) {
+                    headingHighlightLine = null;
+                    return;
+                }
+
+                try {
+                    editorInstance.removeLineClass(headingHighlightLine, 'background', 'heading-target-line');
+                } catch (error) {
+                    console.warn('Failed to remove heading highlight', error);
+                }
+
+                headingHighlightLine = null;
+            }
+
+            function highlightEditorLine(lineNumber) {
+                const editor = ensureEditorInstance();
+                if (!editor || typeof editor.addLineClass !== 'function') {
+                    return;
+                }
+
+                if (headingHighlightTimeout) {
+                    window.clearTimeout(headingHighlightTimeout);
+                    headingHighlightTimeout = null;
+                }
+
+                if (headingHighlightLine !== null) {
+                    try {
+                        editor.removeLineClass(headingHighlightLine, 'background', 'heading-target-line');
+                    } catch (error) {
+                        console.warn('Failed to clear previous heading highlight', error);
+                    }
+                }
+
+                try {
+                    editor.addLineClass(lineNumber, 'background', 'heading-target-line');
+                    headingHighlightLine = lineNumber;
+                } catch (error) {
+                    console.warn('Failed to apply heading highlight', error);
+                    headingHighlightLine = null;
+                    return;
+                }
+
+                headingHighlightTimeout = window.setTimeout(() => {
+                    const instance = ensureEditorInstance();
+                    if (instance && headingHighlightLine !== null) {
+                        try {
+                            instance.removeLineClass(headingHighlightLine, 'background', 'heading-target-line');
+                        } catch (error) {
+                            console.warn('Failed to remove heading highlight after delay', error);
+                        }
+                    }
+                    headingHighlightLine = null;
+                    headingHighlightTimeout = null;
+                }, 2000);
+            }
+
+            function handleHeadingActionClick(event) {
+                const button = event.target.closest('.heading-action-button');
+                if (!button) {
+                    return;
+                }
+
+                if (!content || !content.contains(button)) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                const action = button.dataset.headingAction;
+                const slug = button.dataset.headingSlug;
+
+                if (!slug) {
+                    return;
+                }
+
+                if (action === 'edit') {
+                    jumpToHeadingInEditor(slug);
+                    return;
+                }
+
+                if (action === 'copy') {
+                    copyHeadingLink(slug);
+                }
+            }
+
+            function jumpToHeadingInEditor(slug) {
+                if (!slug) {
+                    return;
+                }
+
+                if (!currentFile) {
+                    setStatus('Open a markdown file to edit sections.');
+                    return;
+                }
+
+                const focusEditorOnHeading = () => {
+                    const editor = ensureEditorInstance();
+                    if (!editor) {
+                        setStatus('Editor resources are still loading. Please try again in a moment.');
+                        return;
+                    }
+
+                    let location = headingLocationMap.get(slug);
+                    if (!location) {
+                        const source = typeof editor.getValue === 'function' ? editor.getValue() : currentContent;
+                        captureHeadingLocations(source);
+                        location = headingLocationMap.get(slug);
+                    }
+
+                    if (!location) {
+                        setStatus('Unable to locate this section in the editor.');
+                        return;
+                    }
+
+                    const targetPosition = { line: location.line, ch: location.column || 0 };
+
+                    editor.operation(() => {
+                        editor.setCursor(targetPosition);
+                        const bottomLine = Math.min(editor.lineCount() - 1, targetPosition.line + 5);
+                        editor.scrollIntoView({ from: targetPosition, to: { line: bottomLine, ch: 0 } }, 200);
+                        editor.focus();
+                    });
+
+                    highlightEditorLine(location.line);
+                    setStatus('Jumped to section in editor.');
+                };
+
+                if (!isEditing) {
+                    enterEditMode();
+                    window.setTimeout(focusEditorOnHeading, 120);
+                    return;
+                }
+
+                if (isPreviewing) {
+                    returnToCodeMode();
+                    window.setTimeout(focusEditorOnHeading, 120);
+                    return;
+                }
+
+                focusEditorOnHeading();
+            }
+
+            function copyHeadingLink(slug) {
+                if (!slug) {
+                    return;
+                }
+
+                const baseUrl = window.location.href.split('#')[0];
+                const link = `${baseUrl}#${slug}`;
+
+                const notifyFailure = (error) => {
+                    if (error) {
+                        console.warn('Failed to copy heading link', error);
+                    }
+                    setStatus(`Copy failed. Link: ${link}`);
+                };
+
+                const notifySuccess = () => {
+                    setStatus('Copied link to clipboard.');
+                };
+
+                if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                    navigator.clipboard.writeText(link).then(notifySuccess).catch((error) => {
+                        fallbackCopyLink(link, notifySuccess, () => notifyFailure(error));
+                    });
+                    return;
+                }
+
+                fallbackCopyLink(link, notifySuccess, notifyFailure);
+            }
+
+            function fallbackCopyLink(text, onSuccess, onFailure) {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'absolute';
+                textarea.style.left = '-9999px';
+                document.body.appendChild(textarea);
+                textarea.select();
+
+                let succeeded = false;
+                let lastError = null;
+                try {
+                    succeeded = document.execCommand('copy');
+                } catch (error) {
+                    lastError = error;
+                }
+
+                document.body.removeChild(textarea);
+
+                if (succeeded) {
+                    if (typeof onSuccess === 'function') {
+                        onSuccess();
+                    }
+                    return;
+                }
+
+                if (typeof onFailure === 'function') {
+                    onFailure(lastError);
+                }
             }
 
             function encodeDiagramSource(code) {
@@ -2176,6 +2502,7 @@
 
                 const sourceText = markdownText || '';
                 const updateCurrent = Boolean(options.updateCurrent);
+                captureHeadingLocations(sourceText);
 
                 if (typeof marked === 'undefined') {
                     activeHeadingCollection = null;
@@ -2404,6 +2731,7 @@
                 isEditing = false;
                 isPreviewing = false;
                 draftContent = '';
+                clearEditorHeadingHighlight();
                 content.classList.remove('hidden');
                 editorContainer.classList.remove('visible');
                 if (restoreContent) {
