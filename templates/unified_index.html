@@ -295,27 +295,14 @@
         }
 
         .sidebar-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 8px;
+            padding: 4px 0 12px 0;
         }
 
-        .sidebar-header h2 {
-            margin: 0;
-            font-size: 1.1rem;
-            color: #f0f6fc;
-        }
-
-        .connection-indicator {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #ff7b72;
-        }
-
-        .connection-indicator.connected {
-            background: #3fb950;
+        .sidebar-path {
+            font-size: 0.8rem;
+            color: #8b949e;
+            word-break: break-all;
+            line-height: 1.3;
         }
 
         .file-list {
@@ -431,6 +418,68 @@
             color: #8b949e;
             word-break: break-all;
         }
+
+        .offline-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(13, 17, 23, 0.9);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(2px);
+        }
+
+        .offline-overlay.visible {
+            display: flex;
+        }
+
+        .offline-message {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 32px;
+            text-align: center;
+            color: #c9d1d9;
+            max-width: 400px;
+            box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .offline-spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #30363d;
+            border-top: 3px solid #58a6ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .offline-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin: 0 0 8px;
+            color: #ff7b72;
+        }
+
+        .offline-description {
+            font-size: 0.9rem;
+            color: #8b949e;
+            margin: 0;
+        }
     </style>
 </head>
 
@@ -440,7 +489,6 @@
             <header class="file-header">
                 <div class="file-meta">
                     <h1 id="file-name">Markdown Viewer</h1>
-                    <small class="directory-path">Watching: <span id="directory-path"></span></small>
                     <span id="status-message" class="status-message"></span>
                 </div>
                 <div class="file-actions">
@@ -460,11 +508,18 @@
             aria-label="Resize sidebar"></div>
         <aside class="sidebar">
             <div class="sidebar-header">
-                <h2>Directory</h2>
-                <span id="connection-indicator" class="connection-indicator" title="WebSocket status"></span>
+                <div class="sidebar-path" id="sidebar-path"></div>
             </div>
             <ul id="file-list" class="file-list" role="tree"></ul>
         </aside>
+    </div>
+
+    <div id="offline-overlay" class="offline-overlay">
+        <div class="offline-message">
+            <div class="offline-spinner"></div>
+            <h3 class="offline-title">Connection Lost</h3>
+            <p class="offline-description">Reconnecting to the live view server...</p>
+        </div>
     </div>
 
     <script>
@@ -511,7 +566,7 @@
             const state = window.__INITIAL_STATE__ || {};
             const content = document.getElementById('content');
             const fileName = document.getElementById('file-name');
-            const directoryPath = document.getElementById('directory-path');
+            const sidebarPath = document.getElementById('sidebar-path');
             const statusMessage = document.getElementById('status-message');
             const fileList = document.getElementById('file-list');
             const downloadButton = document.getElementById('download-button');
@@ -521,7 +576,7 @@
             const saveButton = document.getElementById('save-button');
             const cancelButton = document.getElementById('cancel-button');
             const editorContainer = document.getElementById('editor-container');
-            const indicator = document.getElementById('connection-indicator');
+            const offlineOverlay = document.getElementById('offline-overlay');
             const splitter = document.getElementById('splitter');
             const sidebar = document.querySelector('.sidebar');
 
@@ -1505,13 +1560,12 @@
             }
 
             function setConnectionStatus(connected) {
-                indicator.classList.toggle('connected', connected);
-                indicator.title = connected ? 'Connected to watcher' : 'Disconnected';
+                offlineOverlay.classList.toggle('visible', !connected);
             }
 
             function updateHeader() {
                 fileName.textContent = currentFile || 'No file selected';
-                directoryPath.textContent = resolvedRootPath || originalPathArgument || 'Unknown';
+                sidebarPath.textContent = resolvedRootPath || originalPathArgument || 'Unknown';
                 const hasFile = Boolean(currentFile);
                 downloadButton.disabled = !hasFile;
                 deleteButton.disabled = !hasFile;
