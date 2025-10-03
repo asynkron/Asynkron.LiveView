@@ -726,8 +726,8 @@
             <div id="content" class="content-area"></div>
             <div id="editor-container" class="editor-container"></div>
         </section>
-        <div id="file-splitter" class="splitter splitter--files" role="separator" aria-orientation="vertical" tabindex="0"
-            aria-label="Resize file explorer sidebar"></div>
+        <div id="file-splitter" class="splitter splitter--files" role="separator" aria-orientation="vertical"
+            tabindex="0" aria-label="Resize file explorer sidebar"></div>
         <aside class="sidebar sidebar--files" data-sidebar="files">
             <div class="sidebar-collapsed-label" aria-hidden="true">Files</div>
             <div class="sidebar-content">
@@ -854,6 +854,7 @@
             const knownDirectories = new Set();
             const sidebarControllers = { toc: null, files: null };
             let activeHeadingCollection = null;
+            let documentSlugCounts = null;
 
             function normaliseFileIndex({ filesValue, treeValue }) {
                 let flat = [];
@@ -1457,9 +1458,12 @@
                     headerIds: true,
                     mangle: false,
                     renderer: {
-                        heading(text, level, raw, slugger) {
-                            const headingLevel = Math.min(Math.max(level || 1, 1), 6);
-                            const slug = slugger.slug(typeof raw === 'string' ? raw : text);
+                        heading({ text, depth, raw }) {
+                            const headingLevel = Math.min(Math.max(depth || 1, 1), 6);
+
+                            // Create slug from the raw text or the rendered text
+                            const sourceText = typeof raw === 'string' ? raw : text;
+                            const slug = createSlug(sourceText);
                             const plainText = normaliseHeadingText(text, raw);
                             const ariaSource = plainText || (typeof raw === 'string' ? raw : 'heading');
                             const ariaLabel = escapeHtml(`Link to section ${ariaSource}`);
@@ -1531,6 +1535,39 @@
                     .replace(/>/g, '&gt;')
                     .replace(/"/g, '&quot;')
                     .replace(/'/g, '&#39;');
+            }
+
+            function createSlug(text) {
+                if (!text) return '';
+
+                // Remove HTML tags first
+                const temp = document.createElement('div');
+                temp.innerHTML = text;
+                const cleanText = temp.textContent || temp.innerText || text;
+
+                // Create slug: lowercase, remove special chars, replace spaces with hyphens
+                let slug = cleanText
+                    .toLowerCase()
+                    .trim()
+                    .replace(/[^\w\s-]/g, '') // Remove special characters except word chars, spaces, and hyphens
+                    .replace(/\s+/g, '-')     // Replace spaces with hyphens
+                    .replace(/-+/g, '-')      // Replace multiple hyphens with single hyphen
+                    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+
+                if (!slug) {
+                    slug = 'heading';
+                }
+
+                // Ensure uniqueness within the document
+                if (documentSlugCounts && documentSlugCounts.has(slug)) {
+                    const count = documentSlugCounts.get(slug) + 1;
+                    documentSlugCounts.set(slug, count);
+                    slug = `${slug}-${count}`;
+                } else if (documentSlugCounts) {
+                    documentSlugCounts.set(slug, 0);
+                }
+
+                return slug;
             }
 
             function encodeDiagramSource(code) {
@@ -2072,6 +2109,9 @@
                 mermaidIdCounter = 0;
                 vegaIdCounter = 0;
                 excalidrawIdCounter = 0;
+
+                // Reset slug counter for each document to ensure unique IDs
+                documentSlugCounts = new Map();
 
                 const sourceText = markdownText || '';
                 const updateCurrent = Boolean(options.updateCurrent);
