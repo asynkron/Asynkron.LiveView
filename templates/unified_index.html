@@ -14,8 +14,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/darcula.min.css"
         integrity="sha512-kqCOYFDdyQF4JM8RddA6rMBi9oaLdR0aEACdB95Xl1EgaBhaXMIe8T4uxmPitfq4qRmHqo+nBU2d1l+M4zUx1g=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="https://unpkg.com/dockview@1.19.0/dist/styles/dockview.css" crossorigin="anonymous"
-        referrerpolicy="no-referrer" />
+    <!-- Vendored dockview assets to keep the layout available when public CDNs are down. -->
+    <link rel="stylesheet" href="/static/dockview/dockview.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
         integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
@@ -1021,8 +1021,7 @@
         referrerpolicy="no-referrer" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js" crossorigin="anonymous"
         referrerpolicy="no-referrer" defer></script>
-    <script src="https://unpkg.com/dockview@1.19.0/dist/dockview.min.js" crossorigin="anonymous"
-        referrerpolicy="no-referrer" defer></script>
+    <script src="/static/dockview/dockview.min.js" defer></script>
     <script defer>
         (function () {
             const state = window.__INITIAL_STATE__ || {};
