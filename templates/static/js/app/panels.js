@@ -138,8 +138,12 @@ export function setupPanels(ctx) {
             terminal: terminalPanel,
         };
 
-        tocSidebar.classList.add('is-expanded');
-        fileSidebar.classList.add('is-expanded');
+        if (tocSidebar) {
+            tocSidebar.classList.add('is-expanded');
+        }
+        if (fileSidebar) {
+            fileSidebar.classList.add('is-expanded');
+        }
 
         const dockview = new window.dockview.DockviewComponent(dockviewRoot, {
             hideBorders: true,
