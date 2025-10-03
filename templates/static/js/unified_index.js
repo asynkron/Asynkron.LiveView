@@ -4,7 +4,6 @@ function bootstrap() {
     const content = document.getElementById('content');
     const fileName = document.getElementById('file-name');
     const sidebarPath = document.getElementById('sidebar-path');
-    const statusMessage = document.getElementById('status-message');
     const fileList = document.getElementById('file-list');
     const downloadButton = document.getElementById('download-button');
     const deleteButton = document.getElementById('delete-button');
@@ -1653,7 +1652,8 @@ function bootstrap() {
     }
 
     function setStatus(message) {
-        statusMessage.textContent = message || '';
+        // Status banner removed; keep function to avoid touching callers.
+        void message;
     }
 
     function setConnectionStatus(connected) {

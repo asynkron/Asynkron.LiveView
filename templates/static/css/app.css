@@ -190,16 +190,6 @@
             color: #58a6ff;
         }
 
-        .file-meta {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .file-meta small {
-            color: #8b949e;
-        }
-
         .file-actions {
             display: flex;
             flex-wrap: wrap;
@@ -241,11 +231,6 @@
             font-size: 0.9rem;
             min-width: 16px;
             display: inline-block;
-        }
-
-        .status-message {
-            color: #ffa657;
-            font-size: 0.9rem;
         }
 
         .content-area {
