@@ -11,8 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css"
         integrity="sha512-uf06llspW44/LZpHzHT6qBOIVODjWtv4MxCricRxkzvopAlSWnTf6hpZTFxuuZcuNE9CBQhqE0Seu1CoRk84nQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/darcula.min.css"
-        integrity="sha512-kqCOYFDdyQF4JM8RddA6rMBi9oaLdR0aEACdB95Xl1EgaBhaXMIe8T4uxmPitfq4qRmHqo+nBU2d1l+M4zUx1g=="
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/one-dark.min.css"
         crossorigin="anonymous" referrerpolicy="no-referrer" />
     <!-- Vendored dockview assets to keep the layout available when public CDNs are down. -->
     <link rel="stylesheet" href="/static/dockview/dockview.css" />
@@ -119,6 +118,14 @@
 
         .dockview-panel-container .terminal-toolbar {
             flex: 0 0 auto;
+        }
+
+        .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {
+            background-color: #161b22 !important;
+        }
+
+        .dv-tabs-and-actions-container{
+            background-color: #232c37 !important
         }
 
         .panel-missing {
@@ -469,38 +476,136 @@
         .editor-container {
             display: none;
             flex: 1;
-            padding: 24px;
+            padding: 0;
             overflow: hidden;
             min-height: 320px;
             height: 100%;
+            background: #161b22;
         }
 
         .editor-container.visible {
             display: block;
         }
 
-        .editor-container .CodeMirror {
+        .editor-container .cm-s-one-dark.CodeMirror {
             height: 100%;
             font-size: 0.95rem;
-            background: #0d1117;
+            background: #161b22;
             color: #c9d1d9;
+        }
+
+        .editor-container .CodeMirror {
+            height: 100%;
         }
 
         .editor-container .CodeMirror-scroll {
             max-height: 100%;
         }
 
-        .editor-container .CodeMirror-gutters {
-            background: #0d1117;
-            border-right: 1px solid #30363d;
+        .editor-container .cm-s-one-dark .CodeMirror-scrollbar-filler,
+        .editor-container .cm-s-one-dark .CodeMirror-scroll {
+            background: #161b22;
         }
 
-        .editor-container .CodeMirror-cursor {
+        .editor-container .cm-s-one-dark .CodeMirror-gutters {
+            background: #161b22;
+            border-right: 1px solid #30363d;
+            color: #6e7681;
+        }
+
+        .editor-container .cm-s-one-dark .CodeMirror-linenumber {
+            color: #6e7681;
+        }
+
+        .editor-container .cm-s-one-dark .CodeMirror-cursor {
             border-left: 1px solid #58a6ff;
         }
 
-        .editor-container .CodeMirror-selected {
+        .editor-container .cm-s-one-dark .CodeMirror-selected {
             background: rgba(88, 166, 255, 0.2);
+        }
+
+        .editor-container .cm-s-one-dark .CodeMirror-activeline-background {
+            background: rgba(88, 166, 255, 0.08);
+        }
+
+        .editor-container .cm-s-one-dark .CodeMirror-activeline-gutter {
+            background: rgba(88, 166, 255, 0.08);
+            color: #c9d1d9;
+        }
+
+        .editor-container .cm-s-one-dark .CodeMirror-matchingbracket {
+            color: #f0f6fc;
+            border-bottom: 1px solid #58a6ff;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-comment,
+        .editor-container .cm-s-one-dark span.cm-quote {
+            color: #5c6370;
+            font-style: italic;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-keyword,
+        .editor-container .cm-s-one-dark span.cm-def,
+        .editor-container .cm-s-one-dark span.cm-property {
+            color: #c678dd;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-operator {
+            color: #56b6c2;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-variable {
+            color: #e06c75;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-variable-2,
+        .editor-container .cm-s-one-dark span.cm-variable-3,
+        .editor-container .cm-s-one-dark span.cm-type,
+        .editor-container .cm-s-one-dark span.cm-attribute {
+            color: #e5c07b;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-number,
+        .editor-container .cm-s-one-dark span.cm-builtin
+        {
+            color: #d19a66;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-string,
+        .editor-container .cm-s-one-dark span.cm-string-2,
+        .editor-container .cm-s-one-dark span.cm-hr {
+            color: #98c379;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-tag,
+        .editor-container .cm-s-one-dark span.cm-header {
+            color: #e06c75;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-link,
+        .editor-container .cm-s-one-dark span.cm-url,
+        .editor-container .cm-s-one-dark span.cm-formatting-link,
+        .editor-container .cm-s-one-dark span.cm-formatting-url {
+            color: #61afef;
+            text-decoration: underline;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-atom {
+            color: #56b6c2;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-positive {
+            color: #98c379;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-negative {
+            color: #e06c75;
+        }
+
+        .editor-container .cm-s-one-dark span.cm-error {
+            color: #f85149;
+            text-decoration: underline;
         }
 
         .sidebar {
@@ -508,7 +613,7 @@
             display: flex;
             flex-direction: column;
             background: #161b22;
-            border: 1px solid #30363d;
+
             border-radius: 0;
             padding: 0;
             gap: 0;
@@ -519,7 +624,7 @@
         }
 
         .sidebar.is-expanded {
-            box-shadow: inset 0 0 0 1px rgba(88, 166, 255, 0.2);
+
         }
 
         .sidebar-content {
@@ -2785,7 +2890,7 @@
                 editorInstance = window.CodeMirror(editorContainer, {
                     value: draftContent,
                     mode: 'markdown',
-                    theme: 'darcula',
+                    theme: 'one-dark',
                     lineNumbers: true,
                     lineWrapping: true,
                     autofocus: true,
