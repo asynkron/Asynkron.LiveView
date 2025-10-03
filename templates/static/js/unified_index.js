@@ -38,6 +38,11 @@ function bootstrap() {
     const terminalStorageKey = 'terminalPanelHeight';
     const panelToggleButtons = Array.from(document.querySelectorAll('[data-panel-toggle]'));
     const panelToggleButtonMap = new Map();
+    // Persist dockview layout between sessions so panel positions are restored.
+    const dockviewLayoutStorageKey = 'dockviewLayout';
+    const dockviewLayoutSaveDelayMs = 750;
+    let dockviewLayoutSaveTimer = null;
+    let dockviewPointerActive = false;
 
     panelToggleButtons.forEach((button) => {
         const panelName = button.dataset.panelToggle;
@@ -110,6 +115,12 @@ function bootstrap() {
     const dockviewIsActive = Boolean(dockviewSetup);
     document.body.classList.toggle('dockview-active', dockviewIsActive);
     refreshPanelToggleStates();
+
+    if (dockviewIsActive && dockviewRoot) {
+        dockviewRoot.addEventListener('pointerdown', handleDockviewPointerDown);
+        window.addEventListener('pointerup', handleDockviewPointerFinish);
+        window.addEventListener('pointercancel', handleDockviewPointerFinish);
+    }
     let activeHeadingCollection = null;
     let documentSlugCounts = null;
     let terminalInstance = null;
@@ -200,12 +211,94 @@ function bootstrap() {
         window.requestAnimationFrame(() => {
             updatePanelToggleButtonState(name, getPanelVisibility(name));
         });
+
+        scheduleDockviewLayoutSave();
     }
 
     function refreshPanelToggleStates() {
         panelToggleButtonMap.forEach((_button, name) => {
             updatePanelToggleButtonState(name, getPanelVisibility(name));
         });
+    }
+
+    function restoreDockviewLayout(instance) {
+        if (!instance || typeof window.localStorage === 'undefined') {
+            return false;
+        }
+
+        let rawLayout = null;
+        try {
+            rawLayout = window.localStorage.getItem(dockviewLayoutStorageKey);
+        } catch (storageError) {
+            console.warn('Dockview layout restore skipped: storage unavailable.', storageError);
+            return false;
+        }
+
+        if (!rawLayout) {
+            return false;
+        }
+
+        try {
+            const savedLayout = JSON.parse(rawLayout);
+            instance.restoreLayout(savedLayout);
+            return true;
+        } catch (error) {
+            console.warn('Failed to restore dockview layout; clearing saved state.', error);
+            try {
+                window.localStorage.removeItem(dockviewLayoutStorageKey);
+            } catch (clearError) {
+                console.warn('Unable to clear saved dockview layout.', clearError);
+            }
+        }
+
+        return false;
+    }
+
+    function persistDockviewLayout() {
+        if (!dockviewSetup?.instance || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const layoutState = dockviewSetup.instance.saveLayout();
+            const serialisedLayout = JSON.stringify(layoutState);
+            window.localStorage.setItem(dockviewLayoutStorageKey, serialisedLayout);
+        } catch (error) {
+            console.warn('Failed to persist dockview layout.', error);
+        }
+    }
+
+    function scheduleDockviewLayoutSave() {
+        if (!dockviewSetup?.instance) {
+            return;
+        }
+
+        if (dockviewLayoutSaveTimer) {
+            window.clearTimeout(dockviewLayoutSaveTimer);
+        }
+
+        dockviewLayoutSaveTimer = window.setTimeout(() => {
+            dockviewLayoutSaveTimer = null;
+            persistDockviewLayout();
+        }, dockviewLayoutSaveDelayMs);
+    }
+
+    function handleDockviewPointerDown(event) {
+        if (!dockviewSetup?.instance || !dockviewRoot) {
+            dockviewPointerActive = false;
+            return;
+        }
+
+        dockviewPointerActive = dockviewRoot.contains(event.target);
+    }
+
+    function handleDockviewPointerFinish() {
+        if (!dockviewPointerActive) {
+            return;
+        }
+
+        dockviewPointerActive = false;
+        scheduleDockviewLayoutSave();
     }
 
     function initialiseDockviewLayout() {
@@ -327,6 +420,8 @@ function bootstrap() {
         };
 
         window.__dockviewSetup = setup;
+
+        restoreDockviewLayout(dockview);
 
         [
             ['toc', tocPanel?.group?.api],
