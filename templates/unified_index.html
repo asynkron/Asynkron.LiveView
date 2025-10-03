@@ -347,6 +347,8 @@
             gap: 8px;
             padding: 4px 6px;
             border-radius: 6px;
+            background: transparent;
+            transition: background 0.2s ease;
         }
 
         .tree-row:hover {
@@ -383,10 +385,11 @@
             padding: 6px 8px;
             border-radius: 6px;
             font: inherit;
+            font-size: 0.85rem;
         }
 
         .directory-label {
-            font-weight: 600;
+            font-weight: normal;
         }
 
         .tree-children.collapsed {
@@ -395,7 +398,7 @@
 
         .file-button {
             width: 100%;
-            background: #1f242e;
+            background: transparent;
             border: 1px solid transparent;
             border-radius: 8px;
             color: inherit;
@@ -403,16 +406,17 @@
             text-align: left;
             cursor: pointer;
             transition: border 0.2s ease, background 0.2s ease;
+            font-size: 0.85rem;
         }
 
         .file-button:hover {
-            border-color: #30363d;
+            background: #1f242e;
         }
 
         .file-button.active {
-            background: #238636;
-            border-color: #2ea043;
-            color: #fff;
+            background: #1f242e;
+            border-color: #30363d;
+            color: #c9d1d9;
         }
 
         .empty-state {
