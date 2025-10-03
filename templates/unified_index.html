@@ -1106,6 +1106,7 @@
             let terminalCollapsed = false;
             let terminalHeight = null;
             let pendingTerminalFitFrame = null;
+            let terminalResizeObserver = null;
             const terminalDecoder = new TextDecoder();
             let terminalLastStatusMessage = '';
 
@@ -3563,6 +3564,11 @@
                     return;
                 }
 
+                if (!dockviewIsActive && terminalResizeObserver) {
+                    terminalResizeObserver.disconnect();
+                    terminalResizeObserver = null;
+                }
+
                 if (dockviewIsActive) {
                     terminalCollapsed = false;
                     terminalPanel.style.height = '';
@@ -3576,7 +3582,21 @@
                         terminalToggleButton.textContent = 'Terminal (layout-managed)';
                         terminalToggleButton.setAttribute('aria-expanded', 'true');
                     }
-                    ensureTerminalInstance();
+
+                    if (!terminalResizeObserver && typeof window.ResizeObserver === 'function') {
+                        const resizeTarget = terminalPanel.parentElement || terminalPanel;
+                        if (resizeTarget) {
+                            terminalResizeObserver = new window.ResizeObserver(() => {
+                                scheduleTerminalFit();
+                            });
+                            terminalResizeObserver.observe(resizeTarget);
+                        }
+                    }
+
+                    const instance = ensureTerminalInstance();
+                    if (instance) {
+                        scheduleTerminalFit();
+                    }
                     connectTerminal();
                     return;
                 }
