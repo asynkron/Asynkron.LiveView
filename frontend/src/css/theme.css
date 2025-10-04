@@ -1,0 +1,71 @@
+:root {
+    /* Base surface colors */
+    --color-bg-body: #0d1117;
+    --color-bg-muted: #11151a;
+    --color-bg-surface: #161b22;
+    --color-bg-elevated: #1f242e;
+    --color-bg-overlay: #21262d;
+    --color-bg-hover: #2b3440;
+    --color-border-default: #30363d;
+    --color-surface-alpha-light: #80808020;
+
+    /* Semantic colors */
+    --color-success-base: #238636;
+    --color-success-hover: #2ea043;
+    --color-success-border: #3fb950;
+    --color-danger-base: #da3633;
+    --color-danger-emphasis: #f85149;
+
+    /* Accent palette */
+    --color-accent-blue: #58a6ff;
+    --color-accent-blue-bright: #61afef;
+    --color-accent-cyan: #56b6c2;
+    --color-accent-purple: #c678dd;
+    --color-accent-green: #98c379;
+    --color-accent-gold: #e5c07b;
+    --color-accent-tan: #d19a66;
+    --color-accent-red: #e06c75;
+    --color-accent-salmon: #ff7b72;
+
+    /* Typography colors */
+    --color-text-primary: #c9d1d9;
+    --color-text-secondary: #8b949e;
+    --color-text-muted: #5c6370;
+    --color-text-tertiary: #6e7681;
+    --color-text-inverse: #f0f6fc;
+
+    /* Utility colors */
+    --color-graph-stroke: #c0c0c0;
+    --color-white: #ffffff;
+    --color-white-soft: #ffffff10;
+
+    /* Overlay and shadow colors */
+    --color-overlay-60: rgba(13, 17, 23, 0.6);
+    --color-overlay-85: rgba(13, 17, 23, 0.85);
+    --color-overlay-90: rgba(13, 17, 23, 0.9);
+    --color-overlay-panel: rgba(22, 27, 34, 0.85);
+    --color-shadow-soft: rgba(0, 0, 0, 0.4);
+    --color-shadow-strong: rgba(0, 0, 0, 0.45);
+    --color-accent-blue-focus: rgba(88, 166, 255, 0.25);
+    --color-accent-blue-soft: rgba(88, 166, 255, 0.2);
+    --color-accent-blue-faint: rgba(88, 166, 255, 0.08);
+
+    /* Spacing scale (padding and margin) */
+    --space-neg-8: -8px;
+    --space-neg-1: -1px;
+    --space-0: 0;
+    --space-2: 2px;
+    --space-4: 4px;
+    --space-5: 5px;
+    --space-6: 6px;
+    --space-8: 8px;
+    --space-10: 10px;
+    --space-12: 12px;
+    --space-14: 14px;
+    --space-16: 16px;
+    --space-18: 18px;
+    --space-20: 20px;
+    --space-24: 24px;
+    --space-28: 28px;
+    --space-32: 32px;
+}
