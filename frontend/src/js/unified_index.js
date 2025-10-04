@@ -1,4 +1,6 @@
 import './vendor_globals.js';
+import { initLayout } from './viewer/layout.js';
+import { renderMarkdown, captureHeadingLocations, getHeadingLocation } from './viewer/markdown.js';
 
 // Client-side bootstrap logic for the unified markdown viewer UI.
 function bootstrap() {
@@ -38,27 +40,6 @@ function bootstrap() {
     const terminalResizeHandle = document.getElementById('terminal-resize-handle');
     const terminalStorageKey = 'terminalPanelHeight';
     const panelToggleButtons = Array.from(document.querySelectorAll('[data-panel-toggle]'));
-    const panelToggleButtonMap = new Map();
-    // Persist dockview layout between sessions so panel positions are restored.
-    const dockviewLayoutStorageKey = 'dockviewLayout';
-    const dockviewLayoutSaveDelayMs = 750;
-    let dockviewLayoutSaveTimer = null;
-    let dockviewPointerActive = false;
-
-    panelToggleButtons.forEach((button) => {
-        const panelName = button.dataset.panelToggle;
-        if (!panelName) {
-            return;
-        }
-
-        panelToggleButtonMap.set(panelName, button);
-        button.addEventListener('click', (event) => {
-            event.preventDefault();
-            const currentlyVisible = getPanelVisibility(panelName);
-            const nextVisible = !currentlyVisible;
-            setPanelVisibility(panelName, nextVisible);
-        });
-    });
 
     if (content) {
         content.addEventListener('click', handleHeadingActionClick);
@@ -85,45 +66,43 @@ function bootstrap() {
     const originalPathArgument = state.pathArgument || '';
     let resolvedRootPath = state.rootPath || '';
     const initialFileFromLocation = fileFromSearch(window.location.search);
-    const textEncoder = new TextEncoder();
-    const textDecoder = new TextDecoder();
-    let markedConfigured = false;
-    let mermaidInitAttempted = false;
-    let mermaidRetryTimer = null;
-    let vegaRetryTimer = null;
-    let excalidrawRetryTimer = null;
-    let mermaidIdCounter = 0;
-    let vegaIdCounter = 0;
-    let excalidrawIdCounter = 0;
-    const excalidrawRoots = new Map();
-    let excalidrawResizeHandlerAttached = false;
-    let excalidrawFitFailureLogged = false;
-    let librariesReadyPromise = null;
-    let pendingMarkdown = null;
-    let relativeLinksEnabled = false;
-    let relativeLinkBasePath = '';
-    let relativeLinkBaseWalker = null;
-    let relativeLinkExtensionRegistered = false;
-    let headingLocationMap = new Map();
-    let headingHighlightLine = null;
-    let headingHighlightTimeout = null;
-    const relativeLinkDummyOrigin = 'http://__dummy__/';
-    const relativeLinkSchemePattern = /^[a-zA-Z][\w+.-]*:/;
-    const relativeLinkProtocolRelativePattern = /^\/\//;
-    const expandedDirectories = new Set();
-    const knownDirectories = new Set();
-    const dockviewSetup = initialiseDockviewLayout();
-    const dockviewIsActive = Boolean(dockviewSetup);
+    const markdownContext = {
+        content,
+        tocList,
+        getCurrentFile: () => currentFile,
+        setCurrentContent(value) {
+            currentContent = value;
+        },
+        buildQuery,
+    };
+
+    const layout = initLayout({
+        dockviewRoot,
+        appShell,
+        viewerSection,
+        tocSidebar,
+        fileSidebar,
+        terminalPanel,
+        tocSplitter,
+        fileSplitter,
+        rootElement,
+        panelToggleButtons,
+        getCurrentFile: () => currentFile,
+    });
+    const dockviewSetup = layout.dockviewSetup;
+    const dockviewIsActive = layout.dockviewIsActive;
     document.body.classList.toggle('dockview-active', dockviewIsActive);
-    refreshPanelToggleStates();
+    layout.refreshPanelToggleStates();
 
     if (dockviewIsActive && dockviewRoot) {
-        dockviewRoot.addEventListener('pointerdown', handleDockviewPointerDown);
-        window.addEventListener('pointerup', handleDockviewPointerFinish);
-        window.addEventListener('pointercancel', handleDockviewPointerFinish);
+        dockviewRoot.addEventListener('pointerdown', layout.handlePointerDown);
+        window.addEventListener('pointerup', layout.handlePointerFinish);
+        window.addEventListener('pointercancel', layout.handlePointerFinish);
     }
-    let activeHeadingCollection = null;
-    let documentSlugCounts = null;
+    let headingHighlightLine = null;
+    let headingHighlightTimeout = null;
+    const expandedDirectories = new Set();
+    const knownDirectories = new Set();
     let terminalInstance = null;
     let terminalFitAddon = null;
     let terminalSocket = null;
@@ -135,324 +114,6 @@ function bootstrap() {
     let terminalResizeObserver = null;
     const terminalDecoder = new TextDecoder();
     let terminalLastStatusMessage = '';
-
-    function updatePanelToggleButtonState(name, isVisible) {
-        const button = panelToggleButtonMap.get(name);
-        if (!button) {
-            return;
-        }
-        button.setAttribute('aria-pressed', String(Boolean(isVisible)));
-    }
-
-    function getPanelVisibility(name) {
-        if (dockviewSetup && dockviewSetup.panels && dockviewSetup.panels[name]) {
-            const panel = dockviewSetup.panels[name];
-            const groupApi = panel?.group?.api;
-            if (groupApi && typeof groupApi.isVisible === 'boolean') {
-                return groupApi.isVisible;
-            }
-            return panel?.api?.isVisible ?? true;
-        }
-
-        if (name === 'toc' && tocSidebar) {
-            return !tocSidebar.classList.contains('hidden');
-        }
-
-        if (name === 'files' && fileSidebar) {
-            return !fileSidebar.classList.contains('hidden');
-        }
-
-        return true;
-    }
-
-    function toggleLegacySidebar(name, visible) {
-        const targetSidebar = name === 'toc' ? tocSidebar : name === 'files' ? fileSidebar : null;
-        if (!targetSidebar) {
-            return;
-        }
-
-        targetSidebar.classList.toggle('hidden', !visible);
-        targetSidebar.classList.toggle('is-expanded', visible);
-
-        const widthVar = name === 'toc' ? '--toc-sidebar-current-width' : '--file-sidebar-current-width';
-        const defaultWidth = name === 'toc' ? 'var(--toc-sidebar-width)' : 'var(--file-sidebar-width)';
-
-        rootElement.style.setProperty(
-            widthVar,
-            visible ? defaultWidth : 'var(--sidebar-collapsed-width)'
-        );
-
-        const splitter = name === 'toc' ? tocSplitter : fileSplitter;
-        if (splitter) {
-            splitter.classList.toggle('hidden', !visible);
-        }
-    }
-
-    function setPanelVisibility(name, visible) {
-        if (dockviewSetup && dockviewSetup.panels && dockviewSetup.panels[name]) {
-            const panel = dockviewSetup.panels[name];
-            const groupApi = panel?.group?.api;
-
-            if (groupApi && typeof groupApi.setVisible === 'function') {
-                groupApi.setVisible(visible);
-            } else if (panel?.api && typeof panel.api.setVisible === 'function') {
-                panel.api.setVisible(visible);
-            }
-        } else {
-            toggleLegacySidebar(name, visible);
-        }
-
-        if (name === 'toc' && tocSidebar) {
-            tocSidebar.classList.toggle('is-expanded', visible);
-        } else if (name === 'files' && fileSidebar) {
-            fileSidebar.classList.toggle('is-expanded', visible);
-        }
-
-        updatePanelToggleButtonState(name, visible);
-        window.requestAnimationFrame(() => {
-            updatePanelToggleButtonState(name, getPanelVisibility(name));
-        });
-
-        scheduleDockviewLayoutSave();
-    }
-
-    function refreshPanelToggleStates() {
-        panelToggleButtonMap.forEach((_button, name) => {
-            updatePanelToggleButtonState(name, getPanelVisibility(name));
-        });
-    }
-
-    function restoreDockviewLayout(instance) {
-        if (!instance || typeof window.localStorage === 'undefined') {
-            return false;
-        }
-
-        let rawLayout = null;
-        try {
-            rawLayout = window.localStorage.getItem(dockviewLayoutStorageKey);
-        } catch (storageError) {
-            console.warn('Dockview layout restore skipped: storage unavailable.', storageError);
-            return false;
-        }
-
-        if (!rawLayout) {
-            return false;
-        }
-
-        try {
-            const savedLayout = JSON.parse(rawLayout);
-
-            if (typeof instance.restoreLayout === 'function') {
-                instance.restoreLayout(savedLayout);
-            } else if (typeof instance.fromJSON === 'function') {
-                // Dockview >= 1.12 exposes fromJSON instead of restoreLayout
-                instance.fromJSON(savedLayout);
-            } else {
-                throw new Error('Dockview instance cannot restore layouts');
-            }
-            return true;
-        } catch (error) {
-            console.warn('Failed to restore dockview layout; clearing saved state.', error);
-            try {
-                window.localStorage.removeItem(dockviewLayoutStorageKey);
-            } catch (clearError) {
-                console.warn('Unable to clear saved dockview layout.', clearError);
-            }
-        }
-
-        return false;
-    }
-
-    function persistDockviewLayout() {
-        if (!dockviewSetup?.instance || typeof window.localStorage === 'undefined') {
-            return;
-        }
-
-        try {
-            const { instance } = dockviewSetup;
-            const layoutState = (typeof instance.saveLayout === 'function')
-                ? instance.saveLayout()
-                : (typeof instance.toJSON === 'function')
-                    ? instance.toJSON()
-                    : (() => { throw new Error('Dockview instance cannot serialise layouts'); })();
-            const serialisedLayout = JSON.stringify(layoutState);
-            window.localStorage.setItem(dockviewLayoutStorageKey, serialisedLayout);
-        } catch (error) {
-            console.warn('Failed to persist dockview layout.', error);
-        }
-    }
-
-    function scheduleDockviewLayoutSave() {
-        if (!dockviewSetup?.instance) {
-            return;
-        }
-
-        if (dockviewLayoutSaveTimer) {
-            window.clearTimeout(dockviewLayoutSaveTimer);
-        }
-
-        dockviewLayoutSaveTimer = window.setTimeout(() => {
-            dockviewLayoutSaveTimer = null;
-            persistDockviewLayout();
-        }, dockviewLayoutSaveDelayMs);
-    }
-
-    function handleDockviewPointerDown(event) {
-        if (!dockviewSetup?.instance || !dockviewRoot) {
-            dockviewPointerActive = false;
-            return;
-        }
-
-        dockviewPointerActive = dockviewRoot.contains(event.target);
-    }
-
-    function handleDockviewPointerFinish() {
-        if (!dockviewPointerActive) {
-            return;
-        }
-
-        dockviewPointerActive = false;
-        scheduleDockviewLayoutSave();
-    }
-
-    function initialiseDockviewLayout() {
-        window.__dockviewSetup = null;
-
-        if (!dockviewRoot) {
-            return null;
-        }
-
-        if (!window.dockview || !window.dockview.DockviewComponent) {
-            dockviewRoot.classList.add('hidden');
-            if (appShell) {
-                appShell.classList.remove('hidden');
-            }
-            window.__dockviewSetup = null;
-            return null;
-        }
-
-        if (!viewerSection || !tocSidebar || !fileSidebar || !terminalPanel) {
-            console.warn('Dockview initialisation skipped: missing panel sources.');
-            dockviewRoot.classList.add('hidden');
-            if (appShell) {
-                appShell.classList.remove('hidden');
-            }
-            window.__dockviewSetup = null;
-            return null;
-        }
-
-        if (tocSplitter && tocSplitter.parentElement) {
-            tocSplitter.parentElement.removeChild(tocSplitter);
-        }
-        if (fileSplitter && fileSplitter.parentElement) {
-            fileSplitter.parentElement.removeChild(fileSplitter);
-        }
-
-        const panelSources = {
-            viewer: viewerSection,
-            toc: tocSidebar,
-            files: fileSidebar,
-            terminal: terminalPanel,
-        };
-
-        if (tocSidebar) {
-            tocSidebar.classList.add('is-expanded');
-        }
-
-        if (fileSidebar) {
-            fileSidebar.classList.add('is-expanded');
-        }
-
-        const dockview = new window.dockview.DockviewComponent(dockviewRoot, {
-            hideBorders: true,
-            createComponent({ name }) {
-                const element = document.createElement('div');
-                element.classList.add('dockview-panel-container', `dockview-panel-${name}`);
-
-                const source = panelSources[name];
-                if (source) {
-                    element.appendChild(source);
-                } else {
-                    const placeholder = document.createElement('div');
-                    placeholder.className = 'panel-missing';
-                    placeholder.textContent = `Missing panel: ${name}`;
-                    element.appendChild(placeholder);
-                }
-
-                return {
-                    element,
-                    init() { },
-                    dispose() { },
-                };
-            },
-        });
-
-        const currentViewerTitle = (typeof currentFile === 'string' && currentFile.length)
-            ? currentFile
-            : 'Document';
-
-        const viewerPanel = dockview.addPanel({
-            id: 'dockview-viewer',
-            component: 'viewer',
-            title: currentViewerTitle,
-        });
-
-        const tocPanel = dockview.addPanel({
-            id: 'dockview-toc',
-            component: 'toc',
-            title: 'Table of contents',
-            position: { referencePanel: viewerPanel, direction: 'left' },
-        });
-
-        const filesPanel = dockview.addPanel({
-            id: 'dockview-files',
-            component: 'files',
-            title: 'Files',
-            position: { referencePanel: viewerPanel, direction: 'right' },
-        });
-
-        const terminalDockviewPanel = dockview.addPanel({
-            id: 'dockview-terminal',
-            component: 'terminal',
-            title: 'Terminal',
-            position: { referencePanel: viewerPanel, direction: 'bottom' },
-        });
-
-        dockviewRoot.classList.remove('hidden');
-        if (appShell) {
-            appShell.classList.add('hidden');
-        }
-
-        const setup = {
-            instance: dockview,
-            panels: {
-                viewer: viewerPanel,
-                toc: tocPanel,
-                files: filesPanel,
-                terminal: terminalDockviewPanel,
-            },
-        };
-
-        window.__dockviewSetup = setup;
-
-        restoreDockviewLayout(dockview);
-
-        [
-            ['toc', tocPanel?.group?.api],
-            ['files', filesPanel?.group?.api],
-        ].forEach(([name, api]) => {
-            if (api && typeof api.onDidVisibilityChange === 'function') {
-                api.onDidVisibilityChange(({ isVisible }) => {
-                    updatePanelToggleButtonState(name, isVisible);
-                });
-            }
-        });
-
-        updatePanelToggleButtonState('toc', true);
-        updatePanelToggleButtonState('files', true);
-
-        return setup;
-    }
 
     function normaliseFileIndex({ filesValue, treeValue }) {
         let flat = [];
@@ -588,174 +249,6 @@ function bootstrap() {
         });
     }
 
-    function updateRelativeLinkBase(filePath) {
-        if (typeof filePath !== 'string' || filePath.length === 0) {
-            relativeLinksEnabled = false;
-            relativeLinkBasePath = '';
-            relativeLinkBaseWalker = null;
-            return;
-        }
-
-        relativeLinksEnabled = true;
-        const lastSlashIndex = filePath.lastIndexOf('/');
-        relativeLinkBasePath = lastSlashIndex === -1 ? '' : filePath.slice(0, lastSlashIndex + 1);
-
-        if (typeof markedBaseUrl !== 'undefined' && markedBaseUrl && typeof markedBaseUrl.baseUrl === 'function') {
-            const baseCandidate = relativeLinkBasePath || './';
-            try {
-                relativeLinkBaseWalker = markedBaseUrl.baseUrl(baseCandidate);
-            } catch (error) {
-                console.warn('Failed to initialise marked-base-url', error);
-                relativeLinkBaseWalker = null;
-            }
-        } else {
-            relativeLinkBaseWalker = null;
-        }
-    }
-
-    function decodePathSegments(path) {
-        if (!path) {
-            return '';
-        }
-        return path
-            .split('/')
-            .map((segment) => {
-                try {
-                    return decodeURIComponent(segment);
-                } catch {
-                    return segment;
-                }
-            })
-            .join('/');
-    }
-
-    function encodePathSegments(path) {
-        if (!path) {
-            return '';
-        }
-        return path
-            .split('/')
-            .map((segment) => encodeURIComponent(segment))
-            .join('/');
-    }
-
-    function fallbackResolveRelativeHref(href) {
-        try {
-            const baseReference = relativeLinkBasePath ? relativeLinkBasePath : '.';
-            const baseUrl = new URL(baseReference, relativeLinkDummyOrigin);
-            const resolvedUrl = new URL(href, baseUrl);
-            const normalisedPath = resolvedUrl.pathname.replace(/^\/+/u, '');
-            const decodedPath = decodePathSegments(normalisedPath);
-            return `${decodedPath}${resolvedUrl.search}${resolvedUrl.hash}`;
-        } catch (error) {
-            console.warn('Relative link fallback failed', error);
-            return href;
-        }
-    }
-
-    function splitResolvedHref(resolvedHref) {
-        if (typeof resolvedHref !== 'string' || resolvedHref.length === 0) {
-            return { filePath: '', search: '', hash: '' };
-        }
-
-        let working = resolvedHref;
-        let hash = '';
-        const hashIndex = working.indexOf('#');
-        if (hashIndex !== -1) {
-            hash = working.slice(hashIndex);
-            working = working.slice(0, hashIndex);
-        }
-
-        let search = '';
-        const searchIndex = working.indexOf('?');
-        if (searchIndex !== -1) {
-            search = working.slice(searchIndex);
-            working = working.slice(0, searchIndex);
-        }
-
-        const cleaned = working.replace(/^\.\//, '').replace(/^\/+/u, '');
-        const filePath = decodePathSegments(cleaned);
-        return { filePath, search, hash };
-    }
-
-    function transformRelativeAsset(rawHref, tokenType) {
-        if (!relativeLinksEnabled || typeof rawHref !== 'string') {
-            return null;
-        }
-
-        const trimmedHref = rawHref.trim();
-        if (
-            !trimmedHref ||
-            trimmedHref.startsWith('#') ||
-            relativeLinkProtocolRelativePattern.test(trimmedHref) ||
-            relativeLinkSchemePattern.test(trimmedHref) ||
-            trimmedHref.startsWith('/')
-        ) {
-            return null;
-        }
-
-        let resolvedHref = trimmedHref;
-        const walker = relativeLinkBaseWalker;
-
-        if (walker && typeof walker.walkTokens === 'function') {
-            const tempToken = { type: tokenType, href: trimmedHref };
-            try {
-                walker.walkTokens(tempToken);
-                resolvedHref = tempToken.href;
-            } catch (error) {
-                console.warn('marked-base-url resolution failed', error);
-                resolvedHref = fallbackResolveRelativeHref(trimmedHref);
-            }
-        } else {
-            resolvedHref = fallbackResolveRelativeHref(trimmedHref);
-        }
-
-        const parts = splitResolvedHref(resolvedHref);
-        if (!parts.filePath) {
-            return null;
-        }
-
-        if (tokenType === 'image') {
-            return {
-                assetHref: `${encodePathSegments(parts.filePath)}${parts.search}${parts.hash}`,
-            };
-        }
-
-        return {
-            fileTarget: `${parts.filePath}${parts.search}`,
-            hash: parts.hash,
-        };
-    }
-
-    const relativeLinkExtension = {
-        walkTokens(token) {
-            if (!token || typeof token.href !== 'string') {
-                return;
-            }
-
-            if (token.type === 'image') {
-                const asset = transformRelativeAsset(token.href, 'image');
-                if (asset && asset.assetHref) {
-                    token.href = asset.assetHref;
-                }
-                return;
-            }
-
-            if (token.type !== 'link') {
-                return;
-            }
-
-            const result = transformRelativeAsset(token.href, 'link');
-            if (!result || !result.fileTarget) {
-                return;
-            }
-
-            const basePathname = typeof window !== 'undefined' && window.location ? window.location.pathname : '';
-            const query = buildQuery({ file: result.fileTarget });
-            token.href = `${basePathname}${query}${result.hash || ''}`;
-        },
-    };
-
     function getCssNumber(variableName, fallback) {
         if (typeof variableName !== 'string' || !variableName) {
             return typeof fallback === 'number' ? fallback : 0;
@@ -772,219 +265,6 @@ function bootstrap() {
         }
 
         return typeof fallback === 'number' ? fallback : 0;
-    }
-
-    function configureMarked() {
-        if (typeof marked === 'undefined' || markedConfigured) {
-            return;
-        }
-
-        marked.use({
-            walkTokens(token) {
-                if (!token || token.type !== 'code') {
-                    return;
-                }
-
-                const language = typeof token.lang === 'string' ? token.lang.toLowerCase() : '';
-                const source = token.text || token.raw || '';
-
-                if (language.includes('mermaid')) {
-                    const id = `mermaid-diagram-${mermaidIdCounter++}`;
-                    const encodedSource = encodeMermaidSource(source);
-                    const mermaidHtml = `<div class="mermaid" id="${id}" data-mermaid-source="${encodedSource}"></div>`;
-                    token.type = 'html';
-                    token.raw = mermaidHtml;
-                    token.text = mermaidHtml;
-                    return;
-                }
-
-                if (language.includes('vega-lite') || language === 'vega') {
-                    const id = `vega-diagram-${vegaIdCounter++}`;
-                    const encodedSource = encodeVegaSource(source);
-                    const vegaHtml = `<div class="vega-diagram" id="${id}" data-vega-source="${encodedSource}"></div>`;
-                    token.type = 'html';
-                    token.raw = vegaHtml;
-                    token.text = vegaHtml;
-                    return;
-                }
-
-                if (language.includes('excalidraw')) {
-                    const id = `excalidraw-diagram-${excalidrawIdCounter++}`;
-                    const encodedSource = encodeExcalidrawSource(source);
-                    const excalidrawHtml = `<div class="excalidraw-diagram" id="${id}" data-excalidraw-source="${encodedSource}"></div>`;
-                    token.type = 'html';
-                    token.raw = excalidrawHtml;
-                    token.text = excalidrawHtml;
-                    return;
-                }
-
-            },
-        });
-
-        marked.use({
-            headerIds: true,
-            mangle: false,
-            renderer: {
-                heading({ text, depth, raw }) {
-                    const headingLevel = Math.min(Math.max(depth || 1, 1), 6);
-
-                    // Create slug from the raw text or the rendered text
-                    const sourceText = typeof raw === 'string' ? raw : text;
-                    const slug = createSlug(sourceText);
-                    const plainText = normaliseHeadingText(text, raw);
-                    const ariaSource = plainText || (typeof raw === 'string' ? raw : 'heading');
-                    const ariaLabel = escapeHtml(`Link to section ${ariaSource}`);
-                    const headingLabel = plainText || ariaSource || 'this section';
-                    const safeSlug = escapeHtml(slug);
-                    const actionsAriaLabel = escapeHtml(`Section actions for ${headingLabel}`);
-                    const editLabel = escapeHtml(`Edit section "${headingLabel}" in the editor`);
-                    const copyLabel = escapeHtml(`Copy link to section "${headingLabel}"`);
-
-                    if (Array.isArray(activeHeadingCollection)) {
-                        activeHeadingCollection.push({
-                            level: headingLevel,
-                            text: plainText || ariaSource,
-                            slug,
-                        });
-                    }
-
-                    return `<h${headingLevel} id="${safeSlug}">${text}<span class="heading-actions" role="group" aria-label="${actionsAriaLabel}"><button type="button" class="heading-action-button heading-action-edit" data-heading-action="edit" data-heading-slug="${safeSlug}" title="${editLabel}"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span class="sr-only">${editLabel}</span></button><button type="button" class="heading-action-button heading-action-copy" data-heading-action="copy" data-heading-slug="${safeSlug}" title="${copyLabel}"><i class="fa-solid fa-link" aria-hidden="true"></i><span class="sr-only">${copyLabel}</span></button></span><a class="heading-anchor" href="#${safeSlug}" aria-label="${ariaLabel}"></a></h${headingLevel}>`;
-                },
-            },
-        });
-
-        marked.setOptions({
-            breaks: true,
-            gfm: true,
-            highlight(code, language) {
-                if (typeof hljs === 'undefined') {
-                    return code;
-                }
-                try {
-                    if (language && hljs.getLanguage(language)) {
-                        return hljs.highlight(code, { language }).value;
-                    }
-                    return hljs.highlightAuto(code).value;
-                } catch (err) {
-                    console.warn('Highlight.js failed to render a block', err);
-                    return code;
-                }
-            },
-        });
-
-        if (!relativeLinkExtensionRegistered) {
-            marked.use(relativeLinkExtension);
-            relativeLinkExtensionRegistered = true;
-        }
-
-        markedConfigured = true;
-    }
-
-    function normaliseHeadingText(rendered, raw) {
-        if (typeof rendered === 'string' && rendered.trim()) {
-            const temp = document.createElement('div');
-            temp.innerHTML = rendered;
-            const textContent = (temp.textContent || temp.innerText || '').trim();
-            if (textContent) {
-                return textContent;
-            }
-        }
-
-        if (typeof raw === 'string') {
-            const trimmed = raw.trim();
-            if (trimmed) {
-                return trimmed;
-            }
-        }
-
-        return '';
-    }
-
-    function escapeHtml(value) {
-        return String(value)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
-
-    function computeBaseSlug(text) {
-        if (!text) {
-            return '';
-        }
-
-        const temp = document.createElement('div');
-        temp.innerHTML = text;
-        const cleanText = temp.textContent || temp.innerText || text;
-
-        return cleanText
-            .toLowerCase()
-            .trim()
-            .replace(/[^\w\s-]/g, '')
-            .replace(/\s+/g, '-')
-            .replace(/-+/g, '-')
-            .replace(/^-+|-+$/g, '');
-    }
-
-    function createSlug(text) {
-        let slug = computeBaseSlug(text);
-
-        if (!slug) {
-            slug = 'heading';
-        }
-
-        if (documentSlugCounts) {
-            if (documentSlugCounts.has(slug)) {
-                const count = documentSlugCounts.get(slug) + 1;
-                documentSlugCounts.set(slug, count);
-                return `${slug}-${count}`;
-            }
-
-            documentSlugCounts.set(slug, 0);
-        }
-
-        return slug;
-    }
-
-    function captureHeadingLocations(markdownSource) {
-        headingLocationMap = new Map();
-
-        if (typeof markdownSource !== 'string' || !markdownSource) {
-            return;
-        }
-
-        const slugCounts = new Map();
-        const lines = markdownSource.split(/\r?\n/);
-
-        lines.forEach((line, index) => {
-            const match = line.match(/^(#{1,6})\s+(.*)$/);
-            if (!match) {
-                return;
-            }
-
-            const rawHeading = match[2].trim();
-            let baseSlug = computeBaseSlug(rawHeading);
-            if (!baseSlug) {
-                baseSlug = 'heading';
-            }
-
-            let slug = baseSlug;
-            if (slugCounts.has(baseSlug)) {
-                const count = slugCounts.get(baseSlug) + 1;
-                slugCounts.set(baseSlug, count);
-                slug = `${baseSlug}-${count}`;
-            } else {
-                slugCounts.set(baseSlug, 0);
-            }
-
-            headingLocationMap.set(slug, {
-                line: index,
-                column: 0,
-                level: match[1].length,
-                text: rawHeading,
-            });
-        });
     }
 
     function clearEditorHeadingHighlight() {
@@ -1091,11 +371,11 @@ function bootstrap() {
                 return;
             }
 
-            let location = headingLocationMap.get(slug);
+            let location = getHeadingLocation(markdownContext, slug);
             if (!location) {
                 const source = typeof editor.getValue === 'function' ? editor.getValue() : currentContent;
-                captureHeadingLocations(source);
-                location = headingLocationMap.get(slug);
+                captureHeadingLocations(markdownContext, source);
+                location = getHeadingLocation(markdownContext, slug);
             }
 
             if (!location) {
@@ -1189,470 +469,6 @@ function bootstrap() {
         if (typeof onFailure === 'function') {
             onFailure(lastError);
         }
-    }
-
-    function encodeDiagramSource(code) {
-        if (!code) {
-            return '';
-        }
-        const bytes = textEncoder.encode(code);
-        let binary = '';
-        bytes.forEach((byte) => {
-            binary += String.fromCharCode(byte);
-        });
-        return btoa(binary);
-    }
-
-    function decodeDiagramSource(encoded, label = 'diagram') {
-        if (!encoded) {
-            return '';
-        }
-        try {
-            const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
-            return textDecoder.decode(bytes);
-        } catch (error) {
-            console.warn(`Failed to decode ${label} source`, error);
-            return '';
-        }
-    }
-
-    function encodeMermaidSource(code) {
-        return encodeDiagramSource(code);
-    }
-
-    function decodeMermaidSource(encoded) {
-        return decodeDiagramSource(encoded, 'Mermaid');
-    }
-
-    function encodeVegaSource(code) {
-        return encodeDiagramSource(code);
-    }
-
-    function decodeVegaSource(encoded) {
-        return decodeDiagramSource(encoded, 'Vega');
-    }
-
-    function encodeExcalidrawSource(code) {
-        return encodeDiagramSource(code);
-    }
-
-    function decodeExcalidrawSource(encoded) {
-        return decodeDiagramSource(encoded, 'Excalidraw');
-    }
-
-    function createExcalidrawViewerUiOptions() {
-        return {
-            canvasActions: {
-                changeViewBackgroundColor: false,
-                clearCanvas: false,
-                export: false,
-                loadScene: false,
-                saveAsImage: false,
-                saveScene: false,
-                saveToActiveFile: false,
-                toggleTheme: false,
-                toggleShortcuts: false,
-                zoomIn: false,
-                zoomOut: false,
-                zoomToFit: false,
-                resetZoom: false,
-                pan: false,
-                viewMode: false,
-                zenMode: false,
-                gridMode: false,
-                stats: false,
-            },
-        };
-    }
-
-    function waitForCoreLibraries(maxRetries = 80, interval = 100) {
-        if (librariesReadyPromise) {
-            return librariesReadyPromise;
-        }
-
-        librariesReadyPromise = new Promise((resolve) => {
-            let attempts = 0;
-            const check = () => {
-                if (typeof marked !== 'undefined') {
-                    resolve();
-                    return;
-                }
-
-                if (attempts++ >= maxRetries) {
-                    resolve();
-                    return;
-                }
-
-                window.setTimeout(check, interval);
-            };
-
-            check();
-        });
-
-        return librariesReadyPromise;
-    }
-
-    const DIAGRAM_ICONS = {
-        Mermaid: '📊',
-        Vega: '📈',
-        Excalidraw: '✏️',
-    };
-
-    function showDiagramStatus(element, type, message, source, variant) {
-        const icon = DIAGRAM_ICONS[type] || 'ℹ️';
-        const emphasised = variant === 'error' ? `<strong>${escapeHtml(message)}</strong>` : escapeHtml(message);
-        const sourceMarkup = source ? `<pre>${escapeHtml(source)}</pre>` : '';
-        element.innerHTML = `
-            <div class="diagram-loading">
-                ${icon} <strong>${escapeHtml(type)}</strong><br>
-                ${emphasised}
-                ${sourceMarkup}
-            </div>
-        `;
-    }
-
-    function showDiagramLoading(element, type, source) {
-        showDiagramStatus(element, type, `${type} renderer loading…`, source, 'loading');
-    }
-
-    function showDiagramError(element, type, message, source) {
-        showDiagramStatus(element, type, `Error: ${message}`, source, 'error');
-    }
-
-    function cleanupExcalidrawRoots() {
-        excalidrawRoots.forEach((record) => {
-            try {
-                if (record && typeof record.unmount === 'function') {
-                    record.unmount();
-                } else if (record && record.root && typeof record.root.unmount === 'function') {
-                    record.root.unmount();
-                }
-            } catch (error) {
-                console.warn('Failed to unmount Excalidraw root', error);
-            }
-        });
-        excalidrawRoots.clear();
-    }
-
-    function scheduleMermaidRetry() {
-        if (mermaidRetryTimer) {
-            return;
-        }
-        mermaidRetryTimer = window.setTimeout(() => {
-            mermaidRetryTimer = null;
-            renderMermaidDiagrams();
-        }, 400);
-    }
-
-    function scheduleVegaRetry() {
-        if (vegaRetryTimer) {
-            return;
-        }
-        vegaRetryTimer = window.setTimeout(() => {
-            vegaRetryTimer = null;
-            renderVegaVisualizations();
-        }, 400);
-    }
-
-    function scheduleExcalidrawRetry() {
-        if (excalidrawRetryTimer) {
-            return;
-        }
-        excalidrawRetryTimer = window.setTimeout(() => {
-            excalidrawRetryTimer = null;
-            renderExcalidrawDiagrams();
-        }, 400);
-    }
-
-    function handleExcalidrawResize() {
-        excalidrawRoots.forEach((record) => {
-            if (record && record.api) {
-                fitExcalidrawToViewport(record.api);
-            }
-        });
-    }
-
-    function ensureExcalidrawResizeHandler() {
-        if (excalidrawResizeHandlerAttached) {
-            return;
-        }
-        if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
-            return;
-        }
-        window.addEventListener('resize', handleExcalidrawResize);
-        excalidrawResizeHandlerAttached = true;
-    }
-
-    function fitExcalidrawToViewport(api) {
-        if (!api || typeof api.getSceneElements !== 'function' || typeof api.scrollToContent !== 'function') {
-            return;
-        }
-
-        let elements;
-        try {
-            elements = api.getSceneElements();
-        } catch (error) {
-            console.warn('Failed to read Excalidraw scene elements', error);
-            return;
-        }
-
-        if (!Array.isArray(elements) || !elements.length) {
-            return;
-        }
-
-        const visibleElements = elements.filter((item) => item && !item.isDeleted);
-        if (!visibleElements.length) {
-            return;
-        }
-
-        const executeFit = () => {
-            try {
-                api.scrollToContent(visibleElements, { fitToViewport: true, animate: false });
-            } catch (error) {
-                if (!excalidrawFitFailureLogged) {
-                    console.warn('Failed to fit Excalidraw content', error);
-                    excalidrawFitFailureLogged = true;
-                }
-            }
-        };
-
-        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-            window.requestAnimationFrame(executeFit);
-        } else {
-            executeFit();
-        }
-
-        if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
-            window.setTimeout(executeFit, 150);
-        }
-    }
-
-    function renderMermaidDiagrams() {
-        const diagrams = content.querySelectorAll('.mermaid[data-mermaid-source]');
-        if (!diagrams.length) {
-            return;
-        }
-
-        if (typeof mermaid === 'undefined' || typeof mermaid.render !== 'function') {
-            diagrams.forEach((element) => {
-                const source = decodeMermaidSource(element.dataset.mermaidSource);
-                showDiagramLoading(element, 'Mermaid', source);
-            });
-            scheduleMermaidRetry();
-            return;
-        }
-
-        if (!mermaidInitAttempted) {
-            try {
-                mermaid.initialize({
-                    startOnLoad: false,
-                    theme: 'dark',
-                    securityLevel: 'loose',
-                });
-            } catch (error) {
-                console.warn('Mermaid initialization issue', error);
-            }
-            mermaidInitAttempted = true;
-        }
-
-        diagrams.forEach((element, index) => {
-            const source = decodeMermaidSource(element.dataset.mermaidSource);
-            if (!source.trim()) {
-                showDiagramError(element, 'Mermaid', 'Diagram source is empty', source);
-                return;
-            }
-
-            const renderId = `${element.id || 'mermaid-diagram'}-${index}`;
-            mermaid
-                .render(renderId, source)
-                .then(({ svg }) => {
-                    element.innerHTML = svg;
-                })
-                .catch((error) => {
-                    console.error('Mermaid rendering error', error);
-                    showDiagramError(element, 'Mermaid', error.message, source);
-                });
-        });
-    }
-
-    function renderVegaVisualizations() {
-        const diagrams = content.querySelectorAll('.vega-diagram[data-vega-source]');
-        if (!diagrams.length) {
-            return;
-        }
-
-        if (typeof vegaEmbed === 'undefined') {
-            diagrams.forEach((element) => {
-                const source = decodeVegaSource(element.dataset.vegaSource);
-                showDiagramLoading(element, 'Vega', source);
-            });
-            scheduleVegaRetry();
-            return;
-        }
-
-        diagrams.forEach((element) => {
-            const source = decodeVegaSource(element.dataset.vegaSource);
-            if (!source.trim()) {
-                showDiagramError(element, 'Vega', 'Specification is empty', source);
-                return;
-            }
-
-            let spec;
-            try {
-                spec = JSON.parse(source);
-            } catch (error) {
-                console.error('Vega parsing error', error);
-                showDiagramError(element, 'Vega', 'Invalid Vega/Vega-Lite specification', source);
-                return;
-            }
-
-            element.innerHTML = '';
-            vegaEmbed(element, spec, { actions: false, renderer: 'canvas', theme: 'dark' }).catch((error) => {
-                console.error('Vega rendering error', error);
-                showDiagramError(element, 'Vega', error.message, source);
-            });
-        });
-    }
-
-    function renderExcalidrawDiagrams() {
-        const diagrams = content.querySelectorAll('.excalidraw-diagram[data-excalidraw-source]');
-        if (!diagrams.length) {
-            return;
-        }
-
-        if (
-            !window.React ||
-            !window.ReactDOM ||
-            !window.ExcalidrawLib ||
-            !window.ExcalidrawLib.Excalidraw
-        ) {
-            diagrams.forEach((element) => {
-                const source = decodeExcalidrawSource(element.dataset.excalidrawSource);
-                showDiagramLoading(element, 'Excalidraw', source);
-            });
-            scheduleExcalidrawRetry();
-            return;
-        }
-
-        diagrams.forEach((element) => {
-            const source = decodeExcalidrawSource(element.dataset.excalidrawSource);
-            if (!source.trim()) {
-                showDiagramError(element, 'Excalidraw', 'Scene data is empty', source);
-                return;
-            }
-
-            let sceneData;
-            try {
-                sceneData = JSON.parse(source);
-            } catch (error) {
-                console.error('Excalidraw parsing error', error);
-                showDiagramError(element, 'Excalidraw', 'Invalid scene JSON', source);
-                return;
-            }
-
-            const desiredBackground = 'transparent';
-            sceneData = {
-                ...sceneData,
-                appState: {
-                    ...(sceneData && typeof sceneData === 'object' && sceneData.appState
-                        ? sceneData.appState
-                        : {}),
-                    viewBackgroundColor: desiredBackground,
-                },
-            };
-
-            const existingRoot = excalidrawRoots.get(element);
-            if (existingRoot && typeof existingRoot.unmount === 'function') {
-                try {
-                    existingRoot.unmount();
-                } catch (error) {
-                    console.warn('Failed to unmount previous Excalidraw root', error);
-                }
-            }
-            excalidrawRoots.delete(element);
-
-            element.innerHTML = '';
-            const wrapper = document.createElement('div');
-            wrapper.className = 'excalidraw-wrapper';
-            wrapper.tabIndex = -1;
-            element.appendChild(wrapper);
-
-            const record = {
-                root: null,
-                api: null,
-                wrapper,
-                unmount() {
-                    record.api = null;
-                    if (record.root && typeof record.root.unmount === 'function') {
-                        record.root.unmount();
-                    } else if (
-                        typeof window.ReactDOM !== 'undefined' &&
-                        typeof window.ReactDOM.unmountComponentAtNode === 'function'
-                    ) {
-                        try {
-                            window.ReactDOM.unmountComponentAtNode(wrapper);
-                        } catch (error) {
-                            console.warn('Failed to unmount Excalidraw instance', error);
-                        }
-                    }
-                },
-            };
-
-            try {
-                const viewerUiOptions = createExcalidrawViewerUiOptions();
-                const excalidrawElement = window.React.createElement(window.ExcalidrawLib.Excalidraw, {
-                    initialData: sceneData,
-                    viewModeEnabled: true,
-                    zenModeEnabled: false,
-                    gridModeEnabled: false,
-                    theme: 'dark',
-                    autoFocus: false,
-                    UIOptions: viewerUiOptions,
-                    handleKeyboardEvent: () => false,
-                    ref: (api) => {
-                        record.api = api || null;
-                        if (api) {
-                            excalidrawFitFailureLogged = false;
-                            ensureExcalidrawResizeHandler();
-                            fitExcalidrawToViewport(api);
-                            if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
-                                window.setTimeout(() => fitExcalidrawToViewport(api), 250);
-                            }
-                        }
-                    },
-                });
-
-                let root;
-                if (typeof window.ReactDOM.createRoot === 'function') {
-                    root = window.ReactDOM.createRoot(wrapper);
-                    root.render(excalidrawElement);
-                } else if (typeof window.ReactDOM.render === 'function') {
-                    window.ReactDOM.render(excalidrawElement, wrapper);
-                    root = {
-                        unmount() {
-                            if (typeof window.ReactDOM.unmountComponentAtNode === 'function') {
-                                window.ReactDOM.unmountComponentAtNode(wrapper);
-                            }
-                        },
-                    };
-                } else {
-                    throw new Error('ReactDOM renderer is unavailable');
-                }
-
-                record.root = root;
-                excalidrawRoots.set(element, record);
-            } catch (error) {
-                record.api = null;
-                console.error('Excalidraw rendering error', error);
-                showDiagramError(element, 'Excalidraw', error.message, source);
-            }
-        });
-    }
-
-    function renderAllDiagrams() {
-        renderMermaidDiagrams();
-        renderVegaVisualizations();
-        renderExcalidrawDiagrams();
     }
 
     function setStatus(message) {
@@ -1863,109 +679,6 @@ function bootstrap() {
         return trimmed === '' ? '' : trimmed;
     }
 
-    function renderMarkdown(markdownText, options = {}) {
-        cleanupExcalidrawRoots();
-        configureMarked();
-        updateRelativeLinkBase(currentFile);
-        mermaidIdCounter = 0;
-        vegaIdCounter = 0;
-        excalidrawIdCounter = 0;
-
-        // Reset slug counter for each document to ensure unique IDs
-        documentSlugCounts = new Map();
-
-        const sourceText = markdownText || '';
-        const updateCurrent = Boolean(options.updateCurrent);
-        captureHeadingLocations(sourceText);
-
-        if (typeof marked === 'undefined') {
-            activeHeadingCollection = null;
-            pendingMarkdown = sourceText;
-            content.textContent = sourceText;
-            updateTableOfContents([]);
-            waitForCoreLibraries().then(() => {
-                if (pendingMarkdown !== null) {
-                    const textToRender = pendingMarkdown;
-                    pendingMarkdown = null;
-                    renderMarkdown(textToRender, { updateCurrent });
-                }
-            });
-            if (updateCurrent) {
-                currentContent = sourceText;
-            }
-            return;
-        }
-
-        activeHeadingCollection = [];
-        content.innerHTML = marked.parse(sourceText);
-        const headings = Array.isArray(activeHeadingCollection) ? [...activeHeadingCollection] : [];
-        activeHeadingCollection = null;
-        pendingMarkdown = null;
-
-        if (typeof hljs !== 'undefined') {
-            content.querySelectorAll('pre code').forEach((block) => {
-                if (block.closest('.mermaid, .vega-diagram, .excalidraw-diagram')) {
-                    return;
-                }
-                try {
-                    hljs.highlightElement(block);
-                } catch (err) {
-                    console.warn('Highlight.js error', err);
-                }
-            });
-        }
-
-        updateTableOfContents(headings);
-        renderAllDiagrams();
-        if (updateCurrent) {
-            currentContent = sourceText;
-        }
-    }
-
-    function updateTableOfContents(headings) {
-        if (!tocList) {
-            return;
-        }
-
-        tocList.innerHTML = '';
-
-        if (!Array.isArray(headings) || headings.length === 0) {
-            const emptyState = document.createElement('p');
-            emptyState.className = 'toc-empty-state';
-            emptyState.textContent = 'No headings found in this document yet.';
-            tocList.appendChild(emptyState);
-            return;
-        }
-
-        const minLevel = headings.reduce((accumulator, entry) => {
-            const level = typeof entry.level === 'number' ? entry.level : 1;
-            return Math.min(accumulator, Math.max(1, Math.min(6, level)));
-        }, 6);
-
-        const list = document.createElement('ol');
-        list.setAttribute('role', 'list');
-
-        headings.forEach((entry) => {
-            const level = Math.max(1, Math.min(6, entry.level || 1));
-            const item = document.createElement('li');
-            item.className = 'toc-entry';
-
-            const link = document.createElement('a');
-            link.className = 'toc-link';
-            link.href = `#${entry.slug}`;
-            link.textContent = entry.text || entry.slug || 'Untitled section';
-            link.setAttribute('aria-level', String(level));
-            link.dataset.level = String(level);
-            const indentLevel = Math.max(0, level - minLevel);
-            link.style.paddingLeft = `${10 + indentLevel * 16}px`;
-
-            item.appendChild(link);
-            list.appendChild(item);
-        });
-
-        tocList.appendChild(list);
-    }
-
     function handleTocClick(event) {
         const link = event.target.closest('a.toc-link');
         if (!link) {
@@ -2092,7 +805,7 @@ function bootstrap() {
         }
         setHasPendingChanges(draftContent !== currentContent);
         isPreviewing = true;
-        renderMarkdown(draftContent, { updateCurrent: false });
+        renderMarkdown(markdownContext, draftContent, { updateCurrent: false });
         editorContainer.classList.remove('visible');
         content.classList.remove('hidden');
         updateHeader();
@@ -2104,7 +817,7 @@ function bootstrap() {
             return;
         }
         isPreviewing = false;
-        renderMarkdown(currentContent, { updateCurrent: true });
+        renderMarkdown(markdownContext, currentContent, { updateCurrent: true });
         content.classList.add('hidden');
         editorContainer.classList.add('visible');
         const editor = ensureEditorInstance();
@@ -2131,7 +844,7 @@ function bootstrap() {
         content.classList.remove('hidden');
         editorContainer.classList.remove('visible');
         if (restoreContent) {
-            renderMarkdown(currentContent, { updateCurrent: true });
+            renderMarkdown(markdownContext, currentContent, { updateCurrent: true });
         }
         setHasPendingChanges(false);
         updateHeader();
@@ -2143,7 +856,7 @@ function bootstrap() {
         exitEditMode({ restoreContent: false });
         currentFile = null;
         const fallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
-        renderMarkdown(fallback, { updateCurrent: true });
+        renderMarkdown(markdownContext, fallback, { updateCurrent: true });
         updateActiveFileHighlight();
         updateHeader();
         if (!skipHistory) {
@@ -2341,6 +1054,7 @@ function bootstrap() {
                 currentFile = null;
                 exitEditMode({ restoreContent: false });
                 renderMarkdown(
+                    markdownContext,
                     fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'),
                     { updateCurrent: true }
                 );
@@ -2370,7 +1084,7 @@ function bootstrap() {
             const data = await fetchJson(url);
             resolvedRootPath = data.rootPath || resolvedRootPath;
             currentFile = data.file || file;
-            renderMarkdown(data.content || '', { updateCurrent: true });
+            renderMarkdown(markdownContext, data.content || '', { updateCurrent: true });
             setHasPendingChanges(false);
             updateActiveFileHighlight();
             updateHeader();
@@ -2536,6 +1250,7 @@ function bootstrap() {
                             currentFile = null;
                             exitEditMode({ restoreContent: false });
                             renderMarkdown(
+                                markdownContext,
                                 fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'),
                                 { updateCurrent: true }
                             );
@@ -3057,7 +1772,7 @@ function bootstrap() {
 
     function initialise() {
         const initialFallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
-        renderMarkdown(state.content || initialFallback, { updateCurrent: true });
+        renderMarkdown(markdownContext, state.content || initialFallback, { updateCurrent: true });
         renderFileList();
         updateHeader();
         if (state.error) {
