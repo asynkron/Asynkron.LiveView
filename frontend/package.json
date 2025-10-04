@@ -9,7 +9,7 @@
     "clean": "rimraf ../templates/static/dist"
   },
   "devDependencies": {
-    "esbuild": "^0.21.4",
+    "esbuild": "^0.25.10",
     "rimraf": "^5.0.5"
   }
 }
