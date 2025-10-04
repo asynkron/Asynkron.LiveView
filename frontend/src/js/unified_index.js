@@ -128,11 +128,25 @@ function bootstrap() {
     // Initialize Svelte components
     let svelteComponents = null;
     function initSvelteUI() {
-        const headerMount = document.getElementById('svelte-header-mount');
+        let headerMount = document.getElementById('svelte-header-mount');
         const overlaysMount = document.getElementById('svelte-overlays-mount');
         
+        // If dockview is active, the viewer section has been moved, so we need to find/create the mount point
+        if (dockviewIsActive && !headerMount) {
+            // Find the viewer section in the dockview panel
+            const viewerPanel = document.querySelector('.dockview-panel-viewer .viewer');
+            if (viewerPanel) {
+                // Create the header mount point if it doesn't exist
+                headerMount = document.createElement('header');
+                headerMount.id = 'svelte-header-mount';
+                headerMount.className = 'file-header';
+                // Insert it as the first child of viewer
+                viewerPanel.insertBefore(headerMount, viewerPanel.firstChild);
+            }
+        }
+        
         if (!headerMount || !overlaysMount) {
-            console.warn('Svelte mount points not found');
+            console.warn('Svelte mount points not found', { headerMount: !!headerMount, overlaysMount: !!overlaysMount });
             return;
         }
 
@@ -1838,7 +1852,7 @@ function bootstrap() {
     }
 
     function promptUnsavedChanges(context = {}) {
-        if (!unsavedChangesModal) {
+        if (!svelteComponents) {
             return Promise.resolve('cancel');
         }
 
@@ -1848,86 +1862,31 @@ function bootstrap() {
 
         const nextFile = typeof context.nextFile === 'string' ? context.nextFile : '';
         const displayName = currentFile || 'this document';
-        if (unsavedChangesFilename) {
-            unsavedChangesFilename.textContent = displayName;
-        }
-        if (unsavedChangesMessage) {
-            unsavedChangesMessage.setAttribute('data-current-file', displayName);
-        }
-        if (unsavedChangesDetail) {
-            if (nextFile && nextFile !== currentFile) {
-                unsavedChangesDetail.textContent = `Switch to “${nextFile}” without saving?`;
-            } else {
-                unsavedChangesDetail.textContent = 'What would you like to do?';
-            }
-        }
+        const detailMessage = (nextFile && nextFile !== currentFile) 
+            ? `Switch to "${nextFile}" without saving?`
+            : 'What would you like to do?';
 
-        unsavedChangesModal.classList.add('visible');
+        // Update Svelte modal state
+        svelteComponents.updateState('unsavedChangesModal', {
+            visible: true,
+            filename: displayName,
+            message: 'You have unsaved changes in',
+            detail: detailMessage
+        });
+        
         document.body.classList.add('modal-open');
 
         const promise = new Promise((resolve) => {
-            const cleanup = () => {
-                unsavedChangesModal.classList.remove('visible');
-                document.body.classList.remove('modal-open');
-                if (unsavedChangesSaveButton) {
-                    unsavedChangesSaveButton.removeEventListener('click', onSave);
-                }
-                if (unsavedChangesDiscardButton) {
-                    unsavedChangesDiscardButton.removeEventListener('click', onDiscard);
-                }
-                if (unsavedChangesCancelButton) {
-                    unsavedChangesCancelButton.removeEventListener('click', onCancel);
-                }
-                unsavedChangesModal.removeEventListener('keydown', onKeyDown, true);
-                unsavedChangesModal.removeEventListener('click', onOverlayClick);
-                activeUnsavedPrompt = null;
-            };
-
-            const choose = (result) => {
-                cleanup();
-                resolve(result);
-            };
-
-            const onSave = () => choose('save');
-            const onDiscard = () => choose('discard');
-            const onCancel = () => choose('cancel');
-            const onKeyDown = (event) => {
-                if (event.key === 'Escape') {
-                    event.preventDefault();
-                    choose('cancel');
+            activeUnsavedPrompt = {
+                resolve: (result) => {
+                    svelteComponents.updateState('unsavedChangesModal', { visible: false });
+                    document.body.classList.remove('modal-open');
+                    activeUnsavedPrompt = null;
+                    resolve(result);
                 }
             };
-            const onOverlayClick = (event) => {
-                if (event.target === unsavedChangesModal) {
-                    choose('cancel');
-                }
-            };
-
-            if (unsavedChangesSaveButton) {
-                unsavedChangesSaveButton.addEventListener('click', onSave);
-            }
-            if (unsavedChangesDiscardButton) {
-                unsavedChangesDiscardButton.addEventListener('click', onDiscard);
-            }
-            if (unsavedChangesCancelButton) {
-                unsavedChangesCancelButton.addEventListener('click', onCancel);
-            }
-
-            unsavedChangesModal.addEventListener('keydown', onKeyDown, true);
-            unsavedChangesModal.addEventListener('click', onOverlayClick);
-
-            window.setTimeout(() => {
-                if (typeof unsavedChangesSaveButton?.focus === 'function') {
-                    unsavedChangesSaveButton.focus();
-                } else if (typeof unsavedChangesDiscardButton?.focus === 'function') {
-                    unsavedChangesDiscardButton.focus();
-                } else {
-                    unsavedChangesModal.focus({ preventScroll: true });
-                }
-            }, 0);
         });
 
-        activeUnsavedPrompt = promise;
         return promise;
     }
 
