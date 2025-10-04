@@ -5,6 +5,8 @@ const { marked, hljs, mermaid, vegaEmbed } = globalScope;
 const reactGlobal = globalScope.React;
 const reactDomGlobal = globalScope.ReactDOM;
 const excalidrawGlobal = globalScope.ExcalidrawLib;
+const svelteCompilerGlobal = globalScope.svelteCompiler;
+const svelteInternalGlobal = globalScope.svelteInternal;
 
 window.addEventListener('DOMContentLoaded', () => {
     const data = globalScope.__PRINT_DATA__ || {};
@@ -16,6 +18,8 @@ window.addEventListener('DOMContentLoaded', () => {
     let mermaidIdCounter = 0;
     let vegaIdCounter = 0;
     let excalidrawIdCounter = 0;
+    let svelteIdCounter = 0;
+    const svelteInstances = new Map();
 
     const vegaLightBaseConfig = {
         background: '#ffffff',
@@ -191,6 +195,81 @@ window.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function renderSvelteComponents() {
+        if (!svelteCompilerGlobal || !svelteInternalGlobal) {
+            return;
+        }
+
+        const components = container.querySelectorAll('.svelte-component[data-svelte-source]');
+        components.forEach((element) => {
+            const source = decodeDiagramSource(element.dataset.svelteSource, 'Svelte');
+            if (!source || !source.trim()) {
+                element.innerHTML = '<div class="loading">Missing Svelte component source.</div>';
+                return;
+            }
+
+            const existingInstance = svelteInstances.get(element);
+            if (existingInstance && typeof existingInstance.$destroy === 'function') {
+                try {
+                    existingInstance.$destroy();
+                } catch (error) {
+                    console.warn('Failed to destroy previous Svelte instance', error);
+                }
+            }
+            svelteInstances.delete(element);
+
+            element.innerHTML = '';
+            const wrapper = document.createElement('div');
+            wrapper.className = 'svelte-wrapper';
+            element.appendChild(wrapper);
+
+            try {
+                const compiled = svelteCompilerGlobal.compile(source, {
+                    dev: false,
+                    css: 'injected',
+                    generate: 'dom',
+                });
+
+                let componentCode = compiled.js.code;
+                
+                componentCode = componentCode.replace(
+                    /import\s+"svelte\/internal\/disclose-version";?/g,
+                    ''
+                );
+                
+                componentCode = componentCode.replace(
+                    /import\s+{([^}]+)}\s+from\s+"svelte\/internal";?/g,
+                    (match, imports) => {
+                        const importList = imports.split(/,\s*\n\s*|\s*,\s*/).map(i => i.trim()).filter(i => i);
+                        const declarations = importList.map(name => `const ${name} = window.svelteInternal.${name};`);
+                        return declarations.join('\n');
+                    }
+                );
+                
+                componentCode = componentCode.replace(
+                    /export default class/g,
+                    'return class'
+                );
+                componentCode = componentCode.replace(
+                    /export default/g,
+                    'return'
+                );
+                
+                const wrappedCode = `(function() {\n${componentCode}\n})()`;
+                
+                const ComponentClass = eval(wrappedCode);
+                const instance = new ComponentClass({
+                    target: wrapper,
+                    props: {},
+                });
+                svelteInstances.set(element, instance);
+            } catch (error) {
+                console.error('Svelte rendering error', error);
+                element.innerHTML = `<div class="loading">Failed to render Svelte component: ${escapeHtml(error?.message || error)}</div>`;
+            }
+        });
+    }
+
     const markdown = data.content || '';
 
     if (typeof marked !== 'undefined') {
@@ -232,6 +311,11 @@ window.addEventListener('DOMContentLoaded', () => {
                 const encoded = encodeDiagramSource(code);
                 return `<div class="excalidraw-diagram" id="${id}" data-excalidraw-source="${encoded}"></div>`;
             }
+            if ((language || '').includes('svelte')) {
+                const id = `svelte-component-${svelteIdCounter++}`;
+                const encoded = encodeDiagramSource(code);
+                return `<div class="svelte-component" id="${id}" data-svelte-source="${encoded}"></div>`;
+            }
             return originalCode(code, language);
         };
 
@@ -254,4 +338,5 @@ window.addEventListener('DOMContentLoaded', () => {
     renderMermaidDiagrams();
     renderVegaDiagrams();
     renderExcalidrawDiagrams();
+    renderSvelteComponents();
 });
