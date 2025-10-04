@@ -1,6 +1,8 @@
 import './vendor_globals.js';
 import { initLayout } from './viewer/layout.js';
 import { renderMarkdown, captureHeadingLocations, getHeadingLocation } from './viewer/markdown.js';
+import { initEditor } from './editor/editor.js';
+import { initNavigation } from './files/navigation.js';
 
 // Client-side bootstrap logic for the unified markdown viewer UI.
 function bootstrap() {
@@ -41,10 +43,6 @@ function bootstrap() {
     const terminalStorageKey = 'terminalPanelHeight';
     const panelToggleButtons = Array.from(document.querySelectorAll('[data-panel-toggle]'));
 
-    if (content) {
-        content.addEventListener('click', handleHeadingActionClick);
-    }
-
     const initialIndex = normaliseFileIndex({
         filesValue: state.files,
         treeValue: state.fileTree,
@@ -56,25 +54,117 @@ function bootstrap() {
     let reconnectTimer = null;
     let isEditing = false;
     let isPreviewing = false;
-    let editorInstance = null;
-    let draftContent = '';
     let currentContent = typeof state.content === 'string' ? state.content : '';
     let hasPendingChanges = false;
-    let suppressEditorChangeEvents = false;
-    let activeUnsavedPrompt = null;
 
     const originalPathArgument = state.pathArgument || '';
     let resolvedRootPath = state.rootPath || '';
     const initialFileFromLocation = fileFromSearch(window.location.search);
+    const expandedDirectories = new Set();
+    const knownDirectories = new Set();
+
+    const sharedContext = {
+        elements: {
+            content,
+            fileName,
+            sidebarPath,
+            fileList,
+            downloadButton,
+            deleteButton,
+            editButton,
+            previewButton,
+            saveButton,
+            cancelButton,
+            editorContainer,
+            unsavedChangesModal,
+            unsavedChangesFilename,
+            unsavedChangesMessage,
+            unsavedChangesDetail,
+            unsavedChangesSaveButton,
+            unsavedChangesDiscardButton,
+            unsavedChangesCancelButton,
+        },
+        getCurrentFile: () => currentFile,
+        setCurrentFile(value, options = {}) {
+            const { silent = false } = options || {};
+            const nextValue = typeof value === 'string' && value.length ? value : value || null;
+            if (currentFile === nextValue) {
+                return;
+            }
+            currentFile = nextValue;
+            if (!silent) {
+                this.updateActiveFileHighlight();
+                this.updateHeader();
+                this.updateDocumentPanelTitle();
+            }
+        },
+        getCurrentContent: () => currentContent,
+        setCurrentContent(value) {
+            currentContent = typeof value === 'string' ? value : '';
+        },
+        hasPendingChanges: () => hasPendingChanges,
+        setHasPendingChanges: (value) => applyHasPendingChanges(value),
+        isEditing: () => isEditing,
+        setEditing(value) {
+            const next = Boolean(value);
+            if (isEditing === next) {
+                return;
+            }
+            isEditing = next;
+            this.updateActionVisibility();
+        },
+        isPreviewing: () => isPreviewing,
+        setPreviewing(value) {
+            const next = Boolean(value);
+            if (isPreviewing === next) {
+                return;
+            }
+            isPreviewing = next;
+            this.updateActionVisibility();
+        },
+        getResolvedRootPath: () => resolvedRootPath,
+        setResolvedRootPath(value) {
+            resolvedRootPath = typeof value === 'string' ? value : resolvedRootPath;
+        },
+        getOriginalPathArgument: () => originalPathArgument,
+        getFiles: () => files,
+        setFiles: (value) => {
+            files = Array.isArray(value) ? value : [];
+        },
+        getFileTree: () => fileTree,
+        setFileTree: (value) => {
+            fileTree = Array.isArray(value) ? value : [];
+        },
+        getExpandedDirectories: () => expandedDirectories,
+        getKnownDirectories: () => knownDirectories,
+        setStatus,
+        setConnectionStatus,
+        updateHeader() {
+            updateHeader();
+        },
+        updateActionVisibility() {
+            updateActionVisibility();
+        },
+        updateActiveFileHighlight() {},
+        updateDocumentPanelTitle() {
+            updateDocumentPanelTitle();
+        },
+        buildQuery: (params) => buildQuery(params),
+        updateLocation: (file, options) => updateLocation(file, options),
+        fallbackMarkdownFor,
+        normaliseFileIndex: (values) => normaliseFileIndex(values),
+        buildTreeFromFlatList: (list) => buildTreeFromFlatList(list),
+    };
     const markdownContext = {
         content,
         tocList,
-        getCurrentFile: () => currentFile,
+        getCurrentFile: () => sharedContext.getCurrentFile(),
         setCurrentContent(value) {
-            currentContent = value;
+            sharedContext.setCurrentContent(value);
         },
         buildQuery,
     };
+    sharedContext.markdownContext = markdownContext;
 
     const layout = initLayout({
         dockviewRoot,
@@ -87,7 +177,7 @@ function bootstrap() {
         fileSplitter,
         rootElement,
         panelToggleButtons,
-        getCurrentFile: () => currentFile,
+        getCurrentFile: () => sharedContext.getCurrentFile(),
     });
     const dockviewSetup = layout.dockviewSetup;
     const dockviewIsActive = layout.dockviewIsActive;
@@ -99,10 +189,39 @@ function bootstrap() {
         window.addEventListener('pointerup', layout.handlePointerFinish);
         window.addEventListener('pointercancel', layout.handlePointerFinish);
     }
-    let headingHighlightLine = null;
-    let headingHighlightTimeout = null;
-    const expandedDirectories = new Set();
-    const knownDirectories = new Set();
+
+    sharedContext.layout = layout;
+
+    const viewerApi = {
+        render(contentValue, options = {}) {
+            renderMarkdown(markdownContext, contentValue, options);
+        },
+        captureHeadings(source) {
+            return captureHeadingLocations(markdownContext, source);
+        },
+        getHeadingLocation(slug) {
+            return getHeadingLocation(markdownContext, slug);
+        },
+        getMarkdownContext() {
+            return markdownContext;
+        },
+    };
+
+    const navigationApi = initNavigation(sharedContext, viewerApi);
+    const editorApi = initEditor(sharedContext, viewerApi, navigationApi);
+    if (typeof navigationApi?.bindEditorApi === 'function') {
+        navigationApi.bindEditorApi(editorApi);
+    }
+    if (typeof navigationApi?.updateActiveFileHighlight === 'function') {
+        sharedContext.updateActiveFileHighlight = () => navigationApi.updateActiveFileHighlight();
+    }
+
+    if (content && typeof editorApi?.handleHeadingActionClick === 'function') {
+        content.addEventListener('click', (event) => {
+            editorApi.handleHeadingActionClick(event);
+        });
+    }
+
     let terminalInstance = null;
     let terminalFitAddon = null;
     let terminalSocket = null;
@@ -267,210 +386,6 @@ function bootstrap() {
         return typeof fallback === 'number' ? fallback : 0;
     }
 
-    function clearEditorHeadingHighlight() {
-        if (!editorInstance || headingHighlightLine === null) {
-            headingHighlightLine = null;
-            return;
-        }
-
-        try {
-            editorInstance.removeLineClass(headingHighlightLine, 'background', 'heading-target-line');
-        } catch (error) {
-            console.warn('Failed to remove heading highlight', error);
-        }
-
-        headingHighlightLine = null;
-    }
-
-    function highlightEditorLine(lineNumber) {
-        const editor = ensureEditorInstance();
-        if (!editor || typeof editor.addLineClass !== 'function') {
-            return;
-        }
-
-        if (headingHighlightTimeout) {
-            window.clearTimeout(headingHighlightTimeout);
-            headingHighlightTimeout = null;
-        }
-
-        if (headingHighlightLine !== null) {
-            try {
-                editor.removeLineClass(headingHighlightLine, 'background', 'heading-target-line');
-            } catch (error) {
-                console.warn('Failed to clear previous heading highlight', error);
-            }
-        }
-
-        try {
-            editor.addLineClass(lineNumber, 'background', 'heading-target-line');
-            headingHighlightLine = lineNumber;
-        } catch (error) {
-            console.warn('Failed to apply heading highlight', error);
-            headingHighlightLine = null;
-            return;
-        }
-
-        headingHighlightTimeout = window.setTimeout(() => {
-            const instance = ensureEditorInstance();
-            if (instance && headingHighlightLine !== null) {
-                try {
-                    instance.removeLineClass(headingHighlightLine, 'background', 'heading-target-line');
-                } catch (error) {
-                    console.warn('Failed to remove heading highlight after delay', error);
-                }
-            }
-            headingHighlightLine = null;
-            headingHighlightTimeout = null;
-        }, 2000);
-    }
-
-    function handleHeadingActionClick(event) {
-        const button = event.target.closest('.heading-action-button');
-        if (!button) {
-            return;
-        }
-
-        if (!content || !content.contains(button)) {
-            return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        const action = button.dataset.headingAction;
-        const slug = button.dataset.headingSlug;
-
-        if (!slug) {
-            return;
-        }
-
-        if (action === 'edit') {
-            jumpToHeadingInEditor(slug);
-            return;
-        }
-
-        if (action === 'copy') {
-            copyHeadingLink(slug);
-        }
-    }
-
-    function jumpToHeadingInEditor(slug) {
-        if (!slug) {
-            return;
-        }
-
-        if (!currentFile) {
-            setStatus('Open a markdown file to edit sections.');
-            return;
-        }
-
-        const focusEditorOnHeading = () => {
-            const editor = ensureEditorInstance();
-            if (!editor) {
-                setStatus('Editor resources are still loading. Please try again in a moment.');
-                return;
-            }
-
-            let location = getHeadingLocation(markdownContext, slug);
-            if (!location) {
-                const source = typeof editor.getValue === 'function' ? editor.getValue() : currentContent;
-                captureHeadingLocations(markdownContext, source);
-                location = getHeadingLocation(markdownContext, slug);
-            }
-
-            if (!location) {
-                setStatus('Unable to locate this section in the editor.');
-                return;
-            }
-
-            const targetPosition = { line: location.line, ch: location.column || 0 };
-
-            editor.operation(() => {
-                editor.setCursor(targetPosition);
-                const bottomLine = Math.min(editor.lineCount() - 1, targetPosition.line + 5);
-                editor.scrollIntoView({ from: targetPosition, to: { line: bottomLine, ch: 0 } }, 200);
-                editor.focus();
-            });
-
-            highlightEditorLine(location.line);
-            setStatus('Jumped to section in editor.');
-        };
-
-        if (!isEditing) {
-            enterEditMode();
-            window.setTimeout(focusEditorOnHeading, 120);
-            return;
-        }
-
-        if (isPreviewing) {
-            returnToCodeMode();
-            window.setTimeout(focusEditorOnHeading, 120);
-            return;
-        }
-
-        focusEditorOnHeading();
-    }
-
-    function copyHeadingLink(slug) {
-        if (!slug) {
-            return;
-        }
-
-        const baseUrl = window.location.href.split('#')[0];
-        const link = `${baseUrl}#${slug}`;
-
-        const notifyFailure = (error) => {
-            if (error) {
-                console.warn('Failed to copy heading link', error);
-            }
-            setStatus(`Copy failed. Link: ${link}`);
-        };
-
-        const notifySuccess = () => {
-            setStatus('Copied link to clipboard.');
-        };
-
-        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            navigator.clipboard.writeText(link).then(notifySuccess).catch((error) => {
-                fallbackCopyLink(link, notifySuccess, () => notifyFailure(error));
-            });
-            return;
-        }
-
-        fallbackCopyLink(link, notifySuccess, notifyFailure);
-    }
-
-    function fallbackCopyLink(text, onSuccess, onFailure) {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.setAttribute('readonly', '');
-        textarea.style.position = 'absolute';
-        textarea.style.left = '-9999px';
-        document.body.appendChild(textarea);
-        textarea.select();
-
-        let succeeded = false;
-        let lastError = null;
-        try {
-            succeeded = document.execCommand('copy');
-        } catch (error) {
-            lastError = error;
-        }
-
-        document.body.removeChild(textarea);
-
-        if (succeeded) {
-            if (typeof onSuccess === 'function') {
-                onSuccess();
-            }
-            return;
-        }
-
-        if (typeof onFailure === 'function') {
-            onFailure(lastError);
-        }
-    }
-
     function setStatus(message) {
         // Status banner removed; keep function to avoid touching callers.
         void message;
@@ -480,7 +395,7 @@ function bootstrap() {
         offlineOverlay.classList.toggle('visible', !connected);
     }
 
-    function setHasPendingChanges(value) {
+    function applyHasPendingChanges(value) {
         const nextValue = Boolean(value);
         if (nextValue === hasPendingChanges) {
             return;
@@ -488,6 +403,27 @@ function bootstrap() {
         hasPendingChanges = nextValue;
         document.body.classList.toggle('document-has-pending-changes', hasPendingChanges);
         updateHeader();
+    }
+
+    function resetViewToFallback(options = {}) {
+        const { skipHistory = false } = options || {};
+        if (typeof editorApi?.exitEditMode === 'function') {
+            editorApi.exitEditMode({ restoreContent: false });
+        }
+        sharedContext.setCurrentFile(null, { silent: true });
+        const fallback = sharedContext.fallbackMarkdownFor(
+            sharedContext.getResolvedRootPath() || sharedContext.getOriginalPathArgument() || 'the selected path'
+        );
+        viewerApi.render(fallback, { updateCurrent: true });
+        sharedContext.updateActiveFileHighlight();
+        sharedContext.updateHeader();
+        if (!skipHistory) {
+            sharedContext.updateLocation('', { replace: true });
+        }
+    }
+
+    function fallbackMarkdownFor(path) {
+        return `# No markdown files found\n\nThe directory \`${path}\` does not contain any markdown files yet.`;
     }
 
     function updateDocumentPanelTitle() {
@@ -505,100 +441,6 @@ function bootstrap() {
         } else if (typeof viewerPanel.setTitle === 'function') {
             viewerPanel.setTitle(title);
         }
-    }
-
-    function promptUnsavedChanges(context = {}) {
-        if (!unsavedChangesModal) {
-            return Promise.resolve('cancel');
-        }
-
-        if (activeUnsavedPrompt) {
-            return activeUnsavedPrompt;
-        }
-
-        const nextFile = typeof context.nextFile === 'string' ? context.nextFile : '';
-        const displayName = currentFile || 'this document';
-        if (unsavedChangesFilename) {
-            unsavedChangesFilename.textContent = displayName;
-        }
-        if (unsavedChangesMessage) {
-            unsavedChangesMessage.setAttribute('data-current-file', displayName);
-        }
-        if (unsavedChangesDetail) {
-            if (nextFile && nextFile !== currentFile) {
-                unsavedChangesDetail.textContent = `Switch to “${nextFile}” without saving?`;
-            } else {
-                unsavedChangesDetail.textContent = 'What would you like to do?';
-            }
-        }
-
-        unsavedChangesModal.classList.add('visible');
-        document.body.classList.add('modal-open');
-
-        const promise = new Promise((resolve) => {
-            const cleanup = () => {
-                unsavedChangesModal.classList.remove('visible');
-                document.body.classList.remove('modal-open');
-                if (unsavedChangesSaveButton) {
-                    unsavedChangesSaveButton.removeEventListener('click', onSave);
-                }
-                if (unsavedChangesDiscardButton) {
-                    unsavedChangesDiscardButton.removeEventListener('click', onDiscard);
-                }
-                if (unsavedChangesCancelButton) {
-                    unsavedChangesCancelButton.removeEventListener('click', onCancel);
-                }
-                unsavedChangesModal.removeEventListener('keydown', onKeyDown, true);
-                unsavedChangesModal.removeEventListener('click', onOverlayClick);
-                activeUnsavedPrompt = null;
-            };
-
-            const choose = (result) => {
-                cleanup();
-                resolve(result);
-            };
-
-            const onSave = () => choose('save');
-            const onDiscard = () => choose('discard');
-            const onCancel = () => choose('cancel');
-            const onKeyDown = (event) => {
-                if (event.key === 'Escape') {
-                    event.preventDefault();
-                    choose('cancel');
-                }
-            };
-            const onOverlayClick = (event) => {
-                if (event.target === unsavedChangesModal) {
-                    choose('cancel');
-                }
-            };
-
-            if (unsavedChangesSaveButton) {
-                unsavedChangesSaveButton.addEventListener('click', onSave);
-            }
-            if (unsavedChangesDiscardButton) {
-                unsavedChangesDiscardButton.addEventListener('click', onDiscard);
-            }
-            if (unsavedChangesCancelButton) {
-                unsavedChangesCancelButton.addEventListener('click', onCancel);
-            }
-
-            unsavedChangesModal.addEventListener('keydown', onKeyDown, true);
-            unsavedChangesModal.addEventListener('click', onOverlayClick);
-
-            window.setTimeout(() => {
-                if (typeof unsavedChangesSaveButton?.focus === 'function') {
-                    unsavedChangesSaveButton.focus();
-                } else if (typeof unsavedChangesDiscardButton?.focus === 'function') {
-                    unsavedChangesDiscardButton.focus();
-                } else {
-                    unsavedChangesModal.focus({ preventScroll: true });
-                }
-            }, 0);
-        });
-
-        activeUnsavedPrompt = promise;
-        return promise;
     }
 
     function updateHeader() {
@@ -718,505 +560,6 @@ function bootstrap() {
         tocList.addEventListener('click', handleTocClick);
     }
 
-    // ------------------------------------------------------------------
-    // Markdown editing helpers
-    // ------------------------------------------------------------------
-    function ensureEditorInstance() {
-        if (editorInstance) {
-            return editorInstance;
-        }
-        if (typeof window.CodeMirror === 'undefined') {
-            return null;
-        }
-
-        editorContainer.innerHTML = '';
-        suppressEditorChangeEvents = true;
-        try {
-            editorInstance = window.CodeMirror(editorContainer, {
-                value: draftContent,
-                mode: 'markdown',
-                theme: 'one-dark',
-                lineNumbers: true,
-                lineWrapping: true,
-                autofocus: true,
-            });
-            editorInstance.setSize('100%', '100%');
-            editorInstance.on('change', handleEditorContentChange);
-        } finally {
-            suppressEditorChangeEvents = false;
-        }
-        setHasPendingChanges(draftContent !== currentContent);
-        return editorInstance;
-    }
-
-    function handleEditorContentChange(instance) {
-        if (!instance || suppressEditorChangeEvents) {
-            return;
-        }
-        draftContent = instance.getValue();
-        setHasPendingChanges(draftContent !== currentContent);
-    }
-
-    function enterEditMode() {
-        if (!currentFile) {
-            return;
-        }
-        if (typeof window.CodeMirror === 'undefined') {
-            setStatus('Editor resources are still loading. Please try again in a moment.');
-            return;
-        }
-
-        isEditing = true;
-        isPreviewing = false;
-        draftContent = currentContent;
-        const editor = ensureEditorInstance();
-        if (!editor) {
-            isEditing = false;
-            setStatus('Editor resources are still loading. Please try again in a moment.');
-            updateActionVisibility();
-            return;
-        }
-
-        suppressEditorChangeEvents = true;
-        try {
-            editor.setValue(draftContent);
-        } finally {
-            suppressEditorChangeEvents = false;
-        }
-        setHasPendingChanges(false);
-        window.setTimeout(() => {
-            editor.refresh();
-            editor.focus();
-        }, 0);
-
-        content.classList.add('hidden');
-        editorContainer.classList.add('visible');
-        updateHeader();
-        setStatus('Editing markdown…');
-    }
-
-    function enterPreviewMode() {
-        if (!isEditing) {
-            return;
-        }
-        const editor = ensureEditorInstance();
-        if (editor) {
-            draftContent = editor.getValue();
-        }
-        setHasPendingChanges(draftContent !== currentContent);
-        isPreviewing = true;
-        renderMarkdown(markdownContext, draftContent, { updateCurrent: false });
-        editorContainer.classList.remove('visible');
-        content.classList.remove('hidden');
-        updateHeader();
-        setStatus('Previewing changes.');
-    }
-
-    function returnToCodeMode() {
-        if (!isPreviewing) {
-            return;
-        }
-        isPreviewing = false;
-        renderMarkdown(markdownContext, currentContent, { updateCurrent: true });
-        content.classList.add('hidden');
-        editorContainer.classList.add('visible');
-        const editor = ensureEditorInstance();
-        if (editor) {
-            window.setTimeout(() => {
-                editor.refresh();
-                editor.focus();
-            }, 0);
-        }
-        updateHeader();
-        setStatus('Editing markdown…');
-    }
-
-    function exitEditMode(options = {}) {
-        const { restoreContent = true } = options;
-        if (!isEditing && !isPreviewing) {
-            updateHeader();
-            return;
-        }
-        isEditing = false;
-        isPreviewing = false;
-        draftContent = '';
-        clearEditorHeadingHighlight();
-        content.classList.remove('hidden');
-        editorContainer.classList.remove('visible');
-        if (restoreContent) {
-            renderMarkdown(markdownContext, currentContent, { updateCurrent: true });
-        }
-        setHasPendingChanges(false);
-        updateHeader();
-    }
-
-
-    function resetViewToFallback(options = {}) {
-        const { skipHistory = false } = options;
-        exitEditMode({ restoreContent: false });
-        currentFile = null;
-        const fallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
-        renderMarkdown(markdownContext, fallback, { updateCurrent: true });
-        updateActiveFileHighlight();
-        updateHeader();
-        if (!skipHistory) {
-            updateLocation('', { replace: true });
-        }
-    }
-    function renderFileList() {
-        fileList.innerHTML = '';
-
-        const treeToRender = Array.isArray(fileTree) && fileTree.length
-            ? fileTree
-            : buildTreeFromFlatList(files);
-
-        if (!treeToRender.length) {
-            const empty = document.createElement('li');
-            empty.className = 'empty-state';
-            empty.textContent = 'No markdown files yet';
-            fileList.appendChild(empty);
-            return;
-        }
-
-        ensureExpandedForCurrentFile(currentFile);
-
-        const visited = new Set();
-        const fragment = document.createDocumentFragment();
-        treeToRender.forEach((node) => {
-            fragment.appendChild(renderTreeNode(node, 0, visited));
-        });
-        fileList.appendChild(fragment);
-
-        const stale = [];
-        expandedDirectories.forEach((value) => {
-            if (!visited.has(value)) {
-                stale.push(value);
-            }
-        });
-        stale.forEach((value) => expandedDirectories.delete(value));
-
-        knownDirectories.clear();
-        visited.forEach((value) => knownDirectories.add(value));
-
-        updateActiveFileHighlight();
-    }
-
-    function renderTreeNode(node, depth, visited) {
-        const item = document.createElement('li');
-        item.className = `tree-node ${node.type === 'directory' ? 'directory-node' : 'file-node'}`;
-
-        if (node.type === 'directory') {
-            const pathKey = typeof node.relativePath === 'string' ? node.relativePath : '';
-            visited.add(pathKey);
-
-            if (!knownDirectories.has(pathKey) && !expandedDirectories.has(pathKey)) {
-                expandedDirectories.add(pathKey);
-            }
-
-            const row = document.createElement('div');
-            row.className = 'tree-row directory-row';
-            row.style.paddingLeft = `${depth * 16}px`;
-
-            const isExpanded = expandedDirectories.has(pathKey);
-            const toggle = document.createElement('button');
-            toggle.type = 'button';
-            toggle.className = 'tree-toggle';
-            toggle.setAttribute('aria-expanded', String(isExpanded));
-            toggle.setAttribute('aria-label', `${isExpanded ? 'Collapse' : 'Expand'} ${node.name}`);
-            toggle.textContent = isExpanded ? '▾' : '▸';
-            toggle.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                toggleDirectory(pathKey);
-            });
-
-            const label = document.createElement('button');
-            label.type = 'button';
-            label.className = 'tree-label directory-label';
-
-            // Create folder icon element
-            const folderIcon = document.createElement('i');
-            folderIcon.className = isExpanded ? 'directory-icon fas fa-folder-open' : 'directory-icon fas fa-folder';
-
-            // Create text element
-            const labelText = document.createElement('span');
-            labelText.textContent = node.name;
-
-            // Append icon and text to label
-            label.appendChild(folderIcon);
-            label.appendChild(labelText);
-
-            label.addEventListener('click', (event) => {
-                event.preventDefault();
-                toggleDirectory(pathKey);
-            });
-
-            row.appendChild(toggle);
-            row.appendChild(label);
-            item.appendChild(row);
-
-            const childrenList = document.createElement('ul');
-            childrenList.className = 'tree-children';
-            if (!isExpanded) {
-                childrenList.classList.add('collapsed');
-            }
-            const children = Array.isArray(node.children) ? node.children : [];
-            children.forEach((child) => {
-                childrenList.appendChild(renderTreeNode(child, depth + 1, visited));
-            });
-            item.appendChild(childrenList);
-            return item;
-        }
-
-        const button = document.createElement('button');
-        button.className = 'file-button';
-        button.type = 'button';
-
-        // Create icon element
-        const icon = document.createElement('i');
-        icon.className = 'file-icon fab fa-markdown'; // Font Awesome markdown icon
-
-        // Create text element
-        const text = document.createElement('span');
-        text.textContent = node.name;
-
-        // Append icon and text to button
-        button.appendChild(icon);
-        button.appendChild(text);
-
-        button.dataset.file = node.relativePath;
-        button.style.paddingLeft = `${depth * 16 + 24}px`;
-        button.addEventListener('click', () => {
-            if (node.relativePath !== currentFile) {
-                selectFile(node.relativePath);
-            }
-        });
-        item.appendChild(button);
-        return item;
-    }
-
-    function ensureExpandedForCurrentFile(filePath) {
-        if (typeof filePath !== 'string' || !filePath.includes('/')) {
-            return;
-        }
-        const parts = filePath.split('/');
-        parts.pop();
-        let prefix = '';
-        parts.forEach((segment) => {
-            if (!segment) {
-                return;
-            }
-            prefix = prefix ? `${prefix}/${segment}` : segment;
-            expandedDirectories.add(prefix);
-        });
-    }
-
-    function toggleDirectory(pathKey) {
-        if (!pathKey && pathKey !== '') {
-            return;
-        }
-        if (expandedDirectories.has(pathKey)) {
-            expandedDirectories.delete(pathKey);
-        } else {
-            expandedDirectories.add(pathKey);
-        }
-        renderFileList();
-    }
-
-    function updateActiveFileHighlight() {
-        fileList.querySelectorAll('.file-button').forEach((button) => {
-            button.classList.toggle('active', button.dataset.file === currentFile);
-        });
-    }
-
-    async function fetchJson(url, options) {
-        const response = await fetch(url, options);
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(text || `Request failed with status ${response.status}`);
-        }
-        return response.json();
-    }
-
-    async function refreshFiles() {
-        const url = `/api/files${buildQuery({})}`;
-        const data = await fetchJson(url);
-        resolvedRootPath = data.rootPath || resolvedRootPath;
-        const updatedIndex = normaliseFileIndex({ filesValue: data.files, treeValue: data.tree });
-        files = updatedIndex.files;
-        fileTree = updatedIndex.tree;
-        renderFileList();
-        if (!files.find((entry) => entry.relativePath === currentFile)) {
-            currentFile = files.length ? files[0].relativePath : null;
-            if (currentFile) {
-                await loadFile(currentFile, { replaceHistory: true });
-            } else {
-                currentFile = null;
-                exitEditMode({ restoreContent: false });
-                renderMarkdown(
-                    markdownContext,
-                    fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'),
-                    { updateCurrent: true }
-                );
-                updateLocation('', { replace: true });
-                updateHeader();
-            }
-        } else {
-            updateActiveFileHighlight();
-            updateHeader();
-        }
-    }
-
-    function fallbackMarkdownFor(path) {
-        return `# No markdown files found\n\nThe directory \`${path}\` does not contain any markdown files yet.`;
-    }
-
-    async function loadFile(file, options = {}) {
-        const { skipHistory = false, replaceHistory = false } = options;
-        if (isEditing || isPreviewing) {
-            setStatus('Editing session closed because the file was reloaded.');
-            exitEditMode();
-        } else {
-            setStatus('');
-        }
-        const url = `/api/file${buildQuery({ file })}`;
-        try {
-            const data = await fetchJson(url);
-            resolvedRootPath = data.rootPath || resolvedRootPath;
-            currentFile = data.file || file;
-            renderMarkdown(markdownContext, data.content || '', { updateCurrent: true });
-            setHasPendingChanges(false);
-            updateActiveFileHighlight();
-            updateHeader();
-            updateLocation(currentFile, { replace: replaceHistory || skipHistory });
-        } catch (err) {
-            setStatus(err.message);
-            console.error('Failed to load file', err);
-        }
-    }
-
-    async function saveCurrentFile() {
-        if (!isEditing || !currentFile) {
-            return false;
-        }
-
-        const editor = ensureEditorInstance();
-        if (editor && !isPreviewing) {
-            draftContent = editor.getValue();
-        }
-
-        const contentToSave = draftContent;
-        setStatus('Saving changes…');
-
-        try {
-            await fetchJson(`/api/file${buildQuery({ file: currentFile })}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: contentToSave }),
-            });
-            currentContent = contentToSave;
-            exitEditMode();
-            setStatus('Changes saved.');
-            updateActiveFileHighlight();
-            return true;
-        } catch (err) {
-            setStatus(err.message);
-            console.error('Save failed', err);
-            return false;
-        }
-    }
-
-    async function selectFile(file) {
-        if (hasPendingChanges) {
-            const decision = await promptUnsavedChanges({ nextFile: file });
-            if (decision === 'cancel') {
-                return;
-            }
-            if (decision === 'save') {
-                const saved = await saveCurrentFile();
-                if (!saved) {
-                    return;
-                }
-            } else if (decision === 'discard') {
-                exitEditMode();
-                setStatus('Changes discarded.');
-            }
-        } else if (isEditing || isPreviewing) {
-            exitEditMode();
-        }
-        await loadFile(file);
-    }
-
-    function setupActions() {
-        editButton.addEventListener('click', () => {
-            if (isEditing && isPreviewing) {
-                returnToCodeMode();
-                return;
-            }
-            if (!isEditing) {
-                enterEditMode();
-            }
-        });
-
-        previewButton.addEventListener('click', () => {
-            if (!currentFile) {
-                return;
-            }
-            enterPreviewMode();
-        });
-
-        cancelButton.addEventListener('click', () => {
-            if (!isEditing && !isPreviewing) {
-                return;
-            }
-            exitEditMode();
-            setStatus('Edits cancelled.');
-        });
-
-        saveButton.addEventListener('click', async () => {
-            await saveCurrentFile();
-        });
-
-        downloadButton.addEventListener('click', async () => {
-            if (!currentFile) {
-                return;
-            }
-            try {
-                const data = await fetchJson(`/api/file${buildQuery({ file: currentFile })}`);
-                const blob = new Blob([data.content || ''], { type: 'text/markdown' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = currentFile;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-            } catch (err) {
-                setStatus(err.message);
-                console.error('Download failed', err);
-            }
-        });
-
-        deleteButton.addEventListener('click', async () => {
-            if (!currentFile) {
-                return;
-            }
-            const confirmed = window.confirm(`Delete ${currentFile}?`);
-            if (!confirmed) {
-                return;
-            }
-            try {
-                await fetchJson(`/api/file${buildQuery({ file: currentFile })}`, { method: 'DELETE' });
-                setStatus('File deleted.');
-                await refreshFiles();
-            } catch (err) {
-                setStatus(err.message);
-                console.error('Delete failed', err);
-            }
-        });
-    }
-
     function connectWebSocket() {
         if (websocket) {
             websocket.close();
@@ -1235,35 +578,31 @@ function bootstrap() {
                 const payload = JSON.parse(event.data);
                 if (payload.type === 'directory_update') {
                     resolvedRootPath = payload.path || resolvedRootPath;
-                    const updatedIndex = normaliseFileIndex({
+                    sharedContext.setResolvedRootPath(resolvedRootPath);
+                    const updatedIndex = sharedContext.normaliseFileIndex({
                         filesValue: payload.files,
                         treeValue: payload.tree,
                     });
-                    files = updatedIndex.files;
-                    fileTree = updatedIndex.tree;
-                    renderFileList();
-                    if (!files.find((entry) => entry.relativePath === currentFile)) {
-                        currentFile = files.length ? files[0].relativePath : null;
-                        if (currentFile) {
-                            await loadFile(currentFile, { replaceHistory: true });
+                    sharedContext.setFiles(updatedIndex.files);
+                    sharedContext.setFileTree(updatedIndex.tree);
+                    navigationApi.renderFileList();
+                    const filesList = sharedContext.getFiles();
+                    const currentPath = sharedContext.getCurrentFile();
+                    if (!filesList.find((entry) => entry.relativePath === currentPath)) {
+                        const nextFile = filesList.length ? filesList[0].relativePath : null;
+                        if (nextFile) {
+                            await navigationApi.loadFile(nextFile, { replaceHistory: true });
                         } else {
-                            currentFile = null;
-                            exitEditMode({ restoreContent: false });
-                            renderMarkdown(
-                                markdownContext,
-                                fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path'),
-                                { updateCurrent: true }
-                            );
-                            updateLocation('', { replace: true });
-                            updateHeader();
+                            resetViewToFallback();
                         }
                     } else {
-                        updateActiveFileHighlight();
-                        updateHeader();
+                        sharedContext.updateActiveFileHighlight();
+                        sharedContext.updateHeader();
                     }
                 } else if (payload.type === 'file_changed') {
-                    if (payload.file && payload.file === currentFile) {
-                        await loadFile(currentFile, { replaceHistory: true });
+                    const currentPath = sharedContext.getCurrentFile();
+                    if (payload.file && payload.file === currentPath) {
+                        await navigationApi.loadFile(currentPath, { replaceHistory: true });
                     }
                 }
             } catch (err) {
@@ -1772,29 +1111,31 @@ function bootstrap() {
 
     function initialise() {
         const initialFallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
-        renderMarkdown(markdownContext, state.content || initialFallback, { updateCurrent: true });
-        renderFileList();
+        viewerApi.render(state.content || initialFallback, { updateCurrent: true });
+        navigationApi.renderFileList();
         updateHeader();
         if (state.error) {
             setStatus(state.error);
         }
-        setupActions();
         setupTerminalPanel();
         connectWebSocket();
-        if (!currentFile && files.length) {
-            currentFile = files[0].relativePath;
+        const filesList = sharedContext.getFiles();
+        if (!sharedContext.getCurrentFile() && filesList.length) {
+            sharedContext.setCurrentFile(filesList[0].relativePath);
         }
 
-        if (!initialFileFromLocation && currentFile) {
-            loadFile(currentFile, { replaceHistory: true });
+        const currentPath = sharedContext.getCurrentFile();
+        if (!initialFileFromLocation && currentPath) {
+            void navigationApi.loadFile(currentPath, { replaceHistory: true });
         }
     }
 
     window.addEventListener('popstate', () => {
         const targetFile = fileFromSearch(window.location.search);
+        const currentPath = sharedContext.getCurrentFile();
         if (targetFile) {
-            if (targetFile !== currentFile) {
-                loadFile(targetFile, { skipHistory: true, replaceHistory: true });
+            if (targetFile !== currentPath) {
+                void navigationApi.loadFile(targetFile, { skipHistory: true, replaceHistory: true });
             }
         } else {
             resetViewToFallback({ skipHistory: true });
@@ -1804,7 +1145,7 @@ function bootstrap() {
     initialise();
 
     if (initialFileFromLocation) {
-        loadFile(initialFileFromLocation, { replaceHistory: true });
+        void navigationApi.loadFile(initialFileFromLocation, { replaceHistory: true });
     }
 }
 
