@@ -135,12 +135,18 @@ class UnifiedMarkdownServer:
         file_param = request.rel_url.query.get("file")
 
         root, original_path_argument = self.resolve_root(path_param)
-        index = self.file_manager.build_markdown_index(root)
-        files = index["files"]
-        file_tree = index["tree"]
-        selected_file = None
-        error_message = None
+        try:
+            index = self.file_manager.build_markdown_index(root)
+            files = index["files"]
+            file_tree = index["tree"]
+            error_message = None
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            logger.exception("Failed to build markdown index for %%s", root)
+            files = []
+            file_tree = []
+            error_message = f"Unable to list markdown files: {exc}"
 
+        selected_file = None
         fallback = self.file_manager.fallback_markdown(root)
 
         if file_param:
@@ -150,6 +156,10 @@ class UnifiedMarkdownServer:
             except (FileNotFoundError, ValueError):
                 content = fallback
                 error_message = f"File not found: {file_param}"
+            except Exception as exc:  # pragma: no cover - defensive fallback
+                logger.exception("Failed to read %%s under %%s", file_param, root)
+                content = fallback
+                error_message = f"Unable to read {file_param}: {exc}"
         elif files:
             selected_file = files[0]["relativePath"]
             content = self.file_manager.read_markdown(root, selected_file)
