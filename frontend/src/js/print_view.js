@@ -5,8 +5,6 @@ const { marked, hljs, mermaid, vegaEmbed } = globalScope;
 const reactGlobal = globalScope.React;
 const reactDomGlobal = globalScope.ReactDOM;
 const excalidrawGlobal = globalScope.ExcalidrawLib;
-const svelteCompilerGlobal = globalScope.svelteCompiler;
-const svelteInternalGlobal = globalScope.svelteInternal;
 
 window.addEventListener('DOMContentLoaded', () => {
     const data = globalScope.__PRINT_DATA__ || {};
@@ -19,7 +17,7 @@ window.addEventListener('DOMContentLoaded', () => {
     let vegaIdCounter = 0;
     let excalidrawIdCounter = 0;
     let svelteIdCounter = 0;
-    const svelteInstances = new Map();
+
 
     const vegaLightBaseConfig = {
         background: '#ffffff',
@@ -231,12 +229,12 @@ window.addEventListener('DOMContentLoaded', () => {
                 });
 
                 let componentCode = compiled.js.code;
-                
+
                 componentCode = componentCode.replace(
                     /import\s+"svelte\/internal\/disclose-version";?/g,
                     ''
                 );
-                
+
                 componentCode = componentCode.replace(
                     /import\s+{([^}]+)}\s+from\s+"svelte\/internal";?/g,
                     (match, imports) => {
@@ -245,7 +243,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         return declarations.join('\n');
                     }
                 );
-                
+
                 componentCode = componentCode.replace(
                     /export default class/g,
                     'return class'
@@ -254,9 +252,9 @@ window.addEventListener('DOMContentLoaded', () => {
                     /export default/g,
                     'return'
                 );
-                
+
                 const wrappedCode = `(function() {\n${componentCode}\n})()`;
-                
+
                 const ComponentClass = eval(wrappedCode);
                 const instance = new ComponentClass({
                     target: wrapper,

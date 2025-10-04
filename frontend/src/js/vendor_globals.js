@@ -14,9 +14,7 @@ import * as vegaLite from 'vega-lite';
 import vegaEmbed from 'vega-embed';
 import CodeMirror from 'codemirror';
 import 'codemirror/mode/markdown/markdown';
-import * as svelte from 'svelte';
-import * as svelteCompiler from 'svelte/compiler';
-import * as svelteInternal from 'svelte/internal';
+
 
 const globalScope = typeof window !== 'undefined' ? window : globalThis;
 if (!globalScope) {
@@ -39,8 +37,5 @@ Object.assign(globalScope, {
     vega,
     vegaLite,
     vegaEmbed,
-    CodeMirror,
-    svelte,
-    svelteCompiler,
-    svelteInternal,
+    CodeMirror
 });

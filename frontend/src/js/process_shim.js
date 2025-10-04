@@ -9,4 +9,4 @@ if (typeof globalScope.process.env.NODE_ENV === 'undefined') {
     globalScope.process.env.NODE_ENV = 'production';
 }
 
-export {};
+export { };
