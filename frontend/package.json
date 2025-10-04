@@ -3,14 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "npm run clean && node build.js",
+    "build": "npm run clean && npm run build:js && npm run build:css",
     "build:js": "esbuild src/js/unified_index.js src/js/print_view.js --bundle --minify --sourcemap --target=es2018 --outdir=../templates/static/dist --inject:src/js/process_shim.js '--define:process.env.NODE_ENV=\"production\"'",
     "build:css": "esbuild src/css/app.css src/css/print.css --bundle --minify --outdir=../templates/static/dist --loader:.woff2=file --loader:.woff=file --loader:.ttf=file",
     "clean": "rimraf ../templates/static/dist"
   },
   "devDependencies": {
     "esbuild": "^0.25.10",
-    "esbuild-svelte": "^0.9.3",
     "rimraf": "^5.0.5"
   },
   "dependencies": {
