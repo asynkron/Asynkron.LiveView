@@ -1,0 +1,1522 @@
+diff --git a/frontend/src/components/AppShell.svelte b/frontend/src/components/AppShell.svelte
+new file mode 100644
+index 0000000000000000000000000000000000000000..fe1e4e38a7a3c6c425ed5a748967f29445624951
+--- /dev/null
++++ b/frontend/src/components/AppShell.svelte
+@@ -0,0 +1,163 @@
++<script>
++  import { createEventDispatcher } from 'svelte';
++
++  // Mirrors the layout of the legacy HTML shell so we can slot components in later.
++  export let tocVisible = true;
++  export let tocCollapsed = false;
++  export let tocLabel = 'ToC';
++  export let filesVisible = true;
++  export let filesCollapsed = false;
++  export let filesLabel = 'Files';
++
++  const dispatch = createEventDispatcher();
++
++  function toggleSidebar(name) {
++    if (name === 'toc') {
++      tocCollapsed = !tocCollapsed;
++      dispatch('toggleSidebar', { name, collapsed: tocCollapsed });
++      return;
++    }
++
++    if (name === 'files') {
++      filesCollapsed = !filesCollapsed;
++      dispatch('toggleSidebar', { name, collapsed: filesCollapsed });
++    }
++  }
++</script>
++
++<div class="app-shell">
++  {#if tocVisible}
++    <aside
++      class={`sidebar sidebar--toc ${tocCollapsed ? '' : 'is-expanded'} ${tocCollapsed ? 'is-collapsed' : ''}`}
++      data-sidebar="toc"
++      aria-hidden={tocCollapsed}
++    >
++      <div class="sidebar-collapsed-label" aria-hidden="true">{tocLabel}</div>
++      <div class="sidebar-content" class:hidden={tocCollapsed}>
++        <header class="sidebar-header">
++          <button type="button" class="sidebar-toggle" on:click={() => toggleSidebar('toc')}>
++            {tocCollapsed ? 'Expand' : 'Collapse'}
++          </button>
++        </header>
++        <slot name="toc">Add your ToC markup here.</slot>
++      </div>
++    </aside>
++  {/if}
++
++  <section class="viewer">
++    <slot name="viewer" />
++  </section>
++
++  {#if filesVisible}
++    <aside
++      class={`sidebar sidebar--files ${filesCollapsed ? '' : 'is-expanded'} ${filesCollapsed ? 'is-collapsed' : ''}`}
++      data-sidebar="files"
++      aria-hidden={filesCollapsed}
++    >
++      <div class="sidebar-collapsed-label" aria-hidden="true">{filesLabel}</div>
++      <div class="sidebar-content" class:hidden={filesCollapsed}>
++        <header class="sidebar-header">
++          <button type="button" class="sidebar-toggle" on:click={() => toggleSidebar('files')}>
++            {filesCollapsed ? 'Expand' : 'Collapse'}
++          </button>
++        </header>
++        <slot name="files">Add your file tree markup here.</slot>
++      </div>
++    </aside>
++  {/if}
++</div>
++
++<style>
++  /* Lightweight styles so the shell looks familiar in Storybook or the REPL. */
++  .app-shell {
++    display: grid;
++    grid-template-columns: 260px minmax(0, 1fr) 320px;
++    gap: 0;
++    background: #0d1117;
++    color: #c9d1d9;
++    border: 1px solid #30363d;
++    min-height: 480px;
++  }
++
++  .sidebar {
++    display: flex;
++    flex-direction: column;
++    border-right: 1px solid #30363d;
++    background: #161b22;
++  }
++
++  .sidebar--files {
++    border-right: none;
++    border-left: 1px solid #30363d;
++  }
++
++  .sidebar.is-collapsed {
++    width: 48px;
++    overflow: hidden;
++  }
++
++  .sidebar-content {
++    flex: 1 1 auto;
++    min-height: 0;
++    overflow: auto;
++    padding: 0.75rem;
++  }
++
++  .hidden {
++    display: none;
++  }
++
++  .sidebar-header {
++    display: flex;
++    justify-content: flex-end;
++    margin-bottom: 0.5rem;
++  }
++
++  .sidebar-toggle {
++    appearance: none;
++    border: 1px solid #30363d;
++    border-radius: 4px;
++    background: #21262d;
++    color: #c9d1d9;
++    padding: 0.25rem 0.75rem;
++    cursor: pointer;
++  }
++
++  .sidebar-toggle:focus-visible {
++    outline: 2px solid #4e9cff;
++    outline-offset: 2px;
++  }
++
++  .sidebar-collapsed-label {
++    text-align: center;
++    padding: 0.25rem 0;
++    font-size: 0.75rem;
++    letter-spacing: 0.05em;
++    text-transform: uppercase;
++    color: #8b949e;
++  }
++
++  .viewer {
++    display: flex;
++    flex-direction: column;
++    min-height: 0;
++    background: #161b22;
++  }
++
++  @media (max-width: 980px) {
++    .app-shell {
++      grid-template-columns: 1fr;
++    }
++
++    .sidebar,
++    .viewer {
++      grid-column: 1 / -1;
++    }
++
++    .sidebar {
++      border-left: none;
++      border-right: none;
++      border-bottom: 1px solid #30363d;
++    }
++  }
++</style>
+diff --git a/frontend/src/components/FileHeader.svelte b/frontend/src/components/FileHeader.svelte
+new file mode 100644
+index 0000000000000000000000000000000000000000..7946499de1134902618bd8ba9a620aeca713f8f5
+--- /dev/null
++++ b/frontend/src/components/FileHeader.svelte
+@@ -0,0 +1,142 @@
++<script>
++  // Simple props so the component can be rendered in isolation while we wire things up later.
++  export let fileName = 'Markdown Viewer';
++  export let isEditing = false;
++  export let isPreviewing = false;
++
++  // Callbacks allow the existing imperative code to hook in once this file is actually mounted.
++  export let onEdit = () => {};
++  export let onPreview = () => {};
++  export let onSave = () => {};
++  export let onCancel = () => {};
++  export let onDownload = () => {};
++  export let onDelete = () => {};
++
++  $: previewTitle = isPreviewing
++    ? 'Exit preview mode'
++    : 'Preview the pending changes';
++</script>
++
++<header class="file-header">
++  <h1 id="file-name">{fileName}</h1>
++
++  <div class="file-actions">
++    <button
++      id="edit-button"
++      type="button"
++      class:hidden={isEditing}
++      title="Edit the current file"
++      on:click={onEdit}
++    >
++      <i class="fas fa-edit file-button-icon" aria-hidden="true"></i>
++      <span class="sr-only">Edit</span>
++    </button>
++
++    <button
++      id="preview-button"
++      type="button"
++      class:hidden={!isEditing}
++      class:active={isPreviewing}
++      title={previewTitle}
++      aria-pressed={isPreviewing}
++      on:click={onPreview}
++    >
++      <i class="fas fa-eye file-button-icon" aria-hidden="true"></i>
++      <span class="sr-only">Preview</span>
++    </button>
++
++    <button
++      id="save-button"
++      type="button"
++      class:hidden={!isEditing}
++      title="Save your changes"
++      on:click={onSave}
++    >
++      <i class="fas fa-save file-button-icon" aria-hidden="true"></i>
++      <span class="sr-only">Save</span>
++    </button>
++
++    <button
++      id="cancel-button"
++      type="button"
++      class:hidden={!isEditing}
++      title="Cancel editing"
++      on:click={onCancel}
++    >
++      <i class="fas fa-times file-button-icon" aria-hidden="true"></i>
++      <span class="sr-only">Cancel</span>
++    </button>
++
++    <button
++      id="download-button"
++      type="button"
++      title="Download the current file"
++      on:click={onDownload}
++    >
++      <i class="fas fa-download file-button-icon" aria-hidden="true"></i>
++      <span class="sr-only">Download</span>
++    </button>
++
++    <button
++      id="delete-button"
++      type="button"
++      title="Delete the current file"
++      on:click={onDelete}
++    >
++      <i class="fas fa-trash file-button-icon" aria-hidden="true"></i>
++      <span class="sr-only">Delete</span>
++    </button>
++  </div>
++</header>
++
++<style>
++  /* Keeps the component visually consistent when rendered by itself during migration. */
++  .file-header {
++    display: flex;
++    align-items: center;
++    justify-content: space-between;
++    gap: 1rem;
++    padding: 0.5rem 1rem;
++  }
++
++  .file-actions {
++    display: flex;
++    align-items: center;
++    gap: 0.5rem;
++  }
++
++  button {
++    display: inline-flex;
++    align-items: center;
++    justify-content: center;
++    background: none;
++    border: none;
++    padding: 0.35rem;
++    color: inherit;
++    cursor: pointer;
++  }
++
++  button:focus-visible {
++    outline: 2px solid var(--accent-color, #4e9cff);
++    outline-offset: 2px;
++  }
++
++  .file-button-icon {
++    font-size: 1rem;
++  }
++
++  .hidden {
++    display: none;
++  }
++
++  .sr-only {
++    position: absolute;
++    width: 1px;
++    height: 1px;
++    padding: 0;
++    margin: -1px;
++    overflow: hidden;
++    clip: rect(0, 0, 0, 0);
++    border: 0;
++  }
++</style>
+diff --git a/frontend/src/components/FilesSidebar.svelte b/frontend/src/components/FilesSidebar.svelte
+new file mode 100644
+index 0000000000000000000000000000000000000000..673f497edd8e944a6955032bedc6ae13d48af958
+--- /dev/null
++++ b/frontend/src/components/FilesSidebar.svelte
+@@ -0,0 +1,215 @@
++<script>
++  // Mirrors the layout of the right-hand file tree panel.
++  export let expanded = true;
++  export let label = 'Files';
++  export let path = '';
++
++  // Files are rendered in a flat list with depth metadata for indentation.
++  export let files = [];
++  export let onSelect = () => {};
++  export let onToggle = () => {};
++
++  function handleSelect(file) {
++    onSelect(file);
++  }
++
++  function handleToggle(file) {
++    onToggle(file);
++  }
++</script>
++
++<aside
++  class="sidebar sidebar--files"
++  class:is-expanded={expanded}
++  data-sidebar="files"
++>
++  <div class="sidebar-collapsed-label" aria-hidden="true">{label}</div>
++  <div class="sidebar-content">
++    <div class="sidebar-header">
++      <div class="sidebar-path">{path}</div>
++    </div>
++    <ul class="file-list" role="tree">
++      {#if files.length}
++        {#each files as file (file.id)}
++          <li
++            class="file-item"
++            class:active={file.active}
++            role="treeitem"
++            aria-level={file.depth ?? 1}
++            aria-expanded={file.expanded}
++          >
++            <div class="file-row">
++              {#if file.children?.length}
++                <button
++                  type="button"
++                  class="file-toggle"
++                  aria-label={file.expanded ? 'Collapse folder' : 'Expand folder'}
++                  on:click={() => handleToggle(file)}
++                >
++                  <i class={`fas ${file.expanded ? 'fa-chevron-down' : 'fa-chevron-right'}`}></i>
++                </button>
++              {:else}
++                <span class="file-spacer" aria-hidden="true"></span>
++              {/if}
++              <button
++                type="button"
++                class="file-button"
++                style={`padding-left: ${Math.max(0, (file.depth ?? 1) - 1) * 0.75}rem;`}
++                on:click={() => handleSelect(file)}
++              >
++                <i class={`fas ${file.children?.length ? 'fa-folder' : 'fa-file-alt'}`}></i>
++                <span class="file-name">{file.name}</span>
++              </button>
++            </div>
++            {#if file.expanded && file.children?.length}
++              <ul role="group" class="file-children">
++                {#each file.children as child (child.id)}
++                  <li
++                    class="file-item"
++                    class:active={child.active}
++                    role="treeitem"
++                    aria-level={(child.depth ?? (file.depth ?? 1) + 1)}
++                    aria-selected={child.active ? 'true' : 'false'}
++                  >
++                    <button
++                      type="button"
++                      class="file-button"
++                      style={`padding-left: ${Math.max(0, (child.depth ?? 1) - 1) * 0.75}rem;`}
++                      on:click={() => handleSelect(child)}
++                    >
++                      <i class={`fas ${child.children?.length ? 'fa-folder' : 'fa-file-alt'}`}></i>
++                      <span class="file-name">{child.name}</span>
++                    </button>
++                  </li>
++                {/each}
++              </ul>
++            {/if}
++          </li>
++        {/each}
++      {:else}
++        <li class="file-empty" role="note">No files found</li>
++      {/if}
++    </ul>
++  </div>
++</aside>
++
++<style>
++  /* Layout parity with the classic file explorer sidebar. */
++  .sidebar {
++    width: 18rem;
++    background: #0f172a;
++    color: #e2e8f0;
++    display: flex;
++    flex-direction: column;
++    border-left: 1px solid rgba(148, 163, 184, 0.15);
++  }
++
++  .sidebar:not(.is-expanded) {
++    width: 3rem;
++  }
++
++  .sidebar-collapsed-label {
++    writing-mode: vertical-rl;
++    text-transform: uppercase;
++    letter-spacing: 0.15em;
++    font-size: 0.75rem;
++    padding: 0.5rem;
++    text-align: center;
++    background: rgba(148, 163, 184, 0.1);
++  }
++
++  .sidebar-content {
++    flex: 1;
++    overflow: auto;
++    display: flex;
++    flex-direction: column;
++  }
++
++  .sidebar-header {
++    padding: 0.75rem 1rem;
++    border-bottom: 1px solid rgba(148, 163, 184, 0.15);
++  }
++
++  .sidebar-path {
++    font-size: 0.85rem;
++    color: rgba(226, 232, 240, 0.75);
++  }
++
++  .file-list {
++    flex: 1;
++    list-style: none;
++    margin: 0;
++    padding: 0.75rem 0;
++    display: flex;
++    flex-direction: column;
++    gap: 0.25rem;
++  }
++
++  .file-item {
++    display: flex;
++    flex-direction: column;
++  }
++
++  .file-row {
++    display: flex;
++    align-items: center;
++    gap: 0.35rem;
++  }
++
++  .file-toggle {
++    width: 1.5rem;
++    height: 1.5rem;
++    display: inline-flex;
++    align-items: center;
++    justify-content: center;
++    border: none;
++    background: none;
++    color: inherit;
++    cursor: pointer;
++  }
++
++  .file-spacer {
++    width: 1.5rem;
++  }
++
++  .file-button {
++    flex: 1;
++    display: inline-flex;
++    align-items: center;
++    gap: 0.5rem;
++    padding: 0.35rem 0.75rem;
++    border: none;
++    background: none;
++    color: inherit;
++    text-align: left;
++    border-radius: 0.35rem;
++    cursor: pointer;
++    transition: background 0.15s ease;
++  }
++
++  .file-button:hover,
++  .file-button:focus-visible {
++    background: rgba(96, 165, 250, 0.2);
++    outline: none;
++  }
++
++  .file-item.active > .file-row > .file-button,
++  .file-item.active > .file-button {
++    background: rgba(59, 130, 246, 0.3);
++    color: #f8fafc;
++  }
++
++  .file-children {
++    list-style: none;
++    margin: 0;
++    padding: 0.25rem 0 0.25rem 1.75rem;
++    display: flex;
++    flex-direction: column;
++    gap: 0.25rem;
++  }
++
++  .file-empty {
++    padding: 0.75rem 1rem;
++    color: rgba(226, 232, 240, 0.7);
++  }
++</style>
+diff --git a/frontend/src/components/MarkdownViewerPane.svelte b/frontend/src/components/MarkdownViewerPane.svelte
+new file mode 100644
+index 0000000000000000000000000000000000000000..9bb70d86ce406726b40daa0a9607218a3d5219ba
+--- /dev/null
++++ b/frontend/src/components/MarkdownViewerPane.svelte
+@@ -0,0 +1,93 @@
++<script>
++  // Presents the rendered markdown area alongside an optional editor placeholder.
++  export let title = 'Markdown Viewer';
++  export let html = '';
++  export let emptyMessage = 'Select a file to view its contents.';
++  export let showContent = true;
++  export let showEditor = false;
++  export let editorPlaceholder = 'Editor goes here once wired up.';
++</script>
++
++<section class="viewer">
++  <slot name="header">
++    <header class="file-header">
++      <h1>{title}</h1>
++    </header>
++  </slot>
++
++  {#if showContent}
++    <div class="content-area" class:hidden={!showContent}>
++      {#if html}
++        <article class="rendered-markdown" aria-live="polite">{@html html}</article>
++      {:else}
++        <p class="viewer-placeholder">{emptyMessage}</p>
++      {/if}
++    </div>
++  {/if}
++
++  {#if showEditor}
++    <div class="editor-container visible">
++      <slot name="editor">
++        <div class="editor-placeholder">{editorPlaceholder}</div>
++      </slot>
++    </div>
++  {/if}
++</section>
++
++<style>
++  /* Minimal styling so the viewer stands alone while we port more logic. */
++  .viewer {
++    display: flex;
++    flex-direction: column;
++    background: #161b22;
++    border: 1px solid #30363d;
++    min-height: 320px;
++    max-width: 960px;
++  }
++
++  .hidden {
++    display: none;
++  }
++
++  .file-header {
++    padding: 1rem 1.5rem;
++    border-bottom: 1px solid #30363d;
++    margin: 0;
++  }
++
++  .file-header h1 {
++    margin: 0;
++    color: #58a6ff;
++    font-size: 1.5rem;
++  }
++
++  .content-area {
++    flex: 1 1 auto;
++    padding: 1.5rem;
++    overflow: auto;
++  }
++
++  .viewer-placeholder {
++    margin: 2rem 0;
++    color: #8b949e;
++  }
++
++  .editor-container {
++    display: none;
++    min-height: 240px;
++    padding: 1rem;
++    background: #0d1117;
++  }
++
++  .editor-container.visible {
++    display: block;
++  }
++
++  .editor-placeholder {
++    border: 1px dashed #30363d;
++    border-radius: 6px;
++    padding: 1.5rem;
++    color: #8b949e;
++    text-align: center;
++  }
++</style>
+diff --git a/frontend/src/components/OfflineOverlay.svelte b/frontend/src/components/OfflineOverlay.svelte
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3df430a78707de651ea649dbc596c433794abf4
+--- /dev/null
++++ b/frontend/src/components/OfflineOverlay.svelte
+@@ -0,0 +1,84 @@
++<script>
++  // Boolean prop so the host can toggle the overlay without recreating it.
++  export let visible = false;
++
++  // Allow customizing the message copy for future reuse/testing scenarios.
++  export let title = 'Connection Lost';
++  export let description = 'Reconnecting to the live view server...';
++  export let showSpinner = true;
++</script>
++
++<div
++  id="offline-overlay"
++  class="offline-overlay"
++  class:hidden={!visible}
++  aria-hidden={!visible}
++>
++  <div class="offline-message" role="status" aria-live="polite">
++    {#if showSpinner}
++      <div class="offline-spinner" aria-hidden="true"></div>
++    {/if}
++    <h3 class="offline-title">{title}</h3>
++    <p class="offline-description">{description}</p>
++  </div>
++</div>
++
++<style>
++  /* Mirror the existing overlay visuals so previews stay true to production. */
++  .offline-overlay {
++    position: fixed;
++    inset: 0;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    background-color: rgba(15, 23, 42, 0.8);
++    z-index: 2000;
++  }
++
++  .offline-message {
++    display: flex;
++    flex-direction: column;
++    align-items: center;
++    gap: 1rem;
++    padding: 2rem;
++    border-radius: 0.5rem;
++    background: #111827;
++    color: #f9fafb;
++    text-align: center;
++    min-width: 18rem;
++    box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.45);
++  }
++
++  .offline-spinner {
++    width: 3rem;
++    height: 3rem;
++    border-radius: 9999px;
++    border: 0.35rem solid rgba(255, 255, 255, 0.25);
++    border-top-color: #60a5fa;
++    animation: spin 1s linear infinite;
++  }
++
++  @keyframes spin {
++    from {
++      transform: rotate(0deg);
++    }
++    to {
++      transform: rotate(360deg);
++    }
++  }
++
++  .offline-title {
++    font-size: 1.25rem;
++    font-weight: 600;
++  }
++
++  .offline-description {
++    font-size: 0.95rem;
++    color: rgba(249, 250, 251, 0.8);
++    margin: 0;
++  }
++
++  .hidden {
++    display: none;
++  }
++</style>
+diff --git a/frontend/src/components/PanelPlaceholder.svelte b/frontend/src/components/PanelPlaceholder.svelte
+new file mode 100644
+index 0000000000000000000000000000000000000000..75d19c7e4e73620fe4d406f48958416723b98fd7
+--- /dev/null
++++ b/frontend/src/components/PanelPlaceholder.svelte
+@@ -0,0 +1,104 @@
++<script>
++  import { createEventDispatcher } from 'svelte';
++
++  export let title = 'Panel unavailable';
++  export let description = 'This area will show its content once the feature is wired up.';
++  export let actions = [];
++
++  const dispatch = createEventDispatcher();
++
++  function handleAction(action) {
++    dispatch('action', { action });
++    action.onSelect?.(action);
++  }
++</script>
++
++<section class="panel-placeholder" role="note">
++  <h2 class="panel-title">{title}</h2>
++  <p class="panel-description">{description}</p>
++
++  {#if actions.length}
++    <div class="panel-actions">
++      {#each actions as action (action.id ?? action.label)}
++        <button
++          type="button"
++          class={`panel-action ${action.variant ?? 'secondary'}`}
++          on:click={() => handleAction(action)}
++        >
++          {action.label}
++        </button>
++      {/each}
++    </div>
++  {/if}
++</section>
++
++<style>
++  /* Matches the warning tone used when dockview panels go missing. */
++  .panel-placeholder {
++    padding: 1.25rem;
++    background: rgba(248, 113, 113, 0.08);
++    border: 1px solid rgba(248, 113, 113, 0.4);
++    border-radius: 0.75rem;
++    color: #fecaca;
++    font-size: 0.95rem;
++    display: flex;
++    flex-direction: column;
++    gap: 0.75rem;
++  }
++
++  .panel-title {
++    margin: 0;
++    font-size: 1.05rem;
++    font-weight: 600;
++    color: #fca5a5;
++  }
++
++  .panel-description {
++    margin: 0;
++    color: rgba(254, 226, 226, 0.85);
++    line-height: 1.5;
++  }
++
++  .panel-actions {
++    display: flex;
++    flex-wrap: wrap;
++    gap: 0.5rem;
++  }
++
++  .panel-action {
++    appearance: none;
++    border-radius: 0.5rem;
++    padding: 0.45rem 0.9rem;
++    border: 1px solid transparent;
++    cursor: pointer;
++    font-weight: 600;
++    transition: background 0.15s ease, border-color 0.15s ease;
++  }
++
++  .panel-action.primary {
++    background: rgba(248, 113, 113, 0.85);
++    color: #0f172a;
++  }
++
++  .panel-action.primary:hover,
++  .panel-action.primary:focus-visible {
++    background: rgba(248, 113, 113, 0.95);
++  }
++
++  .panel-action.secondary {
++    background: transparent;
++    color: inherit;
++    border-color: rgba(248, 113, 113, 0.35);
++  }
++
++  .panel-action.secondary:hover,
++  .panel-action.secondary:focus-visible {
++    border-color: rgba(248, 113, 113, 0.6);
++    background: rgba(248, 113, 113, 0.15);
++  }
++
++  .panel-action:focus-visible {
++    outline: 2px solid rgba(248, 113, 113, 0.6);
++    outline-offset: 2px;
++  }
++</style>
+diff --git a/frontend/src/components/PanelToggleRail.svelte b/frontend/src/components/PanelToggleRail.svelte
+new file mode 100644
+index 0000000000000000000000000000000000000000..bec93d813ab49a8da5dd7918410c4269164866db
+--- /dev/null
++++ b/frontend/src/components/PanelToggleRail.svelte
+@@ -0,0 +1,105 @@
++<script>
++  import { createEventDispatcher } from 'svelte';
++
++  /**
++   * Panels mirror the legacy data attributes so the imperative bootstrap code can
++   * discover them later on. We keep the shape simple so tests or stories can feed
++   * mocked toggles while we migrate piecemeal.
++   */
++  export let panels = [
++    { id: 'toc', label: 'Table of contents', active: true },
++    { id: 'files', label: 'Files', active: true },
++    { id: 'terminal', label: 'Terminal', active: true }
++  ];
++
++  const dispatch = createEventDispatcher();
++
++  function handleToggle(panel) {
++    if (panel.disabled) {
++      return;
++    }
++
++    const nextActive = !panel.active;
++    dispatch('toggle', { id: panel.id, active: nextActive, panel });
++  }
++</script>
++
++<nav class="panel-toggle-rail" aria-label="Toggle panels">
++  {#each panels as panel (panel.id)}
++    <button
++      type="button"
++      class="panel-toggle"
++      class:active={panel.active}
++      class:disabled={panel.disabled}
++      data-panel-toggle={panel.id}
++      aria-pressed={panel.active}
++      aria-controls={panel.controls}
++      disabled={panel.disabled}
++      on:click={() => handleToggle(panel)}
++    >
++      {#if panel.icon}
++        <i class={`panel-toggle-icon ${panel.icon}`} aria-hidden="true"></i>
++      {/if}
++      <span class="panel-toggle-label">{panel.shortLabel ?? panel.label}</span>
++    </button>
++  {/each}
++</nav>
++
++<style>
++  /* Compact strip that matches the dock/legacy toggle button layout. */
++  .panel-toggle-rail {
++    display: inline-flex;
++    gap: 0.25rem;
++    padding: 0.25rem;
++    border-radius: 0.5rem;
++    background: rgba(56, 63, 79, 0.35);
++    border: 1px solid rgba(99, 110, 139, 0.35);
++  }
++
++  .panel-toggle {
++    appearance: none;
++    display: inline-flex;
++    align-items: center;
++    gap: 0.35rem;
++    padding: 0.35rem 0.65rem;
++    border: 1px solid transparent;
++    border-radius: 0.45rem;
++    font-size: 0.85rem;
++    background: rgba(17, 24, 39, 0.65);
++    color: #d1d9e6;
++    cursor: pointer;
++    transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
++  }
++
++  .panel-toggle:hover,
++  .panel-toggle:focus-visible {
++    background: rgba(37, 99, 235, 0.25);
++    border-color: rgba(59, 130, 246, 0.4);
++    outline: none;
++  }
++
++  .panel-toggle:focus-visible {
++    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
++  }
++
++  .panel-toggle.active {
++    background: rgba(59, 130, 246, 0.3);
++    border-color: rgba(59, 130, 246, 0.6);
++    color: #f8fafc;
++  }
++
++  .panel-toggle.disabled,
++  .panel-toggle:disabled {
++    opacity: 0.45;
++    cursor: not-allowed;
++  }
++
++  .panel-toggle-icon {
++    font-size: 0.85rem;
++  }
++
++  .panel-toggle-label {
++    line-height: 1;
++    white-space: nowrap;
++  }
++</style>
+diff --git a/frontend/src/components/SplitHandle.svelte b/frontend/src/components/SplitHandle.svelte
+new file mode 100644
+index 0000000000000000000000000000000000000000..00346f3d2842a797e940a945ca47dbe769a417a2
+--- /dev/null
++++ b/frontend/src/components/SplitHandle.svelte
+@@ -0,0 +1,110 @@
++<script>
++  import { createEventDispatcher } from 'svelte';
++
++  // Orientation lets us reuse the same component for vertical and horizontal dividers.
++  export let orientation = 'vertical'; // or 'horizontal'
++  export let thickness = 8;
++  export let disabled = false;
++
++  const dispatch = createEventDispatcher();
++
++  let activePointer = null;
++  let startPos = 0;
++
++  function axis(event) {
++    return orientation === 'horizontal' ? event.clientY : event.clientX;
++  }
++
++  function handlePointerDown(event) {
++    if (disabled) {
++      return;
++    }
++
++    activePointer = event.pointerId;
++    startPos = axis(event);
++    event.currentTarget.setPointerCapture(activePointer);
++
++    dispatch('resizeStart', { orientation });
++  }
++
++  function handlePointerMove(event) {
++    if (disabled || activePointer === null || event.pointerId !== activePointer) {
++      return;
++    }
++
++    const current = axis(event);
++    const delta = current - startPos;
++    dispatch('resize', { orientation, delta });
++  }
++
++  function finishGesture(event) {
++    if (activePointer === null || event.pointerId !== activePointer) {
++      return;
++    }
++
++    if (event.currentTarget.hasPointerCapture?.(activePointer)) {
++      event.currentTarget.releasePointerCapture(activePointer);
++    }
++
++    activePointer = null;
++    dispatch('resizeEnd', { orientation });
++  }
++
++  $: style =
++    orientation === 'horizontal'
++      ? `height: ${thickness}px; cursor: row-resize;`
++      : `width: ${thickness}px; cursor: col-resize;`;
++</script>
++
++<div
++  role="separator"
++  class={`split-handle ${orientation}`}
++  class:disabled={disabled}
++  aria-orientation={orientation}
++  tabindex={disabled ? undefined : 0}
++  style={style}
++  on:pointerdown={handlePointerDown}
++  on:pointermove={handlePointerMove}
++  on:pointerup={finishGesture}
++  on:pointercancel={finishGesture}
++  on:lostpointercapture={() => (activePointer = null)}
++></div>
++
++<style>
++  /* Thin gradient bar that mirrors the original sidebar splitters. */
++  .split-handle {
++    background: linear-gradient(180deg, rgba(48, 54, 61, 0.85), rgba(29, 35, 42, 0.85));
++    position: relative;
++    flex: 0 0 auto;
++    touch-action: none;
++  }
++
++  .split-handle.vertical::after,
++  .split-handle.horizontal::after {
++    content: '';
++    position: absolute;
++    inset: 30%;
++    border-radius: 999px;
++    background: rgba(148, 163, 184, 0.45);
++  }
++
++  .split-handle.vertical::after {
++    width: 2px;
++    left: calc(50% - 1px);
++  }
++
++  .split-handle.horizontal::after {
++    height: 2px;
++    top: calc(50% - 1px);
++  }
++
++  .split-handle:focus-visible {
++    outline: 2px solid rgba(59, 130, 246, 0.5);
++    outline-offset: 2px;
++  }
++
++  .split-handle.disabled {
++    opacity: 0.35;
++    cursor: default;
++  }
++</style>
+diff --git a/frontend/src/components/TableOfContentsSidebar.svelte b/frontend/src/components/TableOfContentsSidebar.svelte
+new file mode 100644
+index 0000000000000000000000000000000000000000..aed4dec2c59b112ecace220dfb19aa0276c7eaf2
+--- /dev/null
++++ b/frontend/src/components/TableOfContentsSidebar.svelte
+@@ -0,0 +1,125 @@
++<script>
++  // Flag to match the CSS-driven expand/collapse behavior of the legacy sidebar.
++  export let expanded = true;
++
++  // Accessible label and collapsed badge text stay customizable.
++  export let label = 'ToC';
++
++  // Simple array of headings so consuming code can render whatever it needs.
++  export let items = [];
++  export let onSelect = () => {};
++
++  function handleSelect(item) {
++    onSelect(item);
++  }
++</script>
++
++<aside
++  class="sidebar sidebar--toc"
++  class:is-expanded={expanded}
++  data-sidebar="toc"
++>
++  <div class="sidebar-collapsed-label" aria-hidden="true">{label}</div>
++  <div class="sidebar-content">
++    <nav aria-label="Table of contents">
++      {#if items.length}
++        <ul class="toc-list" role="tree">
++          {#each items as item (item.id)}
++            <li
++              class="toc-item"
++              role="treeitem"
++              aria-level={item.level ?? 1}
++              aria-selected={item.active ? 'true' : 'false'}
++            >
++              <button
++                type="button"
++                class="toc-link"
++                class:active={item.active}
++                style={`padding-left: ${Math.max(0, (item.level ?? 1) - 1) * 0.75}rem;`}
++                on:click={() => handleSelect(item)}
++              >
++                <span class="toc-text">{item.title}</span>
++              </button>
++            </li>
++          {/each}
++        </ul>
++      {:else}
++        <p class="toc-empty" role="note">No headings available</p>
++      {/if}
++    </nav>
++  </div>
++</aside>
++
++<style>
++  /* Replicates the shell layout for the left-hand table of contents. */
++  .sidebar {
++    width: 18rem;
++    background: #0f172a;
++    color: #e2e8f0;
++    display: flex;
++    flex-direction: column;
++    border-right: 1px solid rgba(148, 163, 184, 0.15);
++  }
++
++  .sidebar:not(.is-expanded) {
++    width: 3rem;
++  }
++
++  .sidebar-collapsed-label {
++    writing-mode: vertical-rl;
++    text-transform: uppercase;
++    letter-spacing: 0.15em;
++    font-size: 0.75rem;
++    padding: 0.5rem;
++    text-align: center;
++    background: rgba(148, 163, 184, 0.1);
++  }
++
++  .sidebar-content {
++    flex: 1;
++    overflow: auto;
++    padding: 1rem;
++  }
++
++  .toc-list {
++    list-style: none;
++    margin: 0;
++    padding: 0;
++    display: flex;
++    flex-direction: column;
++    gap: 0.25rem;
++  }
++
++  .toc-item {
++    display: flex;
++  }
++
++  .toc-link {
++    width: 100%;
++    text-align: left;
++    background: none;
++    border: none;
++    color: inherit;
++    padding: 0.35rem 0.5rem;
++    border-radius: 0.35rem;
++    cursor: pointer;
++    transition: background 0.15s ease;
++  }
++
++  .toc-link:hover,
++  .toc-link:focus-visible {
++    background: rgba(96, 165, 250, 0.2);
++    outline: none;
++  }
++
++  .toc-link.active {
++    background: rgba(59, 130, 246, 0.3);
++    color: #f8fafc;
++  }
++
++  .toc-empty {
++    margin: 0;
++    font-size: 0.85rem;
++    color: rgba(226, 232, 240, 0.7);
++  }
++</style>
+diff --git a/frontend/src/components/TerminalPanel.svelte b/frontend/src/components/TerminalPanel.svelte
+new file mode 100644
+index 0000000000000000000000000000000000000000..04bb1adc598c41cf11c8e2c70d8a2c050ff61025
+--- /dev/null
++++ b/frontend/src/components/TerminalPanel.svelte
+@@ -0,0 +1,186 @@
++<script>
++  import { createEventDispatcher } from 'svelte';
++
++  // Allow consumers to drive collapse, height and messaging when we plug this in for real.
++  export let collapsed = false;
++  export let height = 260; // pixels
++  export let minHeight = 120;
++  export let maxHeight = 600;
++  export let statusText = '';
++  export let showStatusBadge = false;
++  export let showResizeHandle = true;
++
++  const dispatch = createEventDispatcher();
++
++  let isDragging = false;
++  let dragPointerId = null;
++  let dragStartY = 0;
++  let dragStartHeight = height;
++  let internalHeight = clamp(height);
++
++  // Sync the incoming height prop whenever we are not in the middle of a drag gesture.
++  $: if (!isDragging) {
++    internalHeight = clamp(height);
++  }
++
++  $: panelStyle = collapsed
++    ? undefined
++    : `height: ${internalHeight}px; min-height: ${minHeight}px; max-height: ${maxHeight}px;`;
++
++  function clamp(value) {
++    return Math.min(maxHeight, Math.max(minHeight, Number(value) || minHeight));
++  }
++
++  function toggleCollapsed() {
++    const nextState = !collapsed;
++    collapsed = nextState;
++    dispatch('toggle', { collapsed: nextState });
++  }
++
++  function handlePointerDown(event) {
++    if (!showResizeHandle) {
++      return;
++    }
++
++    dragPointerId = event.pointerId;
++    dragStartY = event.clientY;
++    dragStartHeight = internalHeight;
++    isDragging = true;
++
++    event.currentTarget.setPointerCapture(dragPointerId);
++    dispatch('resizeStart', { height: internalHeight });
++  }
++
++  function handlePointerMove(event) {
++    if (!isDragging || event.pointerId !== dragPointerId) {
++      return;
++    }
++
++    const delta = dragStartY - event.clientY;
++    internalHeight = clamp(dragStartHeight + delta);
++    dispatch('resize', { height: internalHeight });
++  }
++
++  function handlePointerUp(event) {
++    if (!isDragging || event.pointerId !== dragPointerId) {
++      return;
++    }
++
++    if (event.currentTarget.hasPointerCapture?.(dragPointerId)) {
++      event.currentTarget.releasePointerCapture(dragPointerId);
++    }
++    dragPointerId = null;
++    isDragging = false;
++    height = internalHeight;
++    dispatch('resizeEnd', { height: internalHeight });
++  }
++</script>
++
++<div
++  class={`terminal-panel ${collapsed ? 'is-collapsed' : ''}`}
++  style={panelStyle}
++  aria-hidden={collapsed}
++>
++  <div class="terminal-toolbar">
++    <button
++      type="button"
++      class="terminal-toggle"
++      aria-pressed={!collapsed}
++      on:click={toggleCollapsed}
++    >
++      {#if collapsed}
++        Show terminal
++      {:else}
++        Hide terminal
++      {/if}
++    </button>
++
++    <slot name="toolbar" />
++  </div>
++
++  {#if showResizeHandle}
++    <div
++      class="terminal-resize-handle"
++      role="separator"
++      aria-label="Resize terminal"
++      on:pointerdown={handlePointerDown}
++      on:pointermove={handlePointerMove}
++      on:pointerup={handlePointerUp}
++      on:pointercancel={handlePointerUp}
++    />
++  {/if}
++
++  <div class="terminal-body">
++    <slot />
++
++    {#if showStatusBadge && statusText}
++      <div class="terminal-status-badge" aria-live="polite">{statusText}</div>
++    {/if}
++  </div>
++</div>
++
++<style>
++  /* Give the panel enough styling to preview it outside of the full application shell. */
++  .terminal-panel {
++    background: #0d1117;
++    border-top: 1px solid #30363d;
++    display: flex;
++    flex-direction: column;
++    width: 100%;
++    max-width: 960px;
++  }
++
++  .terminal-panel.is-collapsed {
++    display: none;
++  }
++
++  .terminal-toolbar {
++    display: flex;
++    align-items: center;
++    gap: 0.5rem;
++    padding: 0.5rem 0.75rem;
++    background: #11151a;
++    border-bottom: 1px solid #30363d;
++  }
++
++  .terminal-toggle {
++    appearance: none;
++    border: 1px solid #30363d;
++    border-radius: 4px;
++    padding: 0.25rem 0.75rem;
++    background: #21262d;
++    color: #c9d1d9;
++    cursor: pointer;
++  }
++
++  .terminal-toggle:focus-visible {
++    outline: 2px solid #4e9cff;
++    outline-offset: 2px;
++  }
++
++  .terminal-resize-handle {
++    height: 6px;
++    background: linear-gradient(180deg, #30363d 0%, #21262d 100%);
++    cursor: row-resize;
++  }
++
++  .terminal-body {
++    position: relative;
++    flex: 1 1 auto;
++    min-height: 120px;
++    padding: 0.5rem;
++  }
++
++  .terminal-status-badge {
++    position: absolute;
++    top: 0.75rem;
++    right: 0.75rem;
++    background: rgba(22, 27, 34, 0.85);
++    border: 1px solid #30363d;
++    border-radius: 0.5rem;
++    padding: 0.35rem 0.75rem;
++    font-size: 0.75rem;
++    color: #8b949e;
++    pointer-events: none;
++  }
++</style>
+diff --git a/frontend/src/components/UnsavedChangesModal.svelte b/frontend/src/components/UnsavedChangesModal.svelte
+new file mode 100644
+index 0000000000000000000000000000000000000000..30f7659c076ec86d1f044b724e915c6071b92c4d
+--- /dev/null
++++ b/frontend/src/components/UnsavedChangesModal.svelte
+@@ -0,0 +1,129 @@
++<script>
++  // Toggle visibility so the dialog can be mounted once and reused.
++  export let visible = false;
++
++  // Copy is configurable to keep the component flexible for other prompts.
++  export let title = 'Unsaved changes';
++  export let message = 'You have unsaved changes in';
++  export let filename = '';
++  export let detail = 'What would you like to do?';
++
++  // Consumers can pass their own handlers to wire up real behavior later.
++  export let onSave = () => {};
++  export let onDiscard = () => {};
++  export let onCancel = () => {};
++
++  // Emit focus back to the host when the dialog closes.
++  export let onClose = () => {};
++
++  function handleBackdropClick(event) {
++    if (event.target === event.currentTarget) {
++      onClose();
++    }
++  }
++</script>
++
++<div
++  id="unsaved-changes-modal"
++  class="dialog-overlay"
++  class:hidden={!visible}
++  role="dialog"
++  aria-modal="true"
++  aria-labelledby="unsaved-changes-title"
++  aria-describedby="unsaved-changes-message"
++  tabindex="-1"
++  on:click={handleBackdropClick}
++>
++  <div class="dialog-window">
++    <h3 id="unsaved-changes-title">{title}</h3>
++    <p id="unsaved-changes-message">
++      {message}
++      {#if filename}
++        <span class="dialog-filename">{filename}</span>
++      {/if}.
++    </p>
++    <p id="unsaved-changes-detail" class="dialog-detail">{detail}</p>
++    <div class="dialog-actions">
++      <button type="button" class="primary" on:click={onSave}>Save changes</button>
++      <button type="button" class="secondary" on:click={onDiscard}>Discard</button>
++      <button type="button" class="secondary" on:click={onCancel}>Cancel</button>
++    </div>
++  </div>
++</div>
++
++<style>
++  /* Keep parity with the existing modal styles for a painless drop-in later. */
++  .dialog-overlay {
++    position: fixed;
++    inset: 0;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    background: rgba(15, 23, 42, 0.75);
++    z-index: 2100;
++  }
++
++  .dialog-window {
++    width: min(28rem, 90vw);
++    background: #1f2937;
++    color: #f9fafb;
++    border-radius: 0.75rem;
++    padding: 2rem;
++    box-shadow: 0 2rem 4rem rgba(0, 0, 0, 0.4);
++  }
++
++  h3 {
++    margin: 0 0 1rem;
++    font-size: 1.4rem;
++    font-weight: 600;
++  }
++
++  p {
++    margin: 0 0 0.75rem;
++    line-height: 1.5;
++  }
++
++  .dialog-filename {
++    font-weight: 600;
++    color: #60a5fa;
++  }
++
++  .dialog-detail {
++    color: rgba(249, 250, 251, 0.75);
++  }
++
++  .dialog-actions {
++    display: flex;
++    gap: 0.75rem;
++    justify-content: flex-end;
++    flex-wrap: wrap;
++    margin-top: 1.5rem;
++  }
++
++  button {
++    padding: 0.5rem 1rem;
++    border-radius: 9999px;
++    border: none;
++    font-weight: 600;
++    cursor: pointer;
++  }
++
++  .primary {
++    background: #3b82f6;
++    color: #0b1120;
++  }
++
++  .secondary {
++    background: rgba(148, 163, 184, 0.15);
++    color: #e5e7eb;
++  }
++
++  button:focus-visible {
++    outline: 3px solid rgba(96, 165, 250, 0.75);
++    outline-offset: 2px;
++  }
++
++  .hidden {
++    display: none;
++  }
++</style>
