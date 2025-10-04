@@ -5,21 +5,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Markdown Viewer</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
-        integrity="sha512-rO+olRTkcf304DQBxSWxln8JXCzTHlKnIdnMUwYvQa9/Jd4cQaNkItIUj6Z4nvW1dqK0SKXLbn9h4KwZTNtAyw=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css"
-        integrity="sha512-uf06llspW44/LZpHzHT6qBOIVODjWtv4MxCricRxkzvopAlSWnTf6hpZTFxuuZcuNE9CBQhqE0Seu1CoRk84nQ=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/one-dark.min.css"
-        crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <!-- Vendored dockview assets to keep the layout available when public CDNs are down. -->
-    <link rel="stylesheet" href="/static/dockview/dockview.css" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-        integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"
-        crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="/static/dist/app.css" />
 </head>
 
@@ -100,47 +85,6 @@
     <script>
         window.__INITIAL_STATE__ = __INITIAL_STATE_JSON__;
     </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/14.1.2/marked.min.js"
-        integrity="sha512-bXyBT2/sYjZg1D7ykDS6eJSE4DFDVPJHvbRAfdfYKr6IusrCz7wAmSm36vz9G8zMob25Rvqu90vft3JI71ygcQ=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked-base-url@1.1.7/lib/index.umd.js"
-        integrity="sha512-vBt/Loem3LzFY7GzyW5LjD/RsH3CGU4ORjvDOiqEJDzPWCsCL6yKzCKid0oYSKyPAvH5j9RiwLs1L7QjKbgxEw=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
-        integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"
-        integrity="sha512-gx05X612uoaolzJ5Ee/786b3th+qzAm90TOvRwZJwnE8yr0sHQG8eLxdR0/Hbqc2IFh2mWHzzXk79g3atNSwsQ=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"
-        integrity="sha512-8Q6Y9XnTbOE+JNvjBQwJ2H8S+UV4uA6hiRykhdtIyDYZ2TprdNmWOUaKdGzOhyr4dCyk287OejbPvwl7lrfqrQ=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"
-        integrity="sha512-MOCpqoRoisCTwJ8vQQiciZv0qcpROCidek3GTFS6KTk2+y7munJIlKCVkFCYY+p3ErYFXCjmFjnfTTRSC1OHWQ=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.4/dist/excalidraw.production.min.js"
-        integrity="sha512-E2QYnMiPwJ0lKE9t8V7Ef/KcFgi/7LjV7LN9a9vavP2t1/mE9NfyANrt1imXfutaCK4jQo2ZhBPZbVCCqnvyYw=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/vega@5.25.0/build/vega.min.js" crossorigin="anonymous"
-        integrity="sha512-XX9YBZNtGu/Bz3d3zstE6vcEf4coHTGyxTwzU+0DNR7kHoD37krFcyWnqKTdzV6yWS9a5g3H3a71bM4ctzE1kA=="
-        referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/vega-lite@5.15.0/build/vega-lite.min.js" crossorigin="anonymous"
-        integrity="sha512-DFhjyQTRTao5MOf11Mxt3sft6Iamu6u7FlaarEW6VhIsN2flUUk30OZ5byOrxV3HCawL+YLalR2ZhKf2kBiLDw=="
-        referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.22.2/build/vega-embed.min.js" crossorigin="anonymous"
-        integrity="sha512-XGkG4fTLMPA3Lp9FUGv7MFNvzpAzC/QgC//cOSxjfhmj8fZjF8iyqn9rgXjwHiY1xqWFzn+BnH8R0oGClEIPvw=="
-        referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"
-        integrity="sha512-OeZ4Yrb/W7d2W4rAMOO0HQ9Ro/aWLtpW9BUSR2UOWnSV2hprXLkkYnnCGc9NeLUxxE4ZG7zN16UuT1Elqq8Opg=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"
-        integrity="sha512-DmMao0nRIbyDjbaHc8fNd3kxGsZj9PCU6Iu/CeidLQT9Py8nYVA5n0PqXYmvqNdU+lCiTHOM/4E7bM/G8BttJg=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js" crossorigin="anonymous"
-        referrerpolicy="no-referrer" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js" crossorigin="anonymous"
-        referrerpolicy="no-referrer" defer></script>
-    <script src="/static/dockview/dockview.min.js" defer></script>
     <script src="/static/dist/unified_index.js" defer></script>
 
 </body>

@@ -1,0 +1,98 @@
+@import "github-markdown-css/github-markdown-light.css";
+@import "highlight.js/styles/github.css";
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #ffffff;
+    color: #1f2328;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+}
+
+.print-container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+}
+
+.print-header {
+    border-bottom: 1px solid #d0d7de;
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+}
+
+.print-header h1 {
+    font-size: 2.2rem;
+    margin: 0 0 8px;
+    color: #0f172a;
+}
+
+.print-header .subtitle {
+    margin: 0;
+    color: #57606a;
+}
+
+.print-header .meta {
+    margin-top: 12px;
+    font-size: 0.9rem;
+    color: #6e7781;
+}
+
+.markdown-body {
+    color: #1f2328;
+    background: transparent;
+}
+
+.markdown-body pre {
+    background: #f6f8fa;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+}
+
+.vega-diagram {
+    background: #fafbfc;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 24px 0;
+}
+
+.vega-diagram canvas,
+.vega-diagram svg {
+    border-radius: 4px;
+}
+
+.excalidraw-diagram {
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    margin: 24px 0;
+    min-height: 360px;
+    display: flex;
+    background: #ffffff;
+}
+
+.excalidraw-wrapper {
+    flex: 1;
+}
+
+.loading {
+    color: #57606a;
+    font-style: italic;
+}
+
+@media print {
+    body {
+        background: #ffffff !important;
+    }
+
+    .print-container {
+        padding: 16px 24px;
+    }
+
+    .print-header {
+        border-color: #d0d7de;
+    }
+}

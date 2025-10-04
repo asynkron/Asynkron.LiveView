@@ -1,3 +1,10 @@
+@import "highlight.js/styles/github-dark.css";
+@import "codemirror/lib/codemirror.css";
+@import "codemirror-one-dark-theme/one-dark.css";
+@import "dockview/dist/styles/dockview.css";
+@import "@fortawesome/fontawesome-free/css/all.min.css";
+@import "xterm/css/xterm.css";
+
         :root {
             color-scheme: dark;
             --file-sidebar-width: 320px;

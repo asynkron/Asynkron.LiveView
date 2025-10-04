@@ -1,3 +1,5 @@
+import './vendor_globals.js';
+
 // Client-side bootstrap logic for the unified markdown viewer UI.
 function bootstrap() {
     const state = window.__INITIAL_STATE__ || {};
