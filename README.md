@@ -158,6 +158,23 @@ If you prefer manual setup or development:
    python start.py
    ```
 
+## ✅ Health Checks
+
+Before shipping changes or packaging a release, you can run the automated health check script to
+confirm the backend still imports cleanly and that the full pytest suite passes:
+
+```bash
+python scripts/ensure_app_works.py
+```
+
+Pass `--skip-tests` if you only want the lightweight syntax compilation step:
+
+```bash
+python scripts/ensure_app_works.py --skip-tests
+```
+
+These checks mirror what CI runs locally, helping catch regressions early.
+
    Or directly:
    ```bash
    python server.py --path /path/to/markdown --port 8080
