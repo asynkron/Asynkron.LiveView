@@ -100,7 +100,29 @@ Example log file: `log{unixtimestamp}.md` - always use the current unix timestam
 
 ## Installation & Quick Start
 
-### ⚡ One-Command Setup (Recommended)
+### 📦 **pip install** (Easiest)
+
+Install directly from source using pip:
+
+```bash
+pip install git+https://github.com/asynkron/Asynkron.LiveView.git
+```
+
+Then run the viewer:
+
+```bash
+liveview --path /path/to/markdown --port 8080
+```
+
+Or simply:
+
+```bash
+liveview
+```
+
+This will start the server at `http://localhost:8080` watching the `markdown` directory by default.
+
+### ⚡ One-Command Setup with run.sh
 
 ```bash
 ./run.sh
@@ -115,7 +137,7 @@ That's it! The script will automatically:
 
 ### 🔧 **Manual Setup**
 
-If you prefer manual setup:
+If you prefer manual setup or development:
 
 1. **Install Python Dependencies**:
    ```bash
