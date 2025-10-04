@@ -96,6 +96,13 @@ class UnifiedMarkdownServer:
             self.default_root.mkdir(parents=True, exist_ok=True)
         logger.info("Serving markdown from %s", self.default_root)
 
+        dist_dir = self.static_assets_path / "dist"
+        if not (dist_dir / "unified_index.js").exists():
+            logger.warning(
+                "Frontend bundle not found in %s. Run `cd frontend && npm install && npm run build` to generate it.",
+                dist_dir,
+            )
+
     async def on_shutdown(self, app: web.Application) -> None:
         for ws in list(self.clients.keys()):
             await ws.close()

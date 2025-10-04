@@ -217,3 +217,7 @@ markdown/*
 /.idea/inspectionProfiles/profiles_settings.xml
 /.idea/vcs.xml
 /.idea/.gitignore
+
+# Node / frontend tooling
+/frontend/node_modules/
+!/templates/static/dist/
