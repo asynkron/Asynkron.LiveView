@@ -3,65 +3,59 @@ import { initLayout } from './viewer/layout.js';
 import { renderMarkdown, captureHeadingLocations, getHeadingLocation } from './viewer/markdown.js';
 import { initEditor } from './editor/editor.js';
 import { initNavigation } from './files/navigation.js';
+import { createAppContext } from './app/context.js';
 
 // Client-side bootstrap logic for the unified markdown viewer UI.
 function bootstrap() {
-    const state = window.__INITIAL_STATE__ || {};
-    const content = document.getElementById('content');
-    const fileName = document.getElementById('file-name');
-    const sidebarPath = document.getElementById('sidebar-path');
-    const fileList = document.getElementById('file-list');
-    const downloadButton = document.getElementById('download-button');
-    const deleteButton = document.getElementById('delete-button');
-    const editButton = document.getElementById('edit-button');
-    const previewButton = document.getElementById('preview-button');
-    const saveButton = document.getElementById('save-button');
-    const cancelButton = document.getElementById('cancel-button');
-    const editorContainer = document.getElementById('editor-container');
-    const offlineOverlay = document.getElementById('offline-overlay');
-    const unsavedChangesModal = document.getElementById('unsaved-changes-modal');
-    const unsavedChangesFilename = document.getElementById('unsaved-changes-filename');
-    const unsavedChangesMessage = document.getElementById('unsaved-changes-message');
-    const unsavedChangesDetail = document.getElementById('unsaved-changes-detail');
-    const unsavedChangesSaveButton = document.getElementById('unsaved-changes-save');
-    const unsavedChangesDiscardButton = document.getElementById('unsaved-changes-discard');
-    const unsavedChangesCancelButton = document.getElementById('unsaved-changes-cancel');
-    const tocList = document.getElementById('toc-list');
-    const tocSidebar = document.querySelector('.sidebar--toc');
-    const fileSidebar = document.querySelector('.sidebar--files');
-    const tocSplitter = document.getElementById('toc-splitter');
-    const fileSplitter = document.getElementById('file-splitter');
-    const dockviewRoot = document.getElementById('dockview-root');
-    const appShell = document.querySelector('.app-shell');
-    const rootElement = document.documentElement;
-    const viewerSection = document.querySelector('.viewer');
-    const terminalPanel = document.getElementById('terminal-panel');
-    const terminalContainer = document.getElementById('terminal-container');
-    const terminalToggleButton = document.getElementById('terminal-toggle');
-    const terminalStatusText = document.getElementById('terminal-status');
-    const terminalResizeHandle = document.getElementById('terminal-resize-handle');
-    const terminalStorageKey = 'terminalPanelHeight';
-    const panelToggleButtons = Array.from(document.querySelectorAll('[data-panel-toggle]'));
+    const context = createAppContext();
+    const { initialState, state: appState, elements, sets, terminalStorageKey } = context;
+    const {
+        content,
+        fileName,
+        sidebarPath,
+        fileList,
+        downloadButton,
+        deleteButton,
+        editButton,
+        previewButton,
+        saveButton,
+        cancelButton,
+        editorContainer,
+        offlineOverlay,
+        unsavedChangesModal,
+        unsavedChangesFilename,
+        unsavedChangesMessage,
+        unsavedChangesDetail,
+        unsavedChangesSaveButton,
+        unsavedChangesDiscardButton,
+        unsavedChangesCancelButton,
+        tocList,
+        tocSidebar,
+        fileSidebar,
+        tocSplitter,
+        fileSplitter,
+        dockviewRoot,
+        appShell,
+        rootElement,
+        viewerSection,
+        terminalPanel,
+        terminalContainer,
+        terminalToggleButton,
+        terminalStatusText,
+        terminalResizeHandle,
+        panelToggleButtons,
+    } = elements;
+    const { expandedDirectories, knownDirectories } = sets;
 
     const initialIndex = normaliseFileIndex({
-        filesValue: state.files,
-        treeValue: state.fileTree,
+        filesValue: initialState.files,
+        treeValue: initialState.fileTree,
     });
-    let currentFile = state.selectedFile || null;
-    let files = initialIndex.files;
-    let fileTree = initialIndex.tree;
-    let websocket = null;
-    let reconnectTimer = null;
-    let isEditing = false;
-    let isPreviewing = false;
-    let currentContent = typeof state.content === 'string' ? state.content : '';
-    let hasPendingChanges = false;
+    appState.files = initialIndex.files;
+    appState.fileTree = initialIndex.tree;
 
-    const originalPathArgument = state.pathArgument || '';
-    let resolvedRootPath = state.rootPath || '';
-    const initialFileFromLocation = fileFromSearch(window.location.search);
-    const expandedDirectories = new Set();
-    const knownDirectories = new Set();
+    appState.currentFile = initialState.selectedFile || null;
+    context.initialFileFromLocation = fileFromSearch(window.location.search);
 
     const sharedContext = {
         elements: {
@@ -84,56 +78,56 @@ function bootstrap() {
             unsavedChangesDiscardButton,
             unsavedChangesCancelButton,
         },
-        getCurrentFile: () => currentFile,
+        getCurrentFile: () => appState.currentFile,
         setCurrentFile(value, options = {}) {
             const { silent = false } = options || {};
             const nextValue = typeof value === 'string' && value.length ? value : value || null;
-            if (currentFile === nextValue) {
+            if (appState.currentFile === nextValue) {
                 return;
             }
-            currentFile = nextValue;
+            appState.currentFile = nextValue;
             if (!silent) {
                 this.updateActiveFileHighlight();
                 this.updateHeader();
                 this.updateDocumentPanelTitle();
             }
         },
-        getCurrentContent: () => currentContent,
+        getCurrentContent: () => appState.currentContent,
         setCurrentContent(value) {
-            currentContent = typeof value === 'string' ? value : '';
+            appState.currentContent = typeof value === 'string' ? value : '';
         },
-        hasPendingChanges: () => hasPendingChanges,
+        hasPendingChanges: () => appState.hasPendingChanges,
         setHasPendingChanges: (value) => applyHasPendingChanges(value),
-        isEditing: () => isEditing,
+        isEditing: () => appState.isEditing,
         setEditing(value) {
             const next = Boolean(value);
-            if (isEditing === next) {
+            if (appState.isEditing === next) {
                 return;
             }
-            isEditing = next;
+            appState.isEditing = next;
             this.updateActionVisibility();
         },
-        isPreviewing: () => isPreviewing,
+        isPreviewing: () => appState.isPreviewing,
         setPreviewing(value) {
             const next = Boolean(value);
-            if (isPreviewing === next) {
+            if (appState.isPreviewing === next) {
                 return;
             }
-            isPreviewing = next;
+            appState.isPreviewing = next;
             this.updateActionVisibility();
         },
-        getResolvedRootPath: () => resolvedRootPath,
+        getResolvedRootPath: () => appState.resolvedRootPath,
         setResolvedRootPath(value) {
-            resolvedRootPath = typeof value === 'string' ? value : resolvedRootPath;
+            appState.resolvedRootPath = typeof value === 'string' ? value : appState.resolvedRootPath;
         },
-        getOriginalPathArgument: () => originalPathArgument,
-        getFiles: () => files,
+        getOriginalPathArgument: () => appState.originalPathArgument,
+        getFiles: () => appState.files,
         setFiles: (value) => {
-            files = Array.isArray(value) ? value : [];
+            appState.files = Array.isArray(value) ? value : [];
         },
-        getFileTree: () => fileTree,
+        getFileTree: () => appState.fileTree,
         setFileTree: (value) => {
-            fileTree = Array.isArray(value) ? value : [];
+            appState.fileTree = Array.isArray(value) ? value : [];
         },
         getExpandedDirectories: () => expandedDirectories,
         getKnownDirectories: () => knownDirectories,
@@ -392,16 +386,16 @@ function bootstrap() {
     }
 
     function setConnectionStatus(connected) {
-        offlineOverlay.classList.toggle('visible', !connected);
+        offlineOverlay?.classList.toggle('visible', !connected);
     }
 
     function applyHasPendingChanges(value) {
         const nextValue = Boolean(value);
-        if (nextValue === hasPendingChanges) {
+        if (nextValue === appState.hasPendingChanges) {
             return;
         }
-        hasPendingChanges = nextValue;
-        document.body.classList.toggle('document-has-pending-changes', hasPendingChanges);
+        appState.hasPendingChanges = nextValue;
+        document.body.classList.toggle('document-has-pending-changes', appState.hasPendingChanges);
         updateHeader();
     }
 
@@ -432,8 +426,8 @@ function bootstrap() {
             return;
         }
 
-        const baseTitle = currentFile || 'Document';
-        const title = hasPendingChanges && currentFile ? `${baseTitle} ●` : baseTitle;
+        const baseTitle = appState.currentFile || 'Document';
+        const title = appState.hasPendingChanges && appState.currentFile ? `${baseTitle} ●` : baseTitle;
         const panelApi = viewerPanel?.api;
 
         if (panelApi && typeof panelApi.setTitle === 'function') {
@@ -444,8 +438,8 @@ function bootstrap() {
     }
 
     function updateHeader() {
-        const hasFile = Boolean(currentFile);
-        const indicator = hasPendingChanges && hasFile ? ' ●' : '';
+        const hasFile = Boolean(appState.currentFile);
+        const indicator = appState.hasPendingChanges && hasFile ? ' ●' : '';
 
         if (fileName) {
             if (dockviewIsActive) {
@@ -458,15 +452,15 @@ function bootstrap() {
                 }
             } else {
                 fileName.classList.remove('hidden');
-                const baseName = hasFile ? currentFile : 'No file selected';
+                const baseName = hasFile ? appState.currentFile : 'No file selected';
                 fileName.textContent = hasFile ? `${baseName}${indicator}` : baseName;
             }
         }
 
-        sidebarPath.textContent = resolvedRootPath || originalPathArgument || 'Unknown';
+        sidebarPath.textContent = appState.resolvedRootPath || appState.originalPathArgument || 'Unknown';
         downloadButton.disabled = !hasFile;
         deleteButton.disabled = !hasFile;
-        editButton.disabled = !hasFile && !isEditing;
+        editButton.disabled = !hasFile && !appState.isEditing;
         previewButton.disabled = !hasFile;
         saveButton.disabled = !hasFile;
         cancelButton.disabled = false;
@@ -475,19 +469,19 @@ function bootstrap() {
     }
 
     function updateActionVisibility() {
-        const hasFile = Boolean(currentFile);
-        editButton.classList.toggle('hidden', !hasFile || (isEditing && !isPreviewing));
-        previewButton.classList.toggle('hidden', !isEditing || isPreviewing);
-        saveButton.classList.toggle('hidden', !isEditing);
-        cancelButton.classList.toggle('hidden', !isEditing);
-        downloadButton.classList.toggle('hidden', isEditing);
-        deleteButton.classList.toggle('hidden', isEditing);
+        const hasFile = Boolean(appState.currentFile);
+        editButton.classList.toggle('hidden', !hasFile || (appState.isEditing && !appState.isPreviewing));
+        previewButton.classList.toggle('hidden', !appState.isEditing || appState.isPreviewing);
+        saveButton.classList.toggle('hidden', !appState.isEditing);
+        cancelButton.classList.toggle('hidden', !appState.isEditing);
+        downloadButton.classList.toggle('hidden', appState.isEditing);
+        deleteButton.classList.toggle('hidden', appState.isEditing);
     }
 
     function buildQuery(params) {
         const query = new URLSearchParams();
-        if (originalPathArgument) {
-            query.set('path', originalPathArgument);
+        if (appState.originalPathArgument) {
+            query.set('path', appState.originalPathArgument);
         }
         Object.entries(params).forEach(([key, value]) => {
             if (value !== undefined && value !== null && value !== '') {
@@ -561,24 +555,26 @@ function bootstrap() {
     }
 
     function connectWebSocket() {
-        if (websocket) {
-            websocket.close();
+        if (appState.websocket) {
+            appState.websocket.close();
         }
 
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        websocket = new WebSocket(`${protocol}://${window.location.host}/ws`);
+        appState.websocket = new WebSocket(`${protocol}://${window.location.host}/ws`);
 
-        websocket.addEventListener('open', () => {
+        appState.websocket.addEventListener('open', () => {
             setConnectionStatus(true);
-            websocket.send(JSON.stringify({ type: 'subscribe', path: originalPathArgument }));
+            appState.websocket?.send(
+                JSON.stringify({ type: 'subscribe', path: appState.originalPathArgument })
+            );
         });
 
-        websocket.addEventListener('message', async (event) => {
+        appState.websocket.addEventListener('message', async (event) => {
             try {
                 const payload = JSON.parse(event.data);
                 if (payload.type === 'directory_update') {
-                    resolvedRootPath = payload.path || resolvedRootPath;
-                    sharedContext.setResolvedRootPath(resolvedRootPath);
+                    appState.resolvedRootPath = payload.path || appState.resolvedRootPath;
+                    sharedContext.setResolvedRootPath(appState.resolvedRootPath);
                     const updatedIndex = sharedContext.normaliseFileIndex({
                         filesValue: payload.files,
                         treeValue: payload.tree,
@@ -611,22 +607,22 @@ function bootstrap() {
         });
 
         function scheduleReconnect() {
-            if (reconnectTimer) {
+            if (appState.reconnectTimer) {
                 return;
             }
-            reconnectTimer = window.setTimeout(() => {
-                reconnectTimer = null;
+            appState.reconnectTimer = window.setTimeout(() => {
+                appState.reconnectTimer = null;
                 connectWebSocket();
             }, 1500);
         }
 
-        websocket.addEventListener('close', () => {
+        appState.websocket.addEventListener('close', () => {
             setConnectionStatus(false);
             scheduleReconnect();
         });
 
-        websocket.addEventListener('error', () => {
-            websocket.close();
+        appState.websocket.addEventListener('error', () => {
+            appState.websocket?.close();
         });
     }
 
@@ -1110,12 +1106,14 @@ function bootstrap() {
     });
 
     function initialise() {
-        const initialFallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
-        viewerApi.render(state.content || initialFallback, { updateCurrent: true });
+        const initialFallback = fallbackMarkdownFor(
+            appState.resolvedRootPath || appState.originalPathArgument || 'the selected path'
+        );
+        viewerApi.render(initialState.content || initialFallback, { updateCurrent: true });
         navigationApi.renderFileList();
         updateHeader();
-        if (state.error) {
-            setStatus(state.error);
+        if (initialState.error) {
+            setStatus(initialState.error);
         }
         setupTerminalPanel();
         connectWebSocket();
@@ -1125,7 +1123,7 @@ function bootstrap() {
         }
 
         const currentPath = sharedContext.getCurrentFile();
-        if (!initialFileFromLocation && currentPath) {
+        if (!context.initialFileFromLocation && currentPath) {
             void navigationApi.loadFile(currentPath, { replaceHistory: true });
         }
     }
@@ -1144,8 +1142,8 @@ function bootstrap() {
 
     initialise();
 
-    if (initialFileFromLocation) {
-        void navigationApi.loadFile(initialFileFromLocation, { replaceHistory: true });
+    if (context.initialFileFromLocation) {
+        void navigationApi.loadFile(context.initialFileFromLocation, { replaceHistory: true });
     }
 }
 
