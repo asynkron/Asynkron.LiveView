@@ -1,27 +1,13 @@
 import './vendor_globals.js';
+import { initializeSvelteComponents } from './svelte_app.js';
 
 // Client-side bootstrap logic for the unified markdown viewer UI.
 function bootstrap() {
     const state = window.__INITIAL_STATE__ || {};
     const content = document.getElementById('content');
-    const fileName = document.getElementById('file-name');
     const sidebarPath = document.getElementById('sidebar-path');
     const fileList = document.getElementById('file-list');
-    const downloadButton = document.getElementById('download-button');
-    const deleteButton = document.getElementById('delete-button');
-    const editButton = document.getElementById('edit-button');
-    const previewButton = document.getElementById('preview-button');
-    const saveButton = document.getElementById('save-button');
-    const cancelButton = document.getElementById('cancel-button');
     const editorContainer = document.getElementById('editor-container');
-    const offlineOverlay = document.getElementById('offline-overlay');
-    const unsavedChangesModal = document.getElementById('unsaved-changes-modal');
-    const unsavedChangesFilename = document.getElementById('unsaved-changes-filename');
-    const unsavedChangesMessage = document.getElementById('unsaved-changes-message');
-    const unsavedChangesDetail = document.getElementById('unsaved-changes-detail');
-    const unsavedChangesSaveButton = document.getElementById('unsaved-changes-save');
-    const unsavedChangesDiscardButton = document.getElementById('unsaved-changes-discard');
-    const unsavedChangesCancelButton = document.getElementById('unsaved-changes-cancel');
     const tocList = document.getElementById('toc-list');
     const tocSidebar = document.querySelector('.sidebar--toc');
     const fileSidebar = document.querySelector('.sidebar--files');
@@ -138,6 +124,40 @@ function bootstrap() {
     let terminalResizeObserver = null;
     const terminalDecoder = new TextDecoder();
     let terminalLastStatusMessage = '';
+
+    // Initialize Svelte components
+    let svelteComponents = null;
+    function initSvelteUI() {
+        const headerMount = document.getElementById('svelte-header-mount');
+        const overlaysMount = document.getElementById('svelte-overlays-mount');
+        
+        if (!headerMount || !overlaysMount) {
+            console.warn('Svelte mount points not found');
+            return;
+        }
+
+        svelteComponents = initializeSvelteComponents(
+            { header: headerMount, overlays: overlaysMount },
+            {
+                fileName: state.selectedFile || 'Markdown Viewer',
+                isEditing: false,
+                isPreviewing: false,
+                isOffline: false,
+                showUnsavedModal: false
+            },
+            {
+                onEdit: handleEdit,
+                onPreview: handlePreview,
+                onSave: handleSave,
+                onCancel: handleCancel,
+                onDownload: handleDownload,
+                onDelete: handleDelete,
+                onUnsavedSave: handleUnsavedSave,
+                onUnsavedDiscard: handleUnsavedDiscard,
+                onUnsavedCancel: handleUnsavedCancel
+            }
+        );
+    }
 
     function updatePanelToggleButtonState(name, isVisible) {
         const button = panelToggleButtonMap.get(name);
@@ -1785,7 +1805,9 @@ function bootstrap() {
     }
 
     function setConnectionStatus(connected) {
-        offlineOverlay.classList.toggle('visible', !connected);
+        if (svelteComponents) {
+            svelteComponents.updateState('offlineOverlay', { visible: !connected });
+        }
     }
 
     function setHasPendingChanges(value) {
@@ -1913,41 +1935,30 @@ function bootstrap() {
         const hasFile = Boolean(currentFile);
         const indicator = hasPendingChanges && hasFile ? ' ●' : '';
 
-        if (fileName) {
-            if (dockviewIsActive) {
-                if (hasFile) {
-                    fileName.textContent = `Markdown Viewer${indicator}`;
-                    fileName.classList.add('hidden');
-                } else {
-                    fileName.textContent = 'No file selected';
-                    fileName.classList.remove('hidden');
-                }
-            } else {
-                fileName.classList.remove('hidden');
-                const baseName = hasFile ? currentFile : 'No file selected';
-                fileName.textContent = hasFile ? `${baseName}${indicator}` : baseName;
-            }
+        let displayName;
+        if (dockviewIsActive) {
+            displayName = hasFile ? `Markdown Viewer${indicator}` : 'No file selected';
+        } else {
+            const baseName = hasFile ? currentFile : 'No file selected';
+            displayName = hasFile ? `${baseName}${indicator}` : baseName;
+        }
+
+        // Update Svelte component
+        if (svelteComponents) {
+            svelteComponents.updateState('fileHeader', {
+                fileName: displayName,
+                isEditing: isEditing,
+                isPreviewing: isPreviewing
+            });
         }
 
         sidebarPath.textContent = resolvedRootPath || originalPathArgument || 'Unknown';
-        downloadButton.disabled = !hasFile;
-        deleteButton.disabled = !hasFile;
-        editButton.disabled = !hasFile && !isEditing;
-        previewButton.disabled = !hasFile;
-        saveButton.disabled = !hasFile;
-        cancelButton.disabled = false;
-        updateActionVisibility();
         updateDocumentPanelTitle();
     }
 
     function updateActionVisibility() {
-        const hasFile = Boolean(currentFile);
-        editButton.classList.toggle('hidden', !hasFile || (isEditing && !isPreviewing));
-        previewButton.classList.toggle('hidden', !isEditing || isPreviewing);
-        saveButton.classList.toggle('hidden', !isEditing);
-        cancelButton.classList.toggle('hidden', !isEditing);
-        downloadButton.classList.toggle('hidden', isEditing);
-        deleteButton.classList.toggle('hidden', isEditing);
+        // This function is now handled by Svelte component state
+        // Keep it for compatibility but it doesn't need to do anything
     }
 
     function buildQuery(params) {
@@ -2557,74 +2568,96 @@ function bootstrap() {
         await loadFile(file);
     }
 
+    // Handler functions for Svelte components
+    function handleEdit() {
+        if (isEditing && isPreviewing) {
+            returnToCodeMode();
+            return;
+        }
+        if (!isEditing) {
+            enterEditMode();
+        }
+    }
+
+    function handlePreview() {
+        if (!currentFile) {
+            return;
+        }
+        enterPreviewMode();
+    }
+
+    function handleCancel() {
+        if (!isEditing && !isPreviewing) {
+            return;
+        }
+        exitEditMode();
+        setStatus('Edits cancelled.');
+    }
+
+    async function handleSave() {
+        await saveCurrentFile();
+    }
+
+    async function handleDownload() {
+        if (!currentFile) {
+            return;
+        }
+        try {
+            const data = await fetchJson(`/api/file${buildQuery({ file: currentFile })}`);
+            const blob = new Blob([data.content || ''], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = currentFile;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            setStatus(err.message);
+            console.error('Download failed', err);
+        }
+    }
+
+    async function handleDelete() {
+        if (!currentFile) {
+            return;
+        }
+        const confirmed = window.confirm(`Delete ${currentFile}?`);
+        if (!confirmed) {
+            return;
+        }
+        try {
+            await fetchJson(`/api/file${buildQuery({ file: currentFile })}`, { method: 'DELETE' });
+            setStatus('File deleted.');
+            await refreshFiles();
+        } catch (err) {
+            setStatus(err.message);
+            console.error('Delete failed', err);
+        }
+    }
+
+    function handleUnsavedSave() {
+        if (activeUnsavedPrompt) {
+            activeUnsavedPrompt.resolve('save');
+        }
+    }
+
+    function handleUnsavedDiscard() {
+        if (activeUnsavedPrompt) {
+            activeUnsavedPrompt.resolve('discard');
+        }
+    }
+
+    function handleUnsavedCancel() {
+        if (activeUnsavedPrompt) {
+            activeUnsavedPrompt.resolve('cancel');
+        }
+    }
+
     function setupActions() {
-        editButton.addEventListener('click', () => {
-            if (isEditing && isPreviewing) {
-                returnToCodeMode();
-                return;
-            }
-            if (!isEditing) {
-                enterEditMode();
-            }
-        });
-
-        previewButton.addEventListener('click', () => {
-            if (!currentFile) {
-                return;
-            }
-            enterPreviewMode();
-        });
-
-        cancelButton.addEventListener('click', () => {
-            if (!isEditing && !isPreviewing) {
-                return;
-            }
-            exitEditMode();
-            setStatus('Edits cancelled.');
-        });
-
-        saveButton.addEventListener('click', async () => {
-            await saveCurrentFile();
-        });
-
-        downloadButton.addEventListener('click', async () => {
-            if (!currentFile) {
-                return;
-            }
-            try {
-                const data = await fetchJson(`/api/file${buildQuery({ file: currentFile })}`);
-                const blob = new Blob([data.content || ''], { type: 'text/markdown' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = currentFile;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-            } catch (err) {
-                setStatus(err.message);
-                console.error('Download failed', err);
-            }
-        });
-
-        deleteButton.addEventListener('click', async () => {
-            if (!currentFile) {
-                return;
-            }
-            const confirmed = window.confirm(`Delete ${currentFile}?`);
-            if (!confirmed) {
-                return;
-            }
-            try {
-                await fetchJson(`/api/file${buildQuery({ file: currentFile })}`, { method: 'DELETE' });
-                setStatus('File deleted.');
-                await refreshFiles();
-            } catch (err) {
-                setStatus(err.message);
-                console.error('Delete failed', err);
-            }
-        });
+        // Actions are now handled by Svelte components
+        // Keep this function for compatibility but it's mostly empty now
     }
 
     function connectWebSocket() {
@@ -3180,6 +3213,7 @@ function bootstrap() {
     });
 
     function initialise() {
+        initSvelteUI();
         const initialFallback = fallbackMarkdownFor(resolvedRootPath || originalPathArgument || 'the selected path');
         renderMarkdown(state.content || initialFallback, { updateCurrent: true });
         renderFileList();

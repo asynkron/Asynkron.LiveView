@@ -19,23 +19,7 @@
         </aside>
 
         <section class="viewer">
-            <header class="file-header">
-                <h1 id="file-name">Markdown Viewer</h1>
-                <div class="file-actions">
-                    <button id="edit-button" class="" title="Edit the current file"><i
-                            class="fas fa-edit file-button-icon"></i></button>
-                    <button id="preview-button" class=" hidden" title="Preview the pending changes"><i
-                            class="fas fa-eye file-button-icon"></i></button>
-                    <button id="save-button" class="hidden" title="Save your changes"><i
-                            class="fas fa-save file-button-icon"></i></button>
-                    <button id="cancel-button" class=" hidden" title="Cancel editing"><i
-                            class="fas fa-times file-button-icon"></i></button>
-                    <button id="download-button" title="Download the current file"><i
-                            class="fas fa-download file-button-icon"></i></button>
-                    <button id="delete-button" class="" title="Delete the current file"><i
-                            class="fas fa-trash file-button-icon"></i></button>
-                </div>
-            </header>
+            <div id="svelte-header-mount"></div>
             <div id="content" class="content-area"></div>
             <div id="editor-container" class="editor-container"></div>
         </section>
@@ -51,29 +35,7 @@
         </aside>
     </div>
 
-    <div id="offline-overlay" class="offline-overlay">
-        <div class="offline-message">
-            <div class="offline-spinner"></div>
-            <h3 class="offline-title">Connection Lost</h3>
-            <p class="offline-description">Reconnecting to the live view server...</p>
-        </div>
-    </div>
-
-    <div id="unsaved-changes-modal" class="dialog-overlay" role="dialog" aria-modal="true"
-        aria-labelledby="unsaved-changes-title" aria-describedby="unsaved-changes-message" tabindex="-1">
-        <div class="dialog-window">
-            <h3 id="unsaved-changes-title">Unsaved changes</h3>
-            <p id="unsaved-changes-message">You have unsaved changes in
-                <span id="unsaved-changes-filename" class="dialog-filename"></span>.
-            </p>
-            <p id="unsaved-changes-detail" class="dialog-detail">What would you like to do?</p>
-            <div class="dialog-actions">
-                <button type="button" id="unsaved-changes-save" class="primary">Save changes</button>
-                <button type="button" id="unsaved-changes-discard" class="secondary">Discard</button>
-                <button type="button" id="unsaved-changes-cancel" class="secondary">Cancel</button>
-            </div>
-        </div>
-    </div>
+    <div id="svelte-overlays-mount"></div>
 
     <div id="terminal-panel" class="terminal-panel">
 
