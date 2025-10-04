@@ -1,0 +1,15 @@
+{
+  "name": "asynkron-liveview-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "npm run clean && npm run build:js && npm run build:css",
+    "build:js": "esbuild src/js/unified_index.js --bundle --minify --sourcemap --target=es2018 --outfile=../templates/static/dist/unified_index.js",
+    "build:css": "esbuild src/css/app.css --bundle --minify --outfile=../templates/static/dist/app.css",
+    "clean": "rimraf ../templates/static/dist"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.4",
+    "rimraf": "^5.0.5"
+  }
+}

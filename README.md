@@ -117,12 +117,21 @@ That's it! The script will automatically:
 
 If you prefer manual setup:
 
-1. **Install Dependencies**:
+1. **Install Python Dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-2. **Run the Server**:
+2. **Build the Frontend Bundle** (only required after pulling new changes or editing the UI):
+   ```bash
+   cd frontend
+   npm install
+   npm run build
+   ```
+   The compiled assets are written to `templates/static/dist` and automatically served by the
+   Python application.
+
+3. **Run the Server**:
    ```bash
    python start.py
    ```
@@ -132,7 +141,7 @@ If you prefer manual setup:
    python server.py --path /path/to/markdown --port 8080
    ```
 
-3. **Open Your Browser**:
+4. **Open Your Browser**:
    Navigate to `http://localhost:8080/?path=/path/to/markdown`
 
 4. **Add Markdown Files**:
