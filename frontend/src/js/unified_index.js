@@ -95,12 +95,9 @@ function bootstrap() {
     let mermaidIdCounter = 0;
     let vegaIdCounter = 0;
     let excalidrawIdCounter = 0;
-    let svelteIdCounter = 0;
     const excalidrawRoots = new Map();
-    const svelteInstances = new Map();
     let excalidrawResizeHandlerAttached = false;
     let excalidrawFitFailureLogged = false;
-    let svelteRetryTimer = null;
     let librariesReadyPromise = null;
     let pendingMarkdown = null;
     let relativeLinksEnabled = false;
@@ -821,14 +818,6 @@ function bootstrap() {
                     return;
                 }
 
-                if (language.includes('svelte')) {
-                    const id = `svelte-component-${svelteIdCounter++}`;
-                    const encodedSource = encodeSvelteSource(source);
-                    const svelteHtml = `<div class="svelte-component" id="${id}" data-svelte-source="${encodedSource}"></div>`;
-                    token.type = 'html';
-                    token.raw = svelteHtml;
-                    token.text = svelteHtml;
-                }
             },
         });
 
@@ -1251,14 +1240,6 @@ function bootstrap() {
         return decodeDiagramSource(encoded, 'Excalidraw');
     }
 
-    function encodeSvelteSource(code) {
-        return encodeDiagramSource(code);
-    }
-
-    function decodeSvelteSource(encoded) {
-        return decodeDiagramSource(encoded, 'Svelte');
-    }
-
     function createExcalidrawViewerUiOptions() {
         return {
             canvasActions: {
@@ -1668,115 +1649,10 @@ function bootstrap() {
         });
     }
 
-    function renderSvelteComponents() {
-        const components = content.querySelectorAll('.svelte-component[data-svelte-source]');
-        if (!components.length) {
-            return;
-        }
-
-        if (!window.svelteCompiler || !window.svelte) {
-            components.forEach((element) => {
-                const source = decodeSvelteSource(element.dataset.svelteSource);
-                showDiagramLoading(element, 'Svelte', source);
-            });
-            scheduleSvelteRetry();
-            return;
-        }
-
-        components.forEach((element) => {
-            const source = decodeSvelteSource(element.dataset.svelteSource);
-            if (!source.trim()) {
-                showDiagramError(element, 'Svelte', 'Component source is empty', source);
-                return;
-            }
-
-            const existingInstance = svelteInstances.get(element);
-            if (existingInstance && typeof existingInstance.$destroy === 'function') {
-                try {
-                    existingInstance.$destroy();
-                } catch (error) {
-                    console.warn('Failed to destroy previous Svelte instance', error);
-                }
-            }
-            svelteInstances.delete(element);
-
-            element.innerHTML = '';
-            const wrapper = document.createElement('div');
-            wrapper.className = 'svelte-wrapper';
-            element.appendChild(wrapper);
-
-            try {
-                const compiled = window.svelteCompiler.compile(source, {
-                    dev: false,
-                    css: 'injected',
-                    generate: 'dom',
-                });
-
-                let componentCode = compiled.js.code;
-                
-                // Replace all import statements with global references for Svelte 4
-                // First, handle the disclose-version import
-                componentCode = componentCode.replace(
-                    /import\s+"svelte\/internal\/disclose-version";?/g,
-                    ''
-                );
-                
-                // Then handle the main svelte/internal imports with destructuring
-                componentCode = componentCode.replace(
-                    /import\s+{([^}]+)}\s+from\s+"svelte\/internal";?/g,
-                    (match, imports) => {
-                        const importList = imports.split(/,\s*\n\s*|\s*,\s*/).map(i => i.trim()).filter(i => i);
-                        const declarations = importList.map(name => `const ${name} = window.svelteInternal.${name};`);
-                        return declarations.join('\n');
-                    }
-                );
-                
-                // Replace export default
-                componentCode = componentCode.replace(
-                    /export default class/g,
-                    'return class'
-                );
-                componentCode = componentCode.replace(
-                    /export default/g,
-                    'return'
-                );
-                
-                // Wrap in a function to make it return the component class
-                const wrappedCode = `(function() {\n${componentCode}\n})()`;
-                
-                try {
-                    const ComponentClass = eval(wrappedCode);
-                    const instance = new ComponentClass({
-                        target: wrapper,
-                        props: {},
-                    });
-                    svelteInstances.set(element, instance);
-                } catch (error) {
-                    console.error('Svelte instantiation error', error);
-                    showDiagramError(element, 'Svelte', error.message, source);
-                }
-            } catch (error) {
-                console.error('Svelte compilation error', error);
-                showDiagramError(element, 'Svelte', error.message, source);
-            }
-        });
-    }
-
-    function scheduleSvelteRetry() {
-        if (svelteRetryTimer) {
-            return;
-        }
-        svelteRetryTimer = window.setTimeout(() => {
-            svelteRetryTimer = null;
-            renderSvelteComponents();
-        }, 500);
-    }
-
     function renderAllDiagrams() {
         renderMermaidDiagrams();
         renderVegaVisualizations();
         renderExcalidrawDiagrams();
-        renderSvelteComponents();
     }
 
     function setStatus(message) {
