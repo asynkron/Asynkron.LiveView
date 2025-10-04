@@ -417,6 +417,18 @@
             display: none !important;
         }
 
+        .content-area .svelte-component {
+            margin: 24px 0;
+            position: relative;
+            min-height: 60px;
+            overflow: hidden;
+        }
+
+        .content-area .svelte-wrapper {
+            width: 100%;
+            min-height: 60px;
+        }
+
         .editor-container {
             display: none;
             flex: 1;
