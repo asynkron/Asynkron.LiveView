@@ -4,6 +4,7 @@ import { initEditor } from './editor/editor.js';
 import { initNavigation } from './files/navigation.js';
 import { createHandleDirectoryUpdate, createHandleFileChanged } from './files/realtime_handlers.js';
 import { createAppContext } from './app/context.js';
+import { createSharedContext } from './app/shared_context.js';
 import { createRealtimeService } from './services/realtime.js';
 import { createTerminalService } from './services/terminal.js';
 import {
@@ -60,8 +61,6 @@ function bootstrap() {
         terminalResizeHandle,
         panelToggleButtons,
     } = elements;
-    const { expandedDirectories, knownDirectories } = sets;
-
     const initialIndex = normaliseFileIndex({
         filesValue: initialState.files,
         treeValue: initialState.fileTree,
@@ -80,7 +79,8 @@ function bootstrap() {
     let editorApi = null;
     let tocController = null;
 
-    const sharedContext = {
+    const sharedContext = createSharedContext({
+        appState,
         elements: {
             content,
             fileName,
@@ -101,78 +101,27 @@ function bootstrap() {
             unsavedChangesDiscardButton,
             unsavedChangesCancelButton,
         },
-        getCurrentFile: () => appState.currentFile,
-        setCurrentFile(value, options = {}) {
-            const { silent = false } = options || {};
-            const nextValue = typeof value === 'string' && value.length ? value : value || null;
-            if (appState.currentFile === nextValue) {
-                return;
-            }
-            appState.currentFile = nextValue;
-            if (!silent) {
-                this.updateActiveFileHighlight();
-                this.updateHeader();
-                this.updateDocumentPanelTitle();
-            }
-        },
-        getCurrentContent: () => appState.currentContent,
-        setCurrentContent(value) {
-            appState.currentContent = typeof value === 'string' ? value : '';
-        },
-        hasPendingChanges: () => appState.hasPendingChanges,
-        setHasPendingChanges(value) {
+        sets,
+        applyHasPendingChanges(value) {
             if (headerController) {
                 headerController.applyHasPendingChanges(value);
-            } else {
-                const nextValue = Boolean(value);
-                if (nextValue !== appState.hasPendingChanges) {
-                    appState.hasPendingChanges = nextValue;
-                    document?.body?.classList?.toggle('document-has-pending-changes', nextValue);
-                }
-            }
-        },
-        isEditing: () => appState.isEditing,
-        setEditing(value) {
-            const next = Boolean(value);
-            if (appState.isEditing === next) {
                 return;
             }
-            appState.isEditing = next;
-            this.updateActionVisibility();
-        },
-        isPreviewing: () => appState.isPreviewing,
-        setPreviewing(value) {
-            const next = Boolean(value);
-            if (appState.isPreviewing === next) {
-                return;
+            const nextValue = Boolean(value);
+            if (nextValue !== appState.hasPendingChanges) {
+                appState.hasPendingChanges = nextValue;
+                document?.body?.classList?.toggle('document-has-pending-changes', nextValue);
             }
-            appState.isPreviewing = next;
-            this.updateActionVisibility();
         },
-        getResolvedRootPath: () => appState.resolvedRootPath,
-        setResolvedRootPath(value) {
-            appState.resolvedRootPath = typeof value === 'string' ? value : appState.resolvedRootPath;
+        setConnectionStatusHandler: (connected) => {
+            setConnectionStatusHandler(connected);
         },
-        getOriginalPathArgument: () => appState.originalPathArgument,
-        getFiles: () => appState.files,
-        setFiles: (value) => {
-            appState.files = Array.isArray(value) ? value : [];
-        },
-        getFileTree: () => appState.fileTree,
-        setFileTree: (value) => {
-            appState.fileTree = Array.isArray(value) ? value : [];
-        },
-        getExpandedDirectories: () => expandedDirectories,
-        getKnownDirectories: () => knownDirectories,
-        setStatus,
-        setConnectionStatus: (connected) => setConnectionStatusHandler(connected),
         updateHeader() {
             headerController?.updateHeader();
         },
         updateActionVisibility() {
             headerController?.updateActionVisibility();
         },
-        updateActiveFileHighlight() {},
         updateDocumentPanelTitle() {
             headerController?.updateDocumentPanelTitle();
         },
@@ -191,10 +140,18 @@ function bootstrap() {
             }
         },
         fallbackMarkdownFor,
-        normaliseFileIndex: (values) => normaliseFileIndex(values),
-        buildTreeFromFlatList: (list) => buildTreeFromFlatList(list),
-        getCssNumber: (variableName, fallback) => getCssNumber(rootElement, variableName, fallback),
-    };
+        normaliseFileIndex(values) {
+            return normaliseFileIndex(values);
+        },
+        buildTreeFromFlatList(list) {
+            return buildTreeFromFlatList(list);
+        },
+        getCssNumber(variableName, fallback) {
+            return getCssNumber(rootElement, variableName, fallback);
+        },
+        rootElement,
+    });
+    sharedContext.setStatus = setStatus;
     const markdownContext = {
         content,
         tocList,
