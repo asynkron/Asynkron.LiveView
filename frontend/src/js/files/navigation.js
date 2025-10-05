@@ -1,3 +1,5 @@
+import { buildTreeFromFlatList, fallbackMarkdownFor, normaliseFileIndex } from '../app/bootstrap_helpers.js';
+
 export function initNavigation(context, viewerApi) {
     if (!context) {
         throw new Error('Navigation context is required');
@@ -37,7 +39,7 @@ export function initNavigation(context, viewerApi) {
         if (data?.rootPath) {
             context.setResolvedRootPath(data.rootPath);
         }
-        const updatedIndex = context.normaliseFileIndex({
+        const updatedIndex = normaliseFileIndex({
             filesValue: data?.files,
             treeValue: data?.tree,
         });
@@ -55,7 +57,7 @@ export function initNavigation(context, viewerApi) {
                 context.setCurrentFile(null);
                 state.editorApi?.exitEditMode({ restoreContent: false });
                 viewerApi?.render(
-                    context.fallbackMarkdownFor(
+                    fallbackMarkdownFor(
                         context.getResolvedRootPath() || context.getOriginalPathArgument() || 'the selected path',
                     ),
                     { updateCurrent: true },
@@ -79,7 +81,7 @@ export function initNavigation(context, viewerApi) {
         const tree = context.getFileTree();
         const treeToRender = Array.isArray(tree) && tree.length
             ? tree
-            : context.buildTreeFromFlatList(context.getFiles());
+            : buildTreeFromFlatList(context.getFiles());
 
         if (!treeToRender.length) {
             const empty = document.createElement('li');
