@@ -142,7 +142,12 @@ export function createSharedContext({
                 return;
             }
             appState.isEditing = next;
-            this.updateActionVisibility();
+            const header = this.controllers?.header;
+            if (typeof header?.updateActionVisibility === 'function') {
+                header.updateActionVisibility();
+            } else {
+                invokeUpdateActionVisibility();
+            }
         },
         isPreviewing: () => appState.isPreviewing,
         setPreviewing(value) {
@@ -151,7 +156,12 @@ export function createSharedContext({
                 return;
             }
             appState.isPreviewing = next;
-            this.updateActionVisibility();
+            const header = this.controllers?.header;
+            if (typeof header?.updateActionVisibility === 'function') {
+                header.updateActionVisibility();
+            } else {
+                invokeUpdateActionVisibility();
+            }
         },
         getResolvedRootPath: () => appState.resolvedRootPath,
         setResolvedRootPath(value) {
