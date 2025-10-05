@@ -5,6 +5,7 @@ import { initNavigation } from './files/navigation.js';
 import { createHandleDirectoryUpdate, createHandleFileChanged } from './files/realtime_handlers.js';
 import { createAppContext } from './app/context.js';
 import { createUnifiedApp } from './app/unified_app.js';
+import { createSharedContext } from './app/shared_context.js';
 import { createRealtimeService } from './services/realtime.js';
 import { createTerminalService } from './services/terminal.js';
 import {
@@ -75,11 +76,12 @@ function composeUnifiedApp() {
 
     const setConnectionStatusHandler = createSetConnectionStatus(offlineOverlay);
 
-    const sharedContext = {
-        controllers: {
-            header: null,
-        },
-        router: null,
+    const applyHasPendingChanges = (value) => {
+        document?.body?.classList?.toggle('document-has-pending-changes', Boolean(value));
+    };
+
+    const sharedContext = createSharedContext({
+        appState,
         elements: {
             content,
             fileName,
@@ -100,104 +102,21 @@ function composeUnifiedApp() {
             unsavedChangesDiscardButton,
             unsavedChangesCancelButton,
         },
-        getCurrentFile: () => appState.currentFile,
-        setCurrentFile(value, options = {}) {
-            const { silent = false } = options || {};
-            const nextValue = typeof value === 'string' && value.length ? value : value || null;
-            if (appState.currentFile === nextValue) {
-                return;
-            }
-            appState.currentFile = nextValue;
-            if (!silent) {
-                this.updateActiveFileHighlight();
-                this.updateHeader();
-                this.updateDocumentPanelTitle();
-            }
-        },
-        getCurrentContent: () => appState.currentContent,
-        setCurrentContent(value) {
-            appState.currentContent = typeof value === 'string' ? value : '';
-        },
-        hasPendingChanges: () => appState.hasPendingChanges,
-        setHasPendingChanges(value) {
-            const header = this.controllers?.header;
-            if (header) {
-                header.applyHasPendingChanges(value);
-            } else {
-                const nextValue = Boolean(value);
-                if (nextValue !== appState.hasPendingChanges) {
-                    appState.hasPendingChanges = nextValue;
-                    document?.body?.classList?.toggle('document-has-pending-changes', nextValue);
-                }
-            }
-        },
-        isEditing: () => appState.isEditing,
-        setEditing(value) {
-            const next = Boolean(value);
-            if (appState.isEditing === next) {
-                return;
-            }
-            appState.isEditing = next;
-            this.updateActionVisibility();
-        },
-        isPreviewing: () => appState.isPreviewing,
-        setPreviewing(value) {
-            const next = Boolean(value);
-            if (appState.isPreviewing === next) {
-                return;
-            }
-            appState.isPreviewing = next;
-            this.updateActionVisibility();
-        },
-        getResolvedRootPath: () => appState.resolvedRootPath,
-        setResolvedRootPath(value) {
-            appState.resolvedRootPath = typeof value === 'string' ? value : appState.resolvedRootPath;
-        },
-        getOriginalPathArgument: () => appState.originalPathArgument,
-        getFiles: () => appState.files,
-        setFiles: (value) => {
-            appState.files = Array.isArray(value) ? value : [];
-        },
-        getFileTree: () => appState.fileTree,
-        setFileTree: (value) => {
-            appState.fileTree = Array.isArray(value) ? value : [];
-        },
-        getExpandedDirectories: () => expandedDirectories,
-        getKnownDirectories: () => knownDirectories,
-        setStatus,
-        setConnectionStatus: (connected) => setConnectionStatusHandler(connected),
-        updateHeader() {
-            const header = this.controllers?.header;
-            header?.updateHeader();
-        },
-        updateActionVisibility() {
-            const header = this.controllers?.header;
-            header?.updateActionVisibility();
-        },
-        updateActiveFileHighlight() {},
-        updateDocumentPanelTitle() {
-            const header = this.controllers?.header;
-            header?.updateDocumentPanelTitle();
-        },
-        buildQuery(params) {
-            return this.router ? this.router.buildQuery(params) : '';
-        },
-        updateLocation(file, options = {}) {
-            if (!this.router) {
-                return;
-            }
-            const { replace = false } = options;
-            if (replace) {
-                this.router.replace(file);
-            } else {
-                this.router.push(file);
-            }
-        },
+        sets: { expandedDirectories, knownDirectories },
+        applyHasPendingChanges,
+        setConnectionStatusHandler,
+        updateHeader: () => {},
+        updateActionVisibility: () => {},
+        updateDocumentPanelTitle: () => {},
+        buildQuery: () => '',
+        updateLocation: () => {},
         fallbackMarkdownFor,
-        normaliseFileIndex: (values) => normaliseFileIndex(values),
-        buildTreeFromFlatList: (list) => buildTreeFromFlatList(list),
-        getCssNumber: (variableName, fallback) => getCssNumber(rootElement, variableName, fallback),
-    };
+        normaliseFileIndex,
+        buildTreeFromFlatList,
+        getCssNumber,
+        rootElement,
+        setStatus,
+    });
     const markdownContext = {
         content,
         tocList,
