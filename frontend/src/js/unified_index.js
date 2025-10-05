@@ -3,6 +3,7 @@ import { initLayout } from './viewer/layout.js';
 import { renderMarkdown, captureHeadingLocations, getHeadingLocation } from './viewer/markdown.js';
 import { initEditor } from './editor/editor.js';
 import { initNavigation } from './files/navigation.js';
+import { createHandleDirectoryUpdate, createHandleFileChanged } from './files/realtime_handlers.js';
 import { createAppContext } from './app/context.js';
 import { createRealtimeService } from './services/realtime.js';
 import { createTerminalService } from './services/terminal.js';
@@ -198,15 +199,6 @@ function bootstrap() {
         isDockviewActive: () => layout.dockviewIsActive,
     });
 
-    const realtimeService = createRealtimeService({
-        getSubscriptionPath: () => appState.originalPathArgument,
-        onConnectionChange: (connected) => {
-            setConnectionStatus(connected);
-        },
-        onDirectoryUpdate: handleDirectoryUpdate,
-        onFileChanged: handleFileChanged,
-    });
-
     const viewerApi = {
         render(contentValue, options = {}) {
             renderMarkdown(markdownContext, contentValue, options);
@@ -236,6 +228,25 @@ function bootstrap() {
             editorApi.handleHeadingActionClick(event);
         });
     }
+
+    const handleDirectoryUpdate = createHandleDirectoryUpdate({
+        navigationApi,
+        sharedContext,
+        resetViewToFallback,
+    });
+    const handleFileChanged = createHandleFileChanged({
+        navigationApi,
+        sharedContext,
+    });
+
+    const realtimeService = createRealtimeService({
+        getSubscriptionPath: () => appState.originalPathArgument,
+        onConnectionChange: (connected) => {
+            setConnectionStatus(connected);
+        },
+        onDirectoryUpdate: handleDirectoryUpdate,
+        onFileChanged: handleFileChanged,
+    });
 
     function normaliseFileIndex({ filesValue, treeValue }) {
         let flat = [];
@@ -522,45 +533,6 @@ function bootstrap() {
         }
         const trimmed = value.trim();
         return trimmed === '' ? '' : trimmed;
-    }
-
-    async function handleDirectoryUpdate(payload = {}) {
-        if (!payload || typeof payload !== 'object') {
-            return;
-        }
-
-        appState.resolvedRootPath = payload.path || appState.resolvedRootPath;
-        sharedContext.setResolvedRootPath(appState.resolvedRootPath);
-
-        const updatedIndex = sharedContext.normaliseFileIndex({
-            filesValue: payload.files,
-            treeValue: payload.tree,
-        });
-        sharedContext.setFiles(updatedIndex.files);
-        sharedContext.setFileTree(updatedIndex.tree);
-        navigationApi.renderFileList();
-
-        const filesList = sharedContext.getFiles();
-        const currentPath = sharedContext.getCurrentFile();
-        if (!filesList.find((entry) => entry.relativePath === currentPath)) {
-            const nextFile = filesList.length ? filesList[0].relativePath : null;
-            if (nextFile) {
-                await navigationApi.loadFile(nextFile, { replaceHistory: true });
-            } else {
-                resetViewToFallback();
-            }
-            return;
-        }
-
-        sharedContext.updateActiveFileHighlight();
-        sharedContext.updateHeader();
-    }
-
-    async function handleFileChanged(file) {
-        const currentPath = sharedContext.getCurrentFile();
-        if (file && file === currentPath) {
-            await navigationApi.loadFile(currentPath, { replaceHistory: true });
-        }
     }
 
     function handleTocClick(event) {
