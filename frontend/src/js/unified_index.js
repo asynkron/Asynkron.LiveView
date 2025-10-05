@@ -13,10 +13,12 @@ import {
     getCssNumber,
     setStatus,
     createSetConnectionStatus,
-    createApplyHasPendingChanges,
     createResetViewToFallback,
     fallbackMarkdownFor,
 } from './app/bootstrap_helpers.js';
+import { createHeaderController } from './app/header_controller.js';
+import { createRouter } from './app/router.js';
+import { createTocController } from './app/toc_controller.js';
 
 // Client-side bootstrap logic for the unified markdown viewer UI.
 function bootstrap() {
@@ -68,11 +70,15 @@ function bootstrap() {
     appState.fileTree = initialIndex.tree;
 
     appState.currentFile = initialState.selectedFile || null;
-    context.initialFileFromLocation = fileFromSearch(window.location.search);
+    context.initialFileFromLocation = null;
 
     const setConnectionStatusHandler = createSetConnectionStatus(offlineOverlay);
-    const applyHasPendingChanges = createApplyHasPendingChanges(appState, updateHeader);
     let resetViewToFallback = () => {};
+    let headerController = null;
+    let router = null;
+    let navigationApi = null;
+    let editorApi = null;
+    let tocController = null;
 
     const sharedContext = {
         elements: {
@@ -114,7 +120,17 @@ function bootstrap() {
             appState.currentContent = typeof value === 'string' ? value : '';
         },
         hasPendingChanges: () => appState.hasPendingChanges,
-        setHasPendingChanges: (value) => applyHasPendingChanges(value),
+        setHasPendingChanges(value) {
+            if (headerController) {
+                headerController.applyHasPendingChanges(value);
+            } else {
+                const nextValue = Boolean(value);
+                if (nextValue !== appState.hasPendingChanges) {
+                    appState.hasPendingChanges = nextValue;
+                    document?.body?.classList?.toggle('document-has-pending-changes', nextValue);
+                }
+            }
+        },
         isEditing: () => appState.isEditing,
         setEditing(value) {
             const next = Boolean(value);
@@ -151,17 +167,29 @@ function bootstrap() {
         setStatus,
         setConnectionStatus: (connected) => setConnectionStatusHandler(connected),
         updateHeader() {
-            updateHeader();
+            headerController?.updateHeader();
         },
         updateActionVisibility() {
-            updateActionVisibility();
+            headerController?.updateActionVisibility();
         },
         updateActiveFileHighlight() {},
         updateDocumentPanelTitle() {
-            updateDocumentPanelTitle();
+            headerController?.updateDocumentPanelTitle();
         },
-        buildQuery: (params) => buildQuery(params),
-        updateLocation: (file, options) => updateLocation(file, options),
+        buildQuery(params) {
+            return router ? router.buildQuery(params) : '';
+        },
+        updateLocation(file, options = {}) {
+            if (!router) {
+                return;
+            }
+            const { replace = false } = options;
+            if (replace) {
+                router.replace(file);
+            } else {
+                router.push(file);
+            }
+        },
         fallbackMarkdownFor,
         normaliseFileIndex: (values) => normaliseFileIndex(values),
         buildTreeFromFlatList: (list) => buildTreeFromFlatList(list),
@@ -174,7 +202,7 @@ function bootstrap() {
         setCurrentContent(value) {
             sharedContext.setCurrentContent(value);
         },
-        buildQuery,
+        buildQuery: (params) => sharedContext.buildQuery(params),
     };
     sharedContext.markdownContext = markdownContext;
 
@@ -191,10 +219,27 @@ function bootstrap() {
         panelToggleButtons,
         getCurrentFile: () => sharedContext.getCurrentFile(),
     });
-    const dockviewSetup = layout.dockviewSetup;
     const dockviewIsActive = layout.dockviewIsActive;
     document.body.classList.toggle('dockview-active', dockviewIsActive);
     layout.refreshPanelToggleStates();
+
+    headerController = createHeaderController({
+        elements: {
+            fileName,
+            sidebarPath,
+            downloadButton,
+            deleteButton,
+            editButton,
+            previewButton,
+            saveButton,
+            cancelButton,
+        },
+        layout,
+        appState,
+    });
+
+    tocController = createTocController({ tocList });
+    tocController.attach();
 
     if (dockviewIsActive && dockviewRoot) {
         dockviewRoot.addEventListener('pointerdown', layout.handlePointerDown);
@@ -203,6 +248,21 @@ function bootstrap() {
     }
 
     sharedContext.layout = layout;
+
+    router = createRouter({
+        appState,
+        getCurrentFile: () => sharedContext.getCurrentFile(),
+        onNavigate: (targetFile, options) => {
+            if (typeof navigationApi?.loadFile === 'function') {
+                void navigationApi.loadFile(targetFile, options);
+            }
+        },
+        onFallback: (options) => {
+            resetViewToFallback(options);
+        },
+    });
+
+    context.initialFileFromLocation = router.getCurrent();
 
     const terminalService = createTerminalService({
         terminalPanel,
@@ -216,8 +276,8 @@ function bootstrap() {
 
     const viewerApi = createViewerApi(markdownContext);
 
-    const navigationApi = initNavigation(sharedContext, viewerApi);
-    const editorApi = initEditor(sharedContext, viewerApi, navigationApi);
+    navigationApi = initNavigation(sharedContext, viewerApi);
+    editorApi = initEditor(sharedContext, viewerApi, navigationApi);
     if (typeof navigationApi?.bindEditorApi === 'function') {
         navigationApi.bindEditorApi(editorApi);
     }
@@ -252,147 +312,13 @@ function bootstrap() {
         onFileChanged: handleFileChanged,
     });
 
-    function updateDocumentPanelTitle() {
-        const viewerPanel = dockviewSetup?.panels?.viewer;
-        if (!viewerPanel) {
-            return;
-        }
-
-        const baseTitle = appState.currentFile || 'Document';
-        const title = appState.hasPendingChanges && appState.currentFile ? `${baseTitle} ●` : baseTitle;
-        const panelApi = viewerPanel?.api;
-
-        if (panelApi && typeof panelApi.setTitle === 'function') {
-            panelApi.setTitle(title);
-        } else if (typeof viewerPanel.setTitle === 'function') {
-            viewerPanel.setTitle(title);
-        }
-    }
-
-    function updateHeader() {
-        const hasFile = Boolean(appState.currentFile);
-        const indicator = appState.hasPendingChanges && hasFile ? ' ●' : '';
-
-        if (fileName) {
-            if (dockviewIsActive) {
-                if (hasFile) {
-                    fileName.textContent = `Markdown Viewer${indicator}`;
-                    fileName.classList.add('hidden');
-                } else {
-                    fileName.textContent = 'No file selected';
-                    fileName.classList.remove('hidden');
-                }
-            } else {
-                fileName.classList.remove('hidden');
-                const baseName = hasFile ? appState.currentFile : 'No file selected';
-                fileName.textContent = hasFile ? `${baseName}${indicator}` : baseName;
-            }
-        }
-
-        sidebarPath.textContent = appState.resolvedRootPath || appState.originalPathArgument || 'Unknown';
-        downloadButton.disabled = !hasFile;
-        deleteButton.disabled = !hasFile;
-        editButton.disabled = !hasFile && !appState.isEditing;
-        previewButton.disabled = !hasFile;
-        saveButton.disabled = !hasFile;
-        cancelButton.disabled = false;
-        updateActionVisibility();
-        updateDocumentPanelTitle();
-    }
-
-    function updateActionVisibility() {
-        const hasFile = Boolean(appState.currentFile);
-        editButton.classList.toggle('hidden', !hasFile || (appState.isEditing && !appState.isPreviewing));
-        previewButton.classList.toggle('hidden', !appState.isEditing || appState.isPreviewing);
-        saveButton.classList.toggle('hidden', !appState.isEditing);
-        cancelButton.classList.toggle('hidden', !appState.isEditing);
-        downloadButton.classList.toggle('hidden', appState.isEditing);
-        deleteButton.classList.toggle('hidden', appState.isEditing);
-    }
-
-    function buildQuery(params) {
-        const query = new URLSearchParams();
-        if (appState.originalPathArgument) {
-            query.set('path', appState.originalPathArgument);
-        }
-        Object.entries(params).forEach(([key, value]) => {
-            if (value !== undefined && value !== null && value !== '') {
-                query.set(key, value);
-            }
-        });
-        const queryString = query.toString();
-        return queryString ? `?${queryString}` : '';
-    }
-
-    function updateLocation(file, { replace = false } = {}) {
-        const newQuery = buildQuery({ file });
-        const newUrl = `${window.location.pathname}${newQuery}`;
-        const currentUrl = `${window.location.pathname}${window.location.search}`;
-        const stateData = { file };
-
-        if (replace || newUrl === currentUrl) {
-            window.history.replaceState(stateData, '', newUrl);
-        } else {
-            window.history.pushState(stateData, '', newUrl);
-        }
-    }
-
-    function fileFromSearch(search) {
-        const params = new URLSearchParams(search || '');
-        const value = params.get('file');
-        if (typeof value !== 'string') {
-            return '';
-        }
-        const trimmed = value.trim();
-        return trimmed === '' ? '' : trimmed;
-    }
-
-    function handleTocClick(event) {
-        const link = event.target.closest('a.toc-link');
-        if (!link) {
-            return;
-        }
-
-        const hash = link.getAttribute('href');
-        if (typeof hash !== 'string' || !hash.startsWith('#')) {
-            return;
-        }
-
-        const targetId = hash.slice(1);
-        if (!targetId) {
-            return;
-        }
-
-        const targetElement = document.getElementById(targetId);
-        if (!targetElement) {
-            return;
-        }
-
-        event.preventDefault();
-
-        try {
-            targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        } catch (error) {
-            targetElement.scrollIntoView();
-        }
-
-        if (typeof history !== 'undefined' && typeof history.replaceState === 'function') {
-            const newUrl = `${window.location.pathname}${window.location.search}#${targetId}`;
-            history.replaceState(history.state, '', newUrl);
-        }
-    }
-
-    if (tocList) {
-        tocList.addEventListener('click', handleTocClick);
-    }
-
     function initialise() {
         const initialFallback = fallbackMarkdownFor(
             appState.resolvedRootPath || appState.originalPathArgument || 'the selected path'
         );
         viewerApi.render(initialState.content || initialFallback, { updateCurrent: true });
         navigationApi.renderFileList();
-        updateHeader();
+        sharedContext.updateHeader();
         if (initialState.error) {
             setStatus(initialState.error);
         }
@@ -408,18 +334,6 @@ function bootstrap() {
             void navigationApi.loadFile(currentPath, { replaceHistory: true });
         }
     }
-
-    window.addEventListener('popstate', () => {
-        const targetFile = fileFromSearch(window.location.search);
-        const currentPath = sharedContext.getCurrentFile();
-        if (targetFile) {
-            if (targetFile !== currentPath) {
-                void navigationApi.loadFile(targetFile, { skipHistory: true, replaceHistory: true });
-            }
-        } else {
-            resetViewToFallback({ skipHistory: true });
-        }
-    });
 
     initialise();
 

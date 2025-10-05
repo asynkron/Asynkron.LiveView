@@ -180,18 +180,6 @@ export function createSetConnectionStatus(offlineOverlay) {
     };
 }
 
-export function createApplyHasPendingChanges(appState, updateHeader) {
-    return function applyHasPendingChanges(value) {
-        const nextValue = Boolean(value);
-        if (nextValue === appState.hasPendingChanges) {
-            return;
-        }
-        appState.hasPendingChanges = nextValue;
-        document.body.classList.toggle('document-has-pending-changes', appState.hasPendingChanges);
-        updateHeader();
-    };
-}
-
 export function createResetViewToFallback({ sharedContext, viewerApi, editorApi }) {
     return function resetViewToFallback(options = {}) {
         const { skipHistory = false } = options || {};
