@@ -2,6 +2,7 @@ import './vendor_globals.js';
 import { initLayout } from './viewer/layout.js';
 import { initEditor } from './editor/editor.js';
 import { initNavigation } from './files/navigation.js';
+import { createHandleDirectoryUpdate, createHandleFileChanged } from './files/realtime_handlers.js';
 import { createAppContext } from './app/context.js';
 import { createRealtimeService } from './services/realtime.js';
 import { createTerminalService } from './services/terminal.js';
@@ -223,6 +224,21 @@ function bootstrap() {
     });
 
     const viewerApi = createViewerApi(markdownContext);
+    const viewerApi = {
+        render(contentValue, options = {}) {
+            renderMarkdown(markdownContext, contentValue, options);
+        },
+        captureHeadings(source) {
+            return captureHeadingLocations(markdownContext, source);
+        },
+        getHeadingLocation(slug) {
+            return getHeadingLocation(markdownContext, slug);
+        },
+        getMarkdownContext() {
+            return markdownContext;
+        },
+    };
+
     const navigationApi = initNavigation(sharedContext, viewerApi);
     const editorApi = initEditor(sharedContext, viewerApi, navigationApi);
     if (typeof navigationApi?.bindEditorApi === 'function') {
@@ -238,6 +254,217 @@ function bootstrap() {
         content.addEventListener('click', (event) => {
             editorApi.handleHeadingActionClick(event);
         });
+    }
+
+    const handleDirectoryUpdate = createHandleDirectoryUpdate({
+        navigationApi,
+        sharedContext,
+        resetViewToFallback,
+    });
+    const handleFileChanged = createHandleFileChanged({
+        navigationApi,
+        sharedContext,
+    });
+
+    const realtimeService = createRealtimeService({
+        getSubscriptionPath: () => appState.originalPathArgument,
+        onConnectionChange: (connected) => {
+            setConnectionStatus(connected);
+        },
+        onDirectoryUpdate: handleDirectoryUpdate,
+        onFileChanged: handleFileChanged,
+    });
+
+    function normaliseFileIndex({ filesValue, treeValue }) {
+        let flat = [];
+        let tree = [];
+
+        if (Array.isArray(filesValue)) {
+            flat = filesValue;
+        } else if (filesValue && Array.isArray(filesValue.files)) {
+            flat = filesValue.files;
+            if (Array.isArray(filesValue.tree)) {
+                tree = filesValue.tree;
+            }
+        }
+
+        if (!tree.length && Array.isArray(treeValue)) {
+            tree = treeValue;
+        }
+
+        if (tree.length && !flat.length) {
+            flat = flattenTree(tree);
+        }
+
+        if (!tree.length && flat.length) {
+            tree = buildTreeFromFlatList(flat);
+        }
+
+        return { files: flat, tree };
+    }
+
+    function flattenTree(nodes) {
+        const result = [];
+        if (!Array.isArray(nodes)) {
+            return result;
+        }
+
+        const stack = [...nodes];
+        while (stack.length) {
+            const node = stack.shift();
+            if (!node || typeof node !== 'object') {
+                continue;
+            }
+
+            if (node.type === 'file') {
+                result.push({
+                    name: node.name,
+                    relativePath: node.relativePath,
+                    size: node.size,
+                    updated: node.updated,
+                });
+                continue;
+            }
+
+            if (node.type === 'directory' && Array.isArray(node.children)) {
+                stack.unshift(...node.children);
+            }
+        }
+
+        return result;
+    }
+
+    function buildTreeFromFlatList(flatList) {
+        if (!Array.isArray(flatList) || !flatList.length) {
+            return [];
+        }
+
+        const root = [];
+        const directoryMap = new Map();
+        directoryMap.set('', root);
+
+        function ensureDirectory(path, name) {
+            if (directoryMap.has(path)) {
+                return directoryMap.get(path);
+            }
+
+            const parentPath = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+            const parentChildren = directoryMap.get(parentPath) || root;
+            const node = {
+                type: 'directory',
+                name,
+                relativePath: path,
+                children: [],
+            };
+            parentChildren.push(node);
+            directoryMap.set(path, node.children);
+            return node.children;
+        }
+
+        flatList.forEach((file) => {
+            if (!file || typeof file.relativePath !== 'string') {
+                return;
+            }
+
+            const segments = file.relativePath.split('/');
+            const fileName = segments.pop();
+            let currentPath = '';
+            segments.forEach((segment) => {
+                if (!segment) {
+                    return;
+                }
+                currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+                ensureDirectory(currentPath, segment);
+            });
+
+            const parentPath = segments.join('/');
+            const parentChildren = directoryMap.get(parentPath) || root;
+            parentChildren.push({
+                type: 'file',
+                name: fileName,
+                relativePath: file.relativePath,
+                size: file.size,
+                updated: file.updated,
+            });
+        });
+
+        sortTree(root);
+        return root;
+    }
+
+    function sortTree(nodes) {
+        if (!Array.isArray(nodes)) {
+            return;
+        }
+        nodes.sort((a, b) => {
+            if (a.type === b.type) {
+                return String(a.name || '').localeCompare(String(b.name || ''));
+            }
+            return a.type === 'directory' ? -1 : 1;
+        });
+        nodes.forEach((node) => {
+            if (node.type === 'directory') {
+                sortTree(node.children);
+            }
+        });
+    }
+
+    function getCssNumber(variableName, fallback) {
+        if (typeof variableName !== 'string' || !variableName) {
+            return typeof fallback === 'number' ? fallback : 0;
+        }
+
+        try {
+            const computed = getComputedStyle(rootElement).getPropertyValue(variableName);
+            const parsed = Number.parseFloat(computed);
+            if (Number.isFinite(parsed)) {
+                return parsed;
+            }
+        } catch (error) {
+            console.warn('Failed to read CSS variable', variableName, error);
+        }
+
+        return typeof fallback === 'number' ? fallback : 0;
+    }
+
+    function setStatus(message) {
+        // Status banner removed; keep function to avoid touching callers.
+        void message;
+    }
+
+    function setConnectionStatus(connected) {
+        offlineOverlay?.classList.toggle('visible', !connected);
+    }
+
+    function applyHasPendingChanges(value) {
+        const nextValue = Boolean(value);
+        if (nextValue === appState.hasPendingChanges) {
+            return;
+        }
+        appState.hasPendingChanges = nextValue;
+        document.body.classList.toggle('document-has-pending-changes', appState.hasPendingChanges);
+        updateHeader();
+    }
+
+    function resetViewToFallback(options = {}) {
+        const { skipHistory = false } = options || {};
+        if (typeof editorApi?.exitEditMode === 'function') {
+            editorApi.exitEditMode({ restoreContent: false });
+        }
+        sharedContext.setCurrentFile(null, { silent: true });
+        const fallback = sharedContext.fallbackMarkdownFor(
+            sharedContext.getResolvedRootPath() || sharedContext.getOriginalPathArgument() || 'the selected path'
+        );
+        viewerApi.render(fallback, { updateCurrent: true });
+        sharedContext.updateActiveFileHighlight();
+        sharedContext.updateHeader();
+        if (!skipHistory) {
+            sharedContext.updateLocation('', { replace: true });
+        }
+    }
+
+    function fallbackMarkdownFor(path) {
+        return `# No markdown files found\n\nThe directory \`${path}\` does not contain any markdown files yet.`;
     }
 
     function updateDocumentPanelTitle() {
@@ -333,45 +560,6 @@ function bootstrap() {
         }
         const trimmed = value.trim();
         return trimmed === '' ? '' : trimmed;
-    }
-
-    async function handleDirectoryUpdate(payload = {}) {
-        if (!payload || typeof payload !== 'object') {
-            return;
-        }
-
-        appState.resolvedRootPath = payload.path || appState.resolvedRootPath;
-        sharedContext.setResolvedRootPath(appState.resolvedRootPath);
-
-        const updatedIndex = sharedContext.normaliseFileIndex({
-            filesValue: payload.files,
-            treeValue: payload.tree,
-        });
-        sharedContext.setFiles(updatedIndex.files);
-        sharedContext.setFileTree(updatedIndex.tree);
-        navigationApi.renderFileList();
-
-        const filesList = sharedContext.getFiles();
-        const currentPath = sharedContext.getCurrentFile();
-        if (!filesList.find((entry) => entry.relativePath === currentPath)) {
-            const nextFile = filesList.length ? filesList[0].relativePath : null;
-            if (nextFile) {
-                await navigationApi.loadFile(nextFile, { replaceHistory: true });
-            } else {
-                resetViewToFallback();
-            }
-            return;
-        }
-
-        sharedContext.updateActiveFileHighlight();
-        sharedContext.updateHeader();
-    }
-
-    async function handleFileChanged(file) {
-        const currentPath = sharedContext.getCurrentFile();
-        if (file && file === currentPath) {
-            await navigationApi.loadFile(currentPath, { replaceHistory: true });
-        }
     }
 
     function handleTocClick(event) {
