@@ -5,6 +5,7 @@ import { initNavigation } from './files/navigation.js';
 import { createHandleDirectoryUpdate, createHandleFileChanged } from './files/realtime_handlers.js';
 import { createAppContext } from './app/context.js';
 import { createSharedContext } from './app/shared_context.js';
+import { createUnifiedApp } from './app/unified_app.js';
 import { createRealtimeService } from './services/realtime.js';
 import { createTerminalService } from './services/terminal.js';
 import {
@@ -22,9 +23,9 @@ import { createRouter } from './app/router.js';
 import { createTocController } from './app/toc_controller.js';
 
 // Client-side bootstrap logic for the unified markdown viewer UI.
-function bootstrap() {
+function composeUnifiedApp() {
     const context = createAppContext();
-    const { initialState, state: appState, elements, sets, terminalStorageKey } = context;
+    const { initialState, state: appState, elements, sets } = context;
     const {
         content,
         fileName,
@@ -72,15 +73,13 @@ function bootstrap() {
     context.initialFileFromLocation = null;
 
     const setConnectionStatusHandler = createSetConnectionStatus(offlineOverlay);
-    let resetViewToFallback = () => {};
-    let headerController = null;
-    let router = null;
-    let navigationApi = null;
-    let editorApi = null;
-    let tocController = null;
 
     const sharedContext = createSharedContext({
         appState,
+        controllers: {
+            header: null,
+        },
+        router: null,
         elements: {
             content,
             fileName,
@@ -105,6 +104,41 @@ function bootstrap() {
         applyHasPendingChanges(value) {
             if (headerController) {
                 headerController.applyHasPendingChanges(value);
+        getCurrentFile: () => appState.currentFile,
+        setCurrentFile(value, options = {}) {
+            const { silent = false } = options || {};
+            const nextValue = typeof value === 'string' && value.length ? value : value || null;
+            if (appState.currentFile === nextValue) {
+                return;
+            }
+            appState.currentFile = nextValue;
+            if (!silent) {
+                this.updateActiveFileHighlight();
+                this.updateHeader();
+                this.updateDocumentPanelTitle();
+            }
+        },
+        getCurrentContent: () => appState.currentContent,
+        setCurrentContent(value) {
+            appState.currentContent = typeof value === 'string' ? value : '';
+        },
+        hasPendingChanges: () => appState.hasPendingChanges,
+        setHasPendingChanges(value) {
+            const header = this.controllers?.header;
+            if (header) {
+                header.applyHasPendingChanges(value);
+            } else {
+                const nextValue = Boolean(value);
+                if (nextValue !== appState.hasPendingChanges) {
+                    appState.hasPendingChanges = nextValue;
+                    document?.body?.classList?.toggle('document-has-pending-changes', nextValue);
+                }
+            }
+        },
+        isEditing: () => appState.isEditing,
+        setEditing(value) {
+            const next = Boolean(value);
+            if (appState.isEditing === next) {
                 return;
             }
             const nextValue = Boolean(value);
@@ -117,26 +151,29 @@ function bootstrap() {
             setConnectionStatusHandler(connected);
         },
         updateHeader() {
-            headerController?.updateHeader();
+            const header = this.controllers?.header;
+            header?.updateHeader();
         },
         updateActionVisibility() {
-            headerController?.updateActionVisibility();
+            const header = this.controllers?.header;
+            header?.updateActionVisibility();
         },
         updateDocumentPanelTitle() {
-            headerController?.updateDocumentPanelTitle();
+            const header = this.controllers?.header;
+            header?.updateDocumentPanelTitle();
         },
         buildQuery(params) {
-            return router ? router.buildQuery(params) : '';
+            return this.router ? this.router.buildQuery(params) : '';
         },
         updateLocation(file, options = {}) {
-            if (!router) {
+            if (!this.router) {
                 return;
             }
             const { replace = false } = options;
             if (replace) {
-                router.replace(file);
+                this.router.replace(file);
             } else {
-                router.push(file);
+                this.router.push(file);
             }
         },
         fallbackMarkdownFor,
@@ -163,144 +200,40 @@ function bootstrap() {
     };
     sharedContext.markdownContext = markdownContext;
 
-    const layout = initLayout({
-        dockviewRoot,
-        appShell,
-        viewerSection,
-        tocSidebar,
-        fileSidebar,
-        terminalPanel,
-        tocSplitter,
-        fileSplitter,
-        rootElement,
-        panelToggleButtons,
-        getCurrentFile: () => sharedContext.getCurrentFile(),
-    });
-    const dockviewIsActive = layout.dockviewIsActive;
-    document.body.classList.toggle('dockview-active', dockviewIsActive);
-    layout.refreshPanelToggleStates();
-
-    headerController = createHeaderController({
-        elements: {
-            fileName,
-            sidebarPath,
-            downloadButton,
-            deleteButton,
-            editButton,
-            previewButton,
-            saveButton,
-            cancelButton,
-        },
-        layout,
-        appState,
-    });
-
-    tocController = createTocController({ tocList });
-    tocController.attach();
-
-    if (dockviewIsActive && dockviewRoot) {
-        dockviewRoot.addEventListener('pointerdown', layout.handlePointerDown);
-        window.addEventListener('pointerup', layout.handlePointerFinish);
-        window.addEventListener('pointercancel', layout.handlePointerFinish);
-    }
-
-    sharedContext.layout = layout;
-
-    router = createRouter({
-        appState,
-        getCurrentFile: () => sharedContext.getCurrentFile(),
-        onNavigate: (targetFile, options) => {
-            if (typeof navigationApi?.loadFile === 'function') {
-                void navigationApi.loadFile(targetFile, options);
-            }
-        },
-        onFallback: (options) => {
-            resetViewToFallback(options);
-        },
-    });
-
-    context.initialFileFromLocation = router.getCurrent();
-
-    const terminalService = createTerminalService({
-        terminalPanel,
-        terminalContainer,
-        terminalToggleButton,
-        terminalStatusText,
-        terminalResizeHandle,
-        storageKey: terminalStorageKey,
-        isDockviewActive: () => layout.dockviewIsActive,
-    });
-
-    const viewerApi = createViewerApi(markdownContext);
-
-    navigationApi = initNavigation(sharedContext, viewerApi);
-    editorApi = initEditor(sharedContext, viewerApi, navigationApi);
-    if (typeof navigationApi?.bindEditorApi === 'function') {
-        navigationApi.bindEditorApi(editorApi);
-    }
-    if (typeof navigationApi?.updateActiveFileHighlight === 'function') {
-        sharedContext.updateActiveFileHighlight = () => navigationApi.updateActiveFileHighlight();
-    }
-
-    resetViewToFallback = createResetViewToFallback({ sharedContext, viewerApi, editorApi });
-
-    if (content && typeof editorApi?.handleHeadingActionClick === 'function') {
-        content.addEventListener('click', (event) => {
-            editorApi.handleHeadingActionClick(event);
-        });
-    }
-
-    const handleDirectoryUpdate = createHandleDirectoryUpdate({
-        navigationApi,
+    const unifiedApp = createUnifiedApp({
+        context,
         sharedContext,
-        resetViewToFallback,
-    });
-    const handleFileChanged = createHandleFileChanged({
-        navigationApi,
-        sharedContext,
-    });
-
-    const realtimeService = createRealtimeService({
-        getSubscriptionPath: () => appState.originalPathArgument,
-        onConnectionChange: (connected) => {
-            setConnectionStatusHandler(connected);
+        layout: {
+            initLayout,
         },
-        onDirectoryUpdate: handleDirectoryUpdate,
-        onFileChanged: handleFileChanged,
+        controllers: {
+            createHeaderController,
+            createTocController,
+            createRouter,
+        },
+        services: {
+            createTerminalService,
+            createRealtimeService,
+            createViewerApi,
+            initNavigation,
+            initEditor,
+            createHandleDirectoryUpdate,
+            createHandleFileChanged,
+            createResetViewToFallback,
+            setConnectionStatusHandler,
+        },
     });
 
-    function initialise() {
-        const initialFallback = fallbackMarkdownFor(
-            appState.resolvedRootPath || appState.originalPathArgument || 'the selected path'
-        );
-        viewerApi.render(initialState.content || initialFallback, { updateCurrent: true });
-        navigationApi.renderFileList();
-        sharedContext.updateHeader();
-        if (initialState.error) {
-            setStatus(initialState.error);
-        }
-        terminalService.setupTerminalPanel();
-        realtimeService.connect();
-        const filesList = sharedContext.getFiles();
-        if (!sharedContext.getCurrentFile() && filesList.length) {
-            sharedContext.setCurrentFile(filesList[0].relativePath);
-        }
+    return unifiedApp;
+}
 
-        const currentPath = sharedContext.getCurrentFile();
-        if (!context.initialFileFromLocation && currentPath) {
-            void navigationApi.loadFile(currentPath, { replaceHistory: true });
-        }
-    }
-
-    initialise();
-
-    if (context.initialFileFromLocation) {
-        void navigationApi.loadFile(context.initialFileFromLocation, { replaceHistory: true });
-    }
+function startUnifiedApp() {
+    const app = composeUnifiedApp();
+    app.start();
 }
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+    document.addEventListener('DOMContentLoaded', startUnifiedApp, { once: true });
 } else {
-    bootstrap();
+    startUnifiedApp();
 }
