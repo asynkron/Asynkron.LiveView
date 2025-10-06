@@ -18,7 +18,6 @@ export function initEditor(context, viewerApi, navigationApi) {
         setHasPendingChanges = () => {},
         getCurrentFile = () => null,
         getCurrentContent = () => '',
-        setCurrentContent = () => {},
         isEditing = () => false,
         setEditing = () => {},
         isPreviewing = () => false,
