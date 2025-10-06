@@ -47,20 +47,7 @@ function composeUnifiedApp() {
         unsavedChangesDiscardButton,
         unsavedChangesCancelButton,
         tocList,
-        tocSidebar,
-        fileSidebar,
-        tocSplitter,
-        fileSplitter,
-        dockviewRoot,
-        appShell,
         rootElement,
-        viewerSection,
-        terminalPanel,
-        terminalContainer,
-        terminalToggleButton,
-        terminalStatusText,
-        terminalResizeHandle,
-        panelToggleButtons,
     } = elements;
     const { expandedDirectories, knownDirectories } = sets;
 
