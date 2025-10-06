@@ -1,6 +1,8 @@
 import { marked } from 'marked';
 import { baseUrl as markedBaseUrlFn } from 'marked-base-url';
-import hljs from 'highlight.js/lib/common';
+// Import the full Highlight.js bundle so that all shipped languages are registered
+// (covering mainstream and less common languages such as C#, COBOL, Fortran, etc.).
+import hljs from 'highlight.js';
 import mermaid from 'mermaid';
 import * as dockview from 'dockview';
 import React from 'react';
