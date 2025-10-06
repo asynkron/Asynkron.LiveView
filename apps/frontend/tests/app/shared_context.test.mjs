@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createSharedContext } from '../../../frontend/src/js/app/shared_context.js';
+import { createSharedContext } from '../../src/js/app/shared_context.js';
 
 // Helper to construct a shared context with overridable hooks for assertions.
 function createContext(overrides = {}) {
