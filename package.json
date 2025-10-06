@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "frontend",
-    "backend"
+    "apps/backend",
+    "apps/frontend"
   ],
   "scripts": {
     "lint": "npm run lint --workspaces",
@@ -13,9 +13,9 @@
     "format:fix": "npm run format:fix --workspaces --if-present",
     "test": "npm run test --workspaces",
     "test:ci": "npm run test --workspaces --if-present",
-    "backend:start": "npm run start --workspace backend",
-    "backend:dev": "npm run dev --workspace backend",
-    "frontend:build": "npm run build --workspace frontend"
+    "backend:start": "npm run start --workspace asynkron-liveview-backend",
+    "backend:dev": "npm run dev --workspace asynkron-liveview-backend",
+    "frontend:build": "npm run build --workspace asynkron-liveview-frontend"
   },
   "devDependencies": {
     "eslint": "^8.57.0",

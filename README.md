@@ -100,117 +100,77 @@ Example log file: `log{unixtimestamp}.md` - always use the current unix timestam
 
 ## Installation & Quick Start
 
-### 📦 **pip install** (Easiest)
+The project now ships as a Node.js monorepo with separate backend and frontend workspaces under
+`apps/`. You only need a recent Node.js runtime (v18 or newer is recommended) and npm to get
+started.
 
-Install directly from source using pip:
-
-```bash
-pip install git+https://github.com/asynkron/Asynkron.LiveView.git
-```
-
-Then run the viewer:
+### 1. Install dependencies
 
 ```bash
-liveview --path /path/to/markdown --port 8080
+npm install
 ```
 
-Or simply:
+### 2. Build the frontend bundle
 
 ```bash
-liveview
+npm run frontend:build
 ```
 
-This will start the server at `http://localhost:8080` watching the `markdown` directory by default.
+This compiles the static assets into `apps/backend/public/static/dist`, ready to be served by the
+Node backend.
 
-### ⚡ One-Command Setup with run.sh
+### 3. Start the backend
 
 ```bash
-./run.sh
+npm run backend:dev -- --path markdown --port 8080
 ```
 
-That's it! The script will automatically:
+The CLI flags mirror the original Python server: `--path` selects the markdown directory to watch
+and `--port` defines the listening port. Omit both to use the defaults.
 
-- ✅ Detect your Python installation
-- ✅ Set up a virtual environment
-- ✅ Install all dependencies
-- ✅ Create the markdown directory
-- ✅ Start the server at `http://localhost:8080`
+### 4. Open your browser
 
-### 🔧 **Manual Setup**
+Navigate to `http://localhost:8080/?path=/path/to/markdown` to view your log directory.
 
-If you prefer manual setup or development:
+## ✅ Project structure & tooling
 
-1. **Install Python Dependencies**:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Install Node Tooling and Build the Frontend Bundle** (only required after pulling new
-   changes or editing the UI):
-
-   ```bash
-   npm install
-   npm run frontend:build
-   ```
-
-   The compiled assets are written to `templates/static/dist` and automatically served by the
-   Python application. The `npm install` step configures the shared workspace used by both the
-   frontend and the experimental Node backend.
-
-3. **Run the Server**:
-
-   ```bash
-   python start.py
-   ```
-
-   To experiment with the Node backend instead of the Python implementation, run:
-
-   ```bash
-   npm run backend:dev -- --path markdown --port 8080
-   ```
-
-   The Node server mirrors the same CLI arguments and serves the bundled frontend assets.
-
-## ✅ Health Checks
-
-Before shipping changes or packaging a release, you can run the automated health check script to
-confirm the backend still imports cleanly and that the full pytest suite passes:
-
-```bash
-python scripts/ensure_app_works.py
+```
+apps/
+  backend/   # Express-based markdown server
+    public/  # HTML shell plus compiled frontend assets
+    src/     # Server implementation and helpers
+    tests/   # Vitest coverage for server modules
+  frontend/  # Browser UI written in vanilla JS modules
+    src/     # Client-side controllers and styles
+    tests/   # Node test suites for shared utilities
+markdown/    # Sample workspace watched by default
 ```
 
-Pass `--skip-tests` if you only want the lightweight syntax compilation step:
+Common scripts are exposed from the repository root:
 
-```bash
-python scripts/ensure_app_works.py --skip-tests
-```
+- `npm run backend:start` – launch the production server
+- `npm run backend:dev` – run the backend with development logging
+- `npm run frontend:build` – rebuild the static bundle
+- `npm test` – execute all workspace test suites
 
-These checks mirror what CI runs locally, helping catch regressions early.
+Each workspace also exposes linting and formatting commands that share the root ESLint/Prettier
+configuration. Run them with `npm run lint --workspaces` or target a specific package via
+`npm run lint --workspace <package-name>`.
 
-Or directly:
+### Add Markdown Files
+Drop `.md` files into the watched directory and the viewer will list them automatically. Append
+`&file=your-file.md` to the URL to open a specific file.
 
-```bash
-python server.py --path /path/to/markdown --port 8080
-```
+### Backend environment options
 
-4. **Open Your Browser**:
-   Navigate to `http://localhost:8080/?path=/path/to/markdown`
-
-5. **Add Markdown Files**:
-   Drop `.md` files into the watched directory and the viewer will list them automatically. Append `&file=your-file.md` to the URL to open a specific file.
-
-### 🛠️ **Script Options**
-
-The server honours a couple of environment variables when started via `run.sh`:
+The backend respects standard environment variables when you run the npm scripts:
 
 ```bash
 # Choose a different port
-PORT=3000 ./run.sh
+PORT=3000 npm run backend:start
 
 # Watch a different directory
-MARKDOWN_DIR=~/git/asynkron/DemoIf/docs ./run.sh
+MARKDOWN_DIR=~/git/asynkron/DemoIf/docs npm run backend:start
 ```
 
 ## Usage
@@ -243,5 +203,5 @@ MARKDOWN_DIR=~/git/asynkron/DemoIf/docs ./run.sh
 ### Running Tests
 
 ```bash
-pytest
+npm test
 ```

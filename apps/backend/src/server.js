@@ -23,8 +23,9 @@ export class UnifiedMarkdownServer {
     this.defaultRoot = path.resolve(markdownDir);
     this.port = port;
     this.fileManager = new FileManager();
-    this.templatePath = path.resolve(__dirname, '..', '..', 'templates', 'unified_index.html');
-    this.staticAssetsPath = path.resolve(__dirname, '..', '..', 'templates', 'static');
+    this.publicPath = path.resolve(__dirname, '..', 'public');
+    this.templatePath = path.join(this.publicPath, 'unified_index.html');
+    this.staticAssetsPath = path.join(this.publicPath, 'static');
 
     // Track websocket clients and file system watchers so we can broadcast updates.
     this.clients = new Map(); // ws -> subscribed root
