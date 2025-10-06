@@ -1,0 +1,21 @@
+{
+  "singleQuote": true,
+  "trailingComma": "all",
+  "printWidth": 140,
+  "overrides": [
+    {
+      "files": ["frontend/src/**/*.js", "frontend/tests/**/*.js"],
+      "options": {
+        "tabWidth": 4
+      }
+    },
+    {
+      "files": ["frontend/src/**/*.css"],
+      "options": {
+        "tabWidth": 4,
+        "singleQuote": false,
+        "printWidth": 200
+      }
+    }
+  ]
+}

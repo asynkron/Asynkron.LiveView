@@ -1,5 +1,5 @@
-import fs from "fs/promises";
-import path from "path";
+import fs from 'fs/promises';
+import path from 'path';
 
 /**
  * Lightweight helper that mirrors the Python FileManager behaviour.
@@ -8,7 +8,7 @@ import path from "path";
  */
 export class FileManager {
   constructor() {
-    this.allowedExtension = ".md";
+    this.allowedExtension = '.md';
   }
 
   /**
@@ -21,14 +21,14 @@ export class FileManager {
 
     const collect = (nodes) => {
       for (const node of nodes) {
-        if (node.type === "file") {
+        if (node.type === 'file') {
           files.push({
             name: node.name,
             relativePath: node.relativePath,
             size: node.size,
             updated: node.updated,
           });
-        } else if (node.type === "directory" && Array.isArray(node.children)) {
+        } else if (node.type === 'directory' && Array.isArray(node.children)) {
           collect(node.children);
         }
       }
@@ -45,17 +45,17 @@ export class FileManager {
 
   async readMarkdown(rootPath, relativePath) {
     const absolute = await this.#resolveRelative(rootPath, relativePath);
-    const data = await fs.readFile(absolute, "utf8");
+    const data = await fs.readFile(absolute, 'utf8');
     return data;
   }
 
   async writeMarkdown(rootPath, relativePath, content) {
     const absolute = await this.#resolveRelative(rootPath, relativePath);
     if (!absolute.endsWith(this.allowedExtension)) {
-      throw new Error("Only markdown files can be edited through this endpoint");
+      throw new Error('Only markdown files can be edited through this endpoint');
     }
     await fs.access(absolute);
-    await fs.writeFile(absolute, String(content), "utf8");
+    await fs.writeFile(absolute, String(content), 'utf8');
   }
 
   async deleteMarkdown(rootPath, relativePath) {
@@ -64,11 +64,9 @@ export class FileManager {
   }
 
   fallbackMarkdown(rootPath) {
-    return [
-      "# No markdown files found",
-      "",
-      `The directory \`${path.resolve(rootPath)}\` does not contain any markdown files yet.`,
-    ].join("\n");
+    return ['# No markdown files found', '', `The directory \`${path.resolve(rootPath)}\` does not contain any markdown files yet.`].join(
+      '\n',
+    );
   }
 
   async #buildDirectoryTree(root, current) {
@@ -81,7 +79,7 @@ export class FileManager {
     }
 
     const sorted = entries
-      .filter((entry) => !(entry.isDirectory() && entry.name.startsWith(".")))
+      .filter((entry) => !(entry.isDirectory() && entry.name.startsWith('.')))
       .sort((a, b) => {
         const aKey = `${a.isFile()}-${a.name.toLowerCase()}`;
         const bKey = `${b.isFile()}-${b.name.toLowerCase()}`;
@@ -90,7 +88,7 @@ export class FileManager {
 
     for (const entry of sorted) {
       const absolute = path.join(current, entry.name);
-      const relative = path.relative(root, absolute).split(path.sep).join("/");
+      const relative = path.relative(root, absolute).split(path.sep).join('/');
 
       if (entry.isDirectory()) {
         const children = await this.#buildDirectoryTree(root, absolute);
@@ -98,7 +96,7 @@ export class FileManager {
           continue;
         }
         nodes.push({
-          type: "directory",
+          type: 'directory',
           name: entry.name,
           relativePath: relative,
           children,
@@ -113,7 +111,7 @@ export class FileManager {
       try {
         const stat = await fs.stat(absolute);
         nodes.push({
-          type: "file",
+          type: 'file',
           name: entry.name,
           relativePath: relative,
           size: stat.size,
@@ -131,8 +129,8 @@ export class FileManager {
     const root = path.resolve(rootPath);
     const candidate = path.resolve(root, relativePath);
     const relative = path.relative(root, candidate);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
-      throw new Error("Attempted to access a file outside the root directory");
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error('Attempted to access a file outside the root directory');
     }
     return candidate;
   }

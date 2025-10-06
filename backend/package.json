@@ -8,7 +8,12 @@
   "scripts": {
     "start": "node ./src/index.js",
     "dev": "NODE_ENV=development node ./src/index.js",
-    "test": "vitest run tests/fileManager.test.js tests/server.test.js --reporter verbose"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint \"src/**/*.js\" \"tests/**/*.js\"",
+    "lint:fix": "npm run lint -- --fix",
+    "format": "prettier --check \"src/**/*.js\" \"tests/**/*.js\" README.md",
+    "format:fix": "prettier --write \"src/**/*.js\" \"tests/**/*.js\" README.md"
   },
   "dependencies": {
     "chokidar": "^3.5.3",
