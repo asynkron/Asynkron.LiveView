@@ -1,4 +1,4 @@
-# Asynkron.LiveView -  CLI AI Companion
+# Asynkron.LiveView - CLI AI Companion
 
 ![Live View](live.png)
 
@@ -8,15 +8,15 @@ A live view system for markdown files that automatically detects changes and str
 
 ## Why This Matters
 
-When working with CLI-based AI agents such as **Codex CLI** or **CoPilot CLI**, you often get streams of progress, design discussions, reasoning, and plans logged as markdown into a folder (for example `/logs`).  
+When working with CLI-based AI agents such as **Codex CLI** or **CoPilot CLI**, you often get streams of progress, design discussions, reasoning, and plans logged as markdown into a folder (for example `/logs`).
 
-**Asynkron.LiveView** connects to that folder and instantly visualizes the evolving state of the agent’s thoughts. This gives you a **real-time debugging and mental model helper**:  
+**Asynkron.LiveView** connects to that folder and instantly visualizes the evolving state of the agent’s thoughts. This gives you a **real-time debugging and mental model helper**:
 
-- See the agent’s reasoning unfold as structured markdown  
-- Follow design decisions as they develop  
-- Inspect progress logs in chronological order  
-- Visualize system diagrams and flows directly with **Mermaid.js**  
-- Keep context without digging through scattered files  
+- See the agent’s reasoning unfold as structured markdown
+- Follow design decisions as they develop
+- Inspect progress logs in chronological order
+- Visualize system diagrams and flows directly with **Mermaid.js**
+- Keep context without digging through scattered files
 
 Instead of reading static logs or scrolling endlessly in a terminal, you get a **clear, dynamic, and live view** of what your AI agent is doing.
 
@@ -46,13 +46,13 @@ Example log file: `log{unixtimestamp}.md` - always use the current unix timestam
  * ✅ Environment: local Testcontainers PostgreSQL (auto-provisioned per run).
  * ⚠️ Something broke a bit.
  * ❌ Something terrible happened
- 
+
  Infographics / Examples
  // Mermaid diagrams - use often, class, sequence and flow charts. make sure to escpae { ( node and other reserved chars in mermaid syntax
  // Relevant Code blocks
  // Test result table + summary
  // Log snippets.
- 
+
  Success stories, we completed some larger work
  ### 2025-09-27 17:20 CEST — VICTORY!
  * ⭐️ We did it! All tests passed!
@@ -68,12 +68,12 @@ Example log file: `log{unixtimestamp}.md` - always use the current unix timestam
 - include any relevant build errors
 2. running tests
    - report test success or failure
-   - include test summary and any relevant test failures 
+   - include test summary and any relevant test failures
 3. making any code changes
    - include code diffs or snippets of the changes made, whichever makes most sense
 4. completing any significant task
    - include a summary of what was accomplished
-   - highlight any important details or next steps 
+   - highlight any important details or next steps
 5. every 15 minutes if nothing else has happened
    - provide a brief status update
    - mention any ongoing tasks or upcoming milestones
@@ -129,8 +129,9 @@ This will start the server at `http://localhost:8080` watching the `markdown` di
 ```
 
 That's it! The script will automatically:
+
 - ✅ Detect your Python installation
-- ✅ Set up a virtual environment 
+- ✅ Set up a virtual environment
 - ✅ Install all dependencies
 - ✅ Create the markdown directory
 - ✅ Start the server at `http://localhost:8080`
@@ -140,23 +141,36 @@ That's it! The script will automatically:
 If you prefer manual setup or development:
 
 1. **Install Python Dependencies**:
+
    ```bash
    pip install -r requirements.txt
    ```
 
-2. **Build the Frontend Bundle** (only required after pulling new changes or editing the UI):
+2. **Install Node Tooling and Build the Frontend Bundle** (only required after pulling new
+   changes or editing the UI):
+
    ```bash
-   cd frontend
    npm install
-   npm run build
+   npm run frontend:build
    ```
+
    The compiled assets are written to `templates/static/dist` and automatically served by the
-   Python application.
+   Python application. The `npm install` step configures the shared workspace used by both the
+   frontend and the experimental Node backend.
 
 3. **Run the Server**:
+
    ```bash
    python start.py
    ```
+
+   To experiment with the Node backend instead of the Python implementation, run:
+
+   ```bash
+   npm run backend:dev -- --path markdown --port 8080
+   ```
+
+   The Node server mirrors the same CLI arguments and serves the bundled frontend assets.
 
 ## ✅ Health Checks
 
@@ -175,15 +189,16 @@ python scripts/ensure_app_works.py --skip-tests
 
 These checks mirror what CI runs locally, helping catch regressions early.
 
-   Or directly:
-   ```bash
-   python server.py --path /path/to/markdown --port 8080
-   ```
+Or directly:
+
+```bash
+python server.py --path /path/to/markdown --port 8080
+```
 
 4. **Open Your Browser**:
    Navigate to `http://localhost:8080/?path=/path/to/markdown`
 
-4. **Add Markdown Files**:
+5. **Add Markdown Files**:
    Drop `.md` files into the watched directory and the viewer will list them automatically. Append `&file=your-file.md` to the URL to open a specific file.
 
 ### 🛠️ **Script Options**
@@ -201,25 +216,27 @@ MARKDOWN_DIR=~/git/asynkron/DemoIf/docs ./run.sh
 ## Usage
 
 ### Linking to directories and files
+
 - `path` (required): Absolute or `~`-prefixed directory to watch.
 - `file` (optional): Markdown file relative to the chosen directory.
 - Example: `http://localhost:8080/?path=~/git/asynkron/DemoIf/docs&file=overview.md`
 
 ### Directory updates
+
 - The client keeps a persistent WebSocket connection to `/ws`.
 - Any new, modified, or removed markdown files trigger directory refreshes.
 - When the open file changes on disk it is reloaded automatically.
 
 ## API Endpoints
 
-| Endpoint | Description |
-| --- | --- |
-| `GET /` | Render the HTML application. Supports `path` and `file` query parameters. |
-| `GET /api/files` | Return the markdown file list for the requested directory. |
-| `GET /api/file` | Fetch a single file's content. Expects `path` and `file`. |
-| `GET /api/file/raw` | Download a file as plain text. |
-| `DELETE /api/file` | Delete a markdown file. |
-| `GET /ws` | WebSocket endpoint that streams directory updates. |
+| Endpoint            | Description                                                               |
+| ------------------- | ------------------------------------------------------------------------- |
+| `GET /`             | Render the HTML application. Supports `path` and `file` query parameters. |
+| `GET /api/files`    | Return the markdown file list for the requested directory.                |
+| `GET /api/file`     | Fetch a single file's content. Expects `path` and `file`.                 |
+| `GET /api/file/raw` | Download a file as plain text.                                            |
+| `DELETE /api/file`  | Delete a markdown file.                                                   |
+| `GET /ws`           | WebSocket endpoint that streams directory updates.                        |
 
 ## Development
 

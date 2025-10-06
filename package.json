@@ -1,0 +1,26 @@
+{
+  "name": "asynkron-liveview-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "lint": "npm run lint --workspaces",
+    "lint:fix": "npm run lint:fix --workspaces",
+    "format": "npm run format --workspaces --if-present",
+    "format:fix": "npm run format:fix --workspaces --if-present",
+    "test": "npm run test --workspaces",
+    "test:ci": "npm run test --workspaces --if-present",
+    "backend:start": "npm run start --workspace backend",
+    "backend:dev": "npm run dev --workspace backend",
+    "frontend:build": "npm run build --workspace frontend"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.8.0",
+    "prettier": "^3.3.3"
+  }
+}
