@@ -1,0 +1,19 @@
+{
+  "name": "asynkron-liveview-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Experimental Node.js port of the LiveView markdown backend.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node ./src/index.js",
+    "dev": "NODE_ENV=development node ./src/index.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.5.3",
+    "express": "^4.19.2",
+    "node-pty": "^1.0.0",
+    "ws": "^8.15.1",
+    "yargs": "^17.7.2"
+  }
+}
