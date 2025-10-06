@@ -81,7 +81,7 @@ export class FileManager {
     }
 
     const sorted = entries
-      .filter((entry) => !entry.name.startsWith("."))
+      .filter((entry) => !(entry.isDirectory() && entry.name.startsWith(".")))
       .sort((a, b) => {
         const aKey = `${a.isFile()}-${a.name.toLowerCase()}`;
         const bKey = `${b.isFile()}-${b.name.toLowerCase()}`;
@@ -130,7 +130,8 @@ export class FileManager {
   async #resolveRelative(rootPath, relativePath) {
     const root = path.resolve(rootPath);
     const candidate = path.resolve(root, relativePath);
-    if (!candidate.startsWith(root)) {
+    const relative = path.relative(root, candidate);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
       throw new Error("Attempted to access a file outside the root directory");
     }
     return candidate;

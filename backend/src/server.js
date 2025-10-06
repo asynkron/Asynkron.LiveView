@@ -28,7 +28,7 @@ export class UnifiedMarkdownServer {
 
     // Track websocket clients and file system watchers so we can broadcast updates.
     this.clients = new Map(); // ws -> subscribed root
-    this.watchers = new Map(); // root -> chokidar watcher
+    this.watchers = new Map(); // root -> { watcher, clients }
   }
 
   /**
@@ -88,6 +88,10 @@ export class UnifiedMarkdownServer {
 
     server.listen(this.port, () => {
       // eslint-disable-next-line no-console
+      const address = server.address();
+      if (typeof address === "object" && address?.port) {
+        this.port = address.port;
+      }
       console.log(`Node backend listening on port ${this.port}`);
     });
 
@@ -98,8 +102,8 @@ export class UnifiedMarkdownServer {
   }
 
   async stop() {
-    for (const watcher of this.watchers.values()) {
-      await watcher.close();
+    for (const record of this.watchers.values()) {
+      await record.watcher.close();
     }
     this.watchers.clear();
 
@@ -258,11 +262,27 @@ export class UnifiedMarkdownServer {
   }
 
   resolveRoot(pathArgument) {
-    if (pathArgument) {
-      const candidate = path.resolve(pathArgument);
-      return { root: candidate, display: pathArgument };
+    const display = pathArgument ?? this.defaultRoot;
+    let candidate = display;
+    if (typeof candidate === "string") {
+      try {
+        candidate = decodeURIComponent(candidate);
+      } catch (error) {
+        candidate = display;
+      }
+      if (candidate.startsWith("~")) {
+        const home = process.env.HOME || process.env.USERPROFILE;
+        if (home) {
+          if (candidate === "~") {
+            candidate = home;
+          } else if (candidate.startsWith("~/")) {
+            candidate = path.resolve(home, candidate.slice(2));
+          }
+        }
+      }
     }
-    return { root: this.defaultRoot, display: this.defaultRoot };
+
+    return { root: path.resolve(candidate), display };
   }
 
   async handleFilesystemEvent(root, kind, relativePath) {
@@ -293,8 +313,10 @@ export class UnifiedMarkdownServer {
   }
 
   async #ensureWatcher(root) {
-    if (this.watchers.has(root)) {
-      return;
+    const existing = this.watchers.get(root);
+    if (existing) {
+      existing.clients += 1;
+      return existing.watcher;
     }
 
     await fs.mkdir(root, { recursive: true });
@@ -317,8 +339,28 @@ export class UnifiedMarkdownServer {
     watcher.on("unlink", (filePath) => emitFile("deleted", filePath));
     watcher.on("addDir", () => this.handleFilesystemEvent(root, "created"));
     watcher.on("unlinkDir", () => this.handleFilesystemEvent(root, "deleted"));
+    watcher.on("error", (error) => {
+      // eslint-disable-next-line no-console
+      console.error(`Watcher error for ${root}:`, error);
+    });
 
-    this.watchers.set(root, watcher);
+    this.watchers.set(root, { watcher, clients: 1 });
+    return watcher;
+  }
+
+  async #releaseWatcher(root) {
+    const record = this.watchers.get(root);
+    if (!record) {
+      return;
+    }
+
+    record.clients -= 1;
+    if (record.clients > 0) {
+      return;
+    }
+
+    this.watchers.delete(root);
+    await record.watcher.close();
   }
 
   async #broadcast(root, payload) {
@@ -349,8 +391,15 @@ export class UnifiedMarkdownServer {
       }
 
       const { root } = this.resolveRoot(payload.path);
+      const previousRoot = this.clients.get(ws);
+      if (previousRoot && previousRoot !== root) {
+        await this.#releaseWatcher(previousRoot);
+        await this.#ensureWatcher(root);
+      } else if (!previousRoot) {
+        await this.#ensureWatcher(root);
+      }
+
       this.clients.set(ws, root);
-      await this.#ensureWatcher(root);
       const index = await this.fileManager.buildMarkdownIndex(root);
       ws.send(
         JSON.stringify({
@@ -362,8 +411,12 @@ export class UnifiedMarkdownServer {
       );
     });
 
-    ws.on("close", () => {
+    ws.on("close", async () => {
+      const root = this.clients.get(ws);
       this.clients.delete(ws);
+      if (root) {
+        await this.#releaseWatcher(root);
+      }
     });
   }
 

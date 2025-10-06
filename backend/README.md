@@ -18,6 +18,15 @@ The command above keeps the CLI identical to `python server.py`.  The
 `--path` argument selects the markdown directory while `--port` controls the
 listening address for both HTTP and websocket traffic.
 
+### Running tests
+
+```bash
+npm test
+```
+
+Vitest exercises the file manager helpers and the HTTP routes so changes to
+the Node backend surface regressions quickly.
+
 ## Feature parity notes
 
 - File discovery and metadata are handled by `FileManager`, closely matching
@@ -26,10 +35,13 @@ listening address for both HTTP and websocket traffic.
   shared templates from the repository root to render the initial HTML.
 - A `ws` powered broadcast channel emits directory updates that are triggered
   by a `chokidar` watcher, replicating the watchdog integration from the
-  original backend.
+  original backend.  Watchers are reference counted so they are released when
+  the last websocket subscriber disconnects.
 - Terminal support is implemented with `node-pty`.  The plumbing mirrors the
   behaviour of the asyncio variant but still needs robustness and security
   hardening before deployment.
+- Path resolution now handles encoded inputs and `~`-prefixed home directories,
+  keeping the CLI flags compatible with the Python implementation.
 
 This code is meant as a starting point for further iteration; expect gaps
 and TODO items as we expand the Node.js implementation.

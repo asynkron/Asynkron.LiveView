@@ -220,4 +220,5 @@ markdown/*
 
 # Node / frontend tooling
 /frontend/node_modules/
+/backend/node_modules/
 !/templates/static/dist/
