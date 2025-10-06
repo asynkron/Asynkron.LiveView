@@ -78,6 +78,8 @@ export function createSharedContext({
         : (_, fallbackValue) => fallbackValue;
     const invokeSetStatus = typeof setStatus === 'function' ? setStatus : () => {};
 
+    // Methods below intentionally reference `sharedContext` directly to avoid relying on
+    // dynamic `this` binding when helpers destructure these callbacks.
     const sharedContext = {
         controllers: {
             header: null,
@@ -112,9 +114,9 @@ export function createSharedContext({
             }
             appState.currentFile = nextValue;
             if (!silent) {
-                this.updateActiveFileHighlight();
-                this.updateHeader();
-                this.updateDocumentPanelTitle();
+                sharedContext.updateActiveFileHighlight();
+                sharedContext.updateHeader();
+                sharedContext.updateDocumentPanelTitle();
             }
         },
         getCurrentContent: () => appState.currentContent,
@@ -123,7 +125,7 @@ export function createSharedContext({
         },
         hasPendingChanges: () => appState.hasPendingChanges,
         setHasPendingChanges(value) {
-            const header = this.controllers?.header;
+            const header = sharedContext.controllers?.header;
             if (typeof header?.applyHasPendingChanges === 'function') {
                 header.applyHasPendingChanges(value);
                 return;
@@ -142,7 +144,7 @@ export function createSharedContext({
                 return;
             }
             appState.isEditing = next;
-            const header = this.controllers?.header;
+            const header = sharedContext.controllers?.header;
             if (typeof header?.updateActionVisibility === 'function') {
                 header.updateActionVisibility();
             } else {
@@ -156,7 +158,7 @@ export function createSharedContext({
                 return;
             }
             appState.isPreviewing = next;
-            const header = this.controllers?.header;
+            const header = sharedContext.controllers?.header;
             if (typeof header?.updateActionVisibility === 'function') {
                 header.updateActionVisibility();
             } else {
@@ -183,7 +185,7 @@ export function createSharedContext({
         setStatus: invokeSetStatus,
         setConnectionStatus: (connected) => invokeConnectionStatus(connected),
         updateHeader() {
-            const header = this.controllers?.header;
+            const header = sharedContext.controllers?.header;
             if (typeof header?.updateHeader === 'function') {
                 header.updateHeader();
                 return;
@@ -191,7 +193,7 @@ export function createSharedContext({
             invokeUpdateHeader();
         },
         updateActionVisibility() {
-            const header = this.controllers?.header;
+            const header = sharedContext.controllers?.header;
             if (typeof header?.updateActionVisibility === 'function') {
                 header.updateActionVisibility();
                 return;
@@ -200,7 +202,7 @@ export function createSharedContext({
         },
         updateActiveFileHighlight() {},
         updateDocumentPanelTitle() {
-            const header = this.controllers?.header;
+            const header = sharedContext.controllers?.header;
             if (typeof header?.updateDocumentPanelTitle === 'function') {
                 header.updateDocumentPanelTitle();
                 return;
@@ -208,18 +210,18 @@ export function createSharedContext({
             invokeUpdateDocumentTitle();
         },
         buildQuery(params) {
-            if (this.router && typeof this.router.buildQuery === 'function') {
-                return this.router.buildQuery(params);
+            if (sharedContext.router && typeof sharedContext.router.buildQuery === 'function') {
+                return sharedContext.router.buildQuery(params);
             }
             return invokeBuildQuery(params);
         },
         updateLocation(file, options = {}) {
-            if (this.router) {
+            if (sharedContext.router) {
                 const { replace = false } = options || {};
-                if (replace && typeof this.router.replace === 'function') {
-                    this.router.replace(file);
-                } else if (typeof this.router.push === 'function') {
-                    this.router.push(file);
+                if (replace && typeof sharedContext.router.replace === 'function') {
+                    sharedContext.router.replace(file);
+                } else if (typeof sharedContext.router.push === 'function') {
+                    sharedContext.router.push(file);
                 }
                 return;
             }
