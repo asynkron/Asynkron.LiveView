@@ -50,6 +50,9 @@ the repository root.
 - A `ws` powered broadcast channel emits directory updates triggered by a
   `chokidar` watcher. Watchers are reference counted so they are released when
   the last websocket subscriber disconnects.
-- Terminal support is implemented with `node-pty`, delivering behaviour on par
-  with the retired asyncio variant while remaining extensible for future
-  hardening.
+- Terminal support prefers `node-pty` when the optional dependency is
+  available. When it cannot be compiled (common on fresh Windows
+  environments) the server transparently falls back to a plain
+  `child_process` transport so `npm install` succeeds without native
+  toolchains. Installing `node-pty` manually restores the richer TTY
+  experience.

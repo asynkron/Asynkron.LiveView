@@ -6,9 +6,9 @@ import { fileURLToPath } from 'url';
 import chokidar from 'chokidar';
 import express from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
-import pty from 'node-pty';
 
 import { FileManager } from './fileManager.js';
+import { createTerminal } from './terminal.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -86,7 +86,9 @@ export class UnifiedMarkdownServer {
     });
 
     directorySocket.on('connection', (ws) => this.#handleDirectorySocket(ws));
-    terminalSocket.on('connection', (ws) => this.#handleTerminalSocket(ws));
+    terminalSocket.on('connection', (ws) => {
+      this.#handleTerminalSocket(ws);
+    });
 
     server.listen(this.port, () => {
       // eslint-disable-next-line no-console
@@ -454,16 +456,15 @@ export class UnifiedMarkdownServer {
     });
   }
 
-  #handleTerminalSocket(ws) {
-    // node-pty gives us a stable pseudo-terminal similar to the Python pty.fork logic.
-    const shell = process.env.SHELL || 'bash';
-    const term = pty.spawn(shell, [], {
-      name: 'xterm-color',
-      cols: 80,
-      rows: 30,
-      cwd: process.cwd(),
-      env: process.env,
-    });
+  async #handleTerminalSocket(ws) {
+    let term;
+    try {
+      term = await createTerminal({ cols: 80, rows: 30, cwd: process.cwd(), env: process.env });
+    } catch (error) {
+      ws.send(JSON.stringify({ type: 'state', message: `Failed to start shell: ${error.message}` }));
+      ws.close(1011, 'Terminal unavailable');
+      return;
+    }
 
     term.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -471,7 +472,24 @@ export class UnifiedMarkdownServer {
       }
     });
 
-    ws.send(JSON.stringify({ type: 'state', message: 'Shell ready' }));
+    term.onExit(({ code, signal }) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        const details =
+          typeof code === 'number' || signal
+            ? ` (code: ${code ?? 'null'}${signal ? `, signal: ${signal}` : ''})`
+            : '';
+        ws.send(
+          JSON.stringify({
+            type: 'state',
+            message: `Shell exited${details}`,
+          }),
+        );
+        ws.close(1000, 'Shell exited');
+      }
+    });
+
+    const backendLabel = term.backend === 'node-pty' ? 'pty' : 'stdio';
+    ws.send(JSON.stringify({ type: 'state', message: `Shell ready (${backendLabel})` }));
 
     ws.on('message', (raw) => {
       let payload;
