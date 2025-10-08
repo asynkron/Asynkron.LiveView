@@ -18,12 +18,14 @@
   "dependencies": {
     "chokidar": "^3.5.3",
     "express": "^4.19.2",
-    "node-pty": "^1.0.0",
     "ws": "^8.15.1",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
     "supertest": "^6.3.4",
     "vitest": "^1.6.0"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.0.0"
   }
 }
