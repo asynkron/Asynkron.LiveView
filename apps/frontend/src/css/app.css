@@ -32,6 +32,7 @@ path {
     box-sizing: border-box;
 }
 
+
 .sr-only {
     position: absolute;
     width: 1px;
@@ -356,17 +357,26 @@ a {
     background: var(--color-accent-blue-focus);
 }
 
-.content-area code {
-    background: var(--color-bg-body);
-    border-radius: 6px;
+.content-area pre code {
+    background: transparent;
+    border-radius: 0;
     padding: var(--space-2) var(--space-5);
 }
 
+.content-area code {
+    border-radius: 6px;
+    padding: var(--space-2) var(--space-5);
+    background: #762f84;
+    color: #eccbef;
+}
+
+
 .content-area pre {
-    background: var(--color-bg-body);
-    border-radius: 8px;
+    background: #2a262b;
+    /* border-radius: 8px; */
     padding: var(--space-16);
     overflow-x: auto;
+    border-left: 8px solid #772f84;
 }
 
 .diagram-loading {
