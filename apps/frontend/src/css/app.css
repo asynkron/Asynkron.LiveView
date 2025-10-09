@@ -366,8 +366,8 @@ a {
 .content-area code {
     border-radius: 6px;
     padding: var(--space-2) var(--space-5);
-    background: #762f84;
-    color: #eccbef;
+    background: #3a343b;
+    color: #e0dce1;
 }
 
 
@@ -376,7 +376,7 @@ a {
     /* border-radius: 8px; */
     padding: var(--space-16);
     overflow-x: auto;
-    border-left: 8px solid #772f84;
+    border-left: 8px solid #ff7b71;
 }
 
 .diagram-loading {
