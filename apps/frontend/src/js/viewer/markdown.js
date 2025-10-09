@@ -55,6 +55,8 @@ function getMarkdownState(context) {
             relativeLinkBaseWalker: null,
             relativeLinkExtensionRegistered: false,
             headingLocationMap: new Map(),
+            headingLocationList: [],
+            lastCapturedMarkdown: '',
             documentSlugCounts: new Map(),
             activeHeadingCollection: null,
         };
@@ -939,47 +941,123 @@ function updateTableOfContents(context, state, headings) {
 export function captureHeadingLocations(context, markdownSource) {
     const state = getMarkdownState(context);
     state.headingLocationMap = new Map();
+    state.headingLocationList = [];
+    state.lastCapturedMarkdown = typeof markdownSource === 'string' ? markdownSource : '';
 
     if (typeof markdownSource !== 'string' || !markdownSource) {
         return;
     }
 
     const slugCounts = new Map();
-    const lines = markdownSource.split(/\r?\n/);
+    const { length } = markdownSource;
+    let position = 0;
+    let lineIndex = 0;
 
-    lines.forEach((line, index) => {
+    while (position <= length) {
+        const newlineIndex = markdownSource.indexOf('\n', position);
+        const lineEnd = newlineIndex === -1 ? length : newlineIndex;
+        let line = markdownSource.slice(position, lineEnd);
+        if (line.endsWith('\r')) {
+            line = line.slice(0, -1);
+        }
+
+        const currentLineIndex = lineIndex;
         const match = line.match(/^(#{1,6})\s+(.*)$/);
-        if (!match) {
-            return;
+        if (match) {
+            const rawHeading = match[2].trim();
+            let baseSlug = computeBaseSlug(rawHeading);
+            if (!baseSlug) {
+                baseSlug = 'heading';
+            }
+
+            let slug = baseSlug;
+            if (slugCounts.has(baseSlug)) {
+                const count = slugCounts.get(baseSlug) + 1;
+                slugCounts.set(baseSlug, count);
+                slug = `${baseSlug}-${count}`;
+            } else {
+                slugCounts.set(baseSlug, 0);
+            }
+
+            const level = match[1].length;
+            const startOffset = position;
+            state.headingLocationMap.set(slug, {
+                line: currentLineIndex,
+                column: 0,
+                level,
+                text: rawHeading,
+                startOffset,
+            });
+            state.headingLocationList.push({
+                slug,
+                level,
+                line: currentLineIndex,
+                startOffset,
+                text: rawHeading,
+            });
         }
 
-        const rawHeading = match[2].trim();
-        let baseSlug = computeBaseSlug(rawHeading);
-        if (!baseSlug) {
-            baseSlug = 'heading';
+        if (newlineIndex === -1) {
+            break;
         }
 
-        let slug = baseSlug;
-        if (slugCounts.has(baseSlug)) {
-            const count = slugCounts.get(baseSlug) + 1;
-            slugCounts.set(baseSlug, count);
-            slug = `${baseSlug}-${count}`;
-        } else {
-            slugCounts.set(baseSlug, 0);
+        position = newlineIndex + 1;
+        lineIndex += 1;
+    }
+
+    const totalLength = markdownSource.length;
+    state.headingLocationList.forEach((entry, index) => {
+        let endOffset = totalLength;
+        for (let nextIndex = index + 1; nextIndex < state.headingLocationList.length; nextIndex += 1) {
+            const nextEntry = state.headingLocationList[nextIndex];
+            if (nextEntry.level <= entry.level) {
+                endOffset = nextEntry.startOffset;
+                break;
+            }
         }
 
-        state.headingLocationMap.set(slug, {
-            line: index,
-            column: 0,
-            level: match[1].length,
-            text: rawHeading,
-        });
+        entry.endOffset = endOffset;
+        const location = state.headingLocationMap.get(entry.slug);
+        if (location) {
+            location.endOffset = endOffset;
+        }
     });
 }
 
 export function getHeadingLocation(context, slug) {
     const state = getMarkdownState(context);
     return state.headingLocationMap.get(slug);
+}
+
+export function getHeadingSection(context, slug) {
+    if (typeof slug !== 'string' || !slug) {
+        return null;
+    }
+
+    const state = getMarkdownState(context);
+    const location = state.headingLocationMap.get(slug);
+    if (!location) {
+        return null;
+    }
+
+    const source = typeof state.lastCapturedMarkdown === 'string' ? state.lastCapturedMarkdown : '';
+    if (!source) {
+        return null;
+    }
+
+    const startOffset = Number.isInteger(location.startOffset) ? location.startOffset : 0;
+    const endOffsetCandidate = Number.isInteger(location.endOffset) ? location.endOffset : source.length;
+    const safeStart = Math.max(0, Math.min(source.length, startOffset));
+    const safeEnd = Math.max(safeStart, Math.min(source.length, endOffsetCandidate));
+
+    return {
+        slug,
+        level: location.level,
+        text: location.text,
+        startOffset: safeStart,
+        endOffset: safeEnd,
+        content: source.slice(safeStart, safeEnd),
+    };
 }
 
 export function renderMarkdown(context, markdownText, options = {}) {
