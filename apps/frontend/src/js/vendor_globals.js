@@ -1,8 +1,11 @@
 import { marked } from 'marked';
 import { baseUrl as markedBaseUrlFn } from 'marked-base-url';
-// Import the full Highlight.js bundle so that all shipped languages are registered
-// (covering mainstream and less common languages such as C#, COBOL, Fortran, etc.).
+// Import the core Highlight.js bundle and augment it with a COBOL-specific language pack.
 import hljs from 'highlight.js';
+import cobol from 'highlightjs-cobol';
+
+// Register COBOL so code fences for legacy systems are highlighted alongside the default set.
+hljs.registerLanguage('cobol', cobol);
 import mermaid from 'mermaid';
 import * as dockview from 'dockview';
 import React from 'react';
