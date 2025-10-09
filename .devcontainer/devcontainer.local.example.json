@@ -1,0 +1,8 @@
+{
+  "mounts": [
+    "source=/absolute/path/to/logs,target=/workspace/markdown/external,type=bind,consistency=cached"
+  ],
+  "remoteEnv": {
+    "MARKDOWN_DIR": "/workspace/markdown/external"
+  }
+}
