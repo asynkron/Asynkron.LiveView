@@ -85,8 +85,16 @@ export function initEditor(context, viewerApi, navigationApi) {
         }
 
         const before = editorState.sectionEdit?.beforeContent ?? '';
+        const middle = editorState.draftContent ?? '';
         const after = editorState.sectionEdit?.afterContent ?? '';
-        return `${before}${editorState.draftContent}${after}`;
+
+        // Ensure we keep at least one blank between the edited section and the
+        // remainder of the document so following headings do not join the
+        // section content when it is stitched back together.
+        const needsSeparator =
+            after && !middle.endsWith('\n') && !after.startsWith('\n');
+
+        return `${before}${middle}${needsSeparator ? '\n' : ''}${after}`;
     }
 
     function getEditingStatusMessage() {
