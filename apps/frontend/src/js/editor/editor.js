@@ -32,7 +32,81 @@ export function initEditor(context, viewerApi, navigationApi) {
         suppressChangeEvents: false,
         headingHighlightLine: null,
         headingHighlightTimeout: null,
+        sectionEdit: null,
     };
+
+    function isSectionEditing() {
+        return Boolean(editorState.sectionEdit);
+    }
+
+    function clearSectionEditState() {
+        editorState.sectionEdit = null;
+    }
+
+    function getSectionDisplayTitle(sectionState = editorState.sectionEdit) {
+        if (!sectionState) {
+            return '';
+        }
+        return sectionState.title || sectionState.slug || '';
+    }
+
+    function getSectionDisplayLabel(sectionState = editorState.sectionEdit) {
+        const title = getSectionDisplayTitle(sectionState);
+        return title || 'Untitled section';
+    }
+
+    // Normalise section editing metadata when a heading edit is requested.
+    function setSectionEditState(section) {
+        if (!section) {
+            clearSectionEditState();
+            return null;
+        }
+
+        const beforeContent = typeof section.before === 'string' ? section.before : '';
+        const afterContent = typeof section.after === 'string' ? section.after : '';
+
+        editorState.sectionEdit = {
+            slug: typeof section.slug === 'string' ? section.slug : null,
+            title: typeof section.title === 'string' ? section.title : '',
+            level: Number.isInteger(section.level) ? section.level : null,
+            startOffset: Number.isInteger(section.startOffset) ? section.startOffset : null,
+            endOffset: Number.isInteger(section.endOffset) ? section.endOffset : null,
+            beforeContent,
+            afterContent,
+        };
+
+        return editorState.sectionEdit;
+    }
+
+    // Rebuild the original markdown using the active section draft.
+    function getFullDraftContent() {
+        if (!isSectionEditing()) {
+            return editorState.draftContent;
+        }
+
+        const before = editorState.sectionEdit?.beforeContent ?? '';
+        const after = editorState.sectionEdit?.afterContent ?? '';
+        return `${before}${editorState.draftContent}${after}`;
+    }
+
+    function getEditingStatusMessage() {
+        if (!isSectionEditing()) {
+            return 'Editing markdown…';
+        }
+        return `Editing section “${getSectionDisplayLabel()}”…`;
+    }
+
+    function getPreviewStatusMessage() {
+        return isSectionEditing() ? 'Previewing section changes.' : 'Previewing changes.';
+    }
+
+    function getCancelStatusMessage() {
+        return isSectionEditing() ? 'Section edits cancelled.' : 'Edits cancelled.';
+    }
+
+    function getSaveSuccessMessage() {
+        return isSectionEditing() ? 'Section changes saved.' : 'Changes saved.';
+    }
 
     function ensureEditorInstance() {
         if (editorState.instance) {
@@ -60,7 +134,7 @@ export function initEditor(context, viewerApi, navigationApi) {
             editorState.suppressChangeEvents = false;
         }
 
-        setHasPendingChanges(editorState.draftContent !== getCurrentContent());
+        setHasPendingChanges(getFullDraftContent() !== getCurrentContent());
         return editorState.instance;
     }
 
@@ -69,10 +143,10 @@ export function initEditor(context, viewerApi, navigationApi) {
             return;
         }
         editorState.draftContent = instance.getValue();
-        setHasPendingChanges(editorState.draftContent !== getCurrentContent());
+        setHasPendingChanges(getFullDraftContent() !== getCurrentContent());
     }
 
-    function enterEditMode() {
+    function enterEditMode(options = {}) {
         if (!getCurrentFile()) {
             return;
         }
@@ -82,12 +156,22 @@ export function initEditor(context, viewerApi, navigationApi) {
             return;
         }
 
+        const sectionDetails = options?.section;
+        let activeSection = null;
+        if (sectionDetails && typeof sectionDetails.content === 'string') {
+            activeSection = setSectionEditState(sectionDetails);
+            editorState.draftContent = sectionDetails.content;
+        } else {
+            clearSectionEditState();
+            editorState.draftContent = getCurrentContent();
+        }
+
         setEditing(true);
         setPreviewing(false);
-        editorState.draftContent = getCurrentContent();
         const editor = ensureEditorInstance();
         if (!editor) {
             setEditing(false);
+            clearSectionEditState();
             setStatus('Editor resources are still loading. Please try again in a moment.');
             updateActionVisibility();
             return;
@@ -96,19 +180,28 @@ export function initEditor(context, viewerApi, navigationApi) {
         editorState.suppressChangeEvents = true;
         try {
             editor.setValue(editorState.draftContent);
+            if (activeSection) {
+                editor.setCursor({ line: 0, ch: 0 });
+            }
         } finally {
             editorState.suppressChangeEvents = false;
         }
-        setHasPendingChanges(false);
+        setHasPendingChanges(getFullDraftContent() !== getCurrentContent());
         window.setTimeout(() => {
             editor.refresh();
             editor.focus();
         }, 0);
 
+        if (activeSection) {
+            highlightEditorLine(0);
+        } else {
+            clearEditorHeadingHighlight();
+        }
+
         content?.classList.add('hidden');
         editorContainer?.classList.add('visible');
         updateHeader();
-        setStatus('Editing markdown…');
+        setStatus(getEditingStatusMessage());
     }
 
     function enterPreviewMode() {
@@ -119,13 +212,14 @@ export function initEditor(context, viewerApi, navigationApi) {
         if (editor) {
             editorState.draftContent = editor.getValue();
         }
-        setHasPendingChanges(editorState.draftContent !== getCurrentContent());
+        const fullDraft = getFullDraftContent();
+        setHasPendingChanges(fullDraft !== getCurrentContent());
         setPreviewing(true);
-        viewerApi?.render(editorState.draftContent, { updateCurrent: false });
+        viewerApi?.render(fullDraft, { updateCurrent: false });
         editorContainer?.classList.remove('visible');
         content?.classList.remove('hidden');
         updateHeader();
-        setStatus('Previewing changes.');
+        setStatus(getPreviewStatusMessage());
     }
 
     function returnToCodeMode() {
@@ -144,7 +238,7 @@ export function initEditor(context, viewerApi, navigationApi) {
             }, 0);
         }
         updateHeader();
-        setStatus('Editing markdown…');
+        setStatus(getEditingStatusMessage());
     }
 
     function clearEditorHeadingHighlight() {
@@ -219,6 +313,7 @@ export function initEditor(context, viewerApi, navigationApi) {
         setEditing(false);
         setPreviewing(false);
         editorState.draftContent = '';
+        clearSectionEditState();
         clearEditorHeadingHighlight();
         content?.classList.remove('hidden');
         editorContainer?.classList.remove('visible');
@@ -244,7 +339,7 @@ export function initEditor(context, viewerApi, navigationApi) {
             return;
         }
         exitEditMode();
-        setStatus('Edits cancelled.');
+        setStatus(getCancelStatusMessage());
     }
 
     async function saveCurrentFile() {
@@ -257,7 +352,7 @@ export function initEditor(context, viewerApi, navigationApi) {
             editorState.draftContent = editor.getValue();
         }
 
-        const contentToSave = editorState.draftContent;
+        const contentToSave = getFullDraftContent();
         setStatus('Saving changes…');
 
         try {
@@ -268,7 +363,7 @@ export function initEditor(context, viewerApi, navigationApi) {
             });
             context.setCurrentContent(contentToSave);
             exitEditMode();
-            setStatus('Changes saved.');
+            setStatus(getSaveSuccessMessage());
             context.updateActiveFileHighlight();
             return true;
         } catch (error) {
@@ -322,6 +417,60 @@ export function initEditor(context, viewerApi, navigationApi) {
             return;
         }
 
+        const baseContent = isEditing() ? getFullDraftContent() : getCurrentContent();
+        const sourceText = typeof baseContent === 'string' ? baseContent : '';
+
+        let sectionDetails = viewerApi?.getHeadingSection(slug);
+        if (!sectionDetails && sourceText) {
+            viewerApi?.captureHeadings(sourceText);
+            sectionDetails = viewerApi?.getHeadingSection(slug);
+        }
+
+        if (sectionDetails && typeof sectionDetails.startOffset === 'number' && typeof sectionDetails.endOffset === 'number') {
+            const safeStart = Math.max(0, Math.min(sourceText.length, sectionDetails.startOffset));
+            const safeEnd = Math.max(safeStart, Math.min(sourceText.length, sectionDetails.endOffset));
+            const beforeContent = sourceText.slice(0, safeStart);
+            const afterContent = sourceText.slice(safeEnd);
+            const sectionContent = sourceText.slice(safeStart, safeEnd);
+
+            const openSectionEditor = () => {
+                enterEditMode({
+                    section: {
+                        slug,
+                        title: sectionDetails.text,
+                        level: sectionDetails.level,
+                        startOffset: safeStart,
+                        endOffset: safeEnd,
+                        before: beforeContent,
+                        after: afterContent,
+                        content: sectionContent,
+                    },
+                });
+                window.setTimeout(() => {
+                    const editor = ensureEditorInstance();
+                    if (!editor) {
+                        return;
+                    }
+                    editor.focus();
+                    editor.setCursor({ line: 0, ch: 0 });
+                }, 120);
+            };
+
+            if (!isEditing()) {
+                openSectionEditor();
+                return;
+            }
+
+            if (isPreviewing()) {
+                returnToCodeMode();
+                window.setTimeout(openSectionEditor, 120);
+                return;
+            }
+
+            openSectionEditor();
+            return;
+        }
+
         const focusEditorOnHeading = () => {
             const editor = ensureEditorInstance();
             if (!editor) {
@@ -330,9 +479,8 @@ export function initEditor(context, viewerApi, navigationApi) {
             }
 
             let location = viewerApi?.getHeadingLocation(slug);
-            if (!location) {
-                const source = typeof editor.getValue === 'function' ? editor.getValue() : getCurrentContent();
-                viewerApi?.captureHeadings(source);
+            if (!location && sourceText) {
+                viewerApi?.captureHeadings(sourceText);
                 location = viewerApi?.getHeadingLocation(slug);
             }
 

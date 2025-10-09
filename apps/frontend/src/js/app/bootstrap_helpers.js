@@ -1,4 +1,4 @@
-import { renderMarkdown, captureHeadingLocations, getHeadingLocation } from '../viewer/markdown.js';
+import { renderMarkdown, captureHeadingLocations, getHeadingLocation, getHeadingSection } from '../viewer/markdown.js';
 
 export function createViewerApi(markdownContext) {
     return {
@@ -10,6 +10,9 @@ export function createViewerApi(markdownContext) {
         },
         getHeadingLocation(slug) {
             return getHeadingLocation(markdownContext, slug);
+        },
+        getHeadingSection(slug) {
+            return getHeadingSection(markdownContext, slug);
         },
         getMarkdownContext() {
             return markdownContext;
