@@ -26,6 +26,30 @@ export function initNavigation(context, viewerApi) {
         editorApi: null,
     };
 
+    function resetDocumentScrollPosition() {
+        const markdownContext = typeof viewerApi?.getMarkdownContext === 'function'
+            ? viewerApi.getMarkdownContext()
+            : null;
+        const scrollContainer = markdownContext?.content
+            || context?.elements?.content
+            || (typeof document !== 'undefined' ? document.getElementById('content') : null);
+
+        if (!scrollContainer) {
+            return;
+        }
+
+        // Ensure the visible document pane starts at the top for each loaded file.
+        if (typeof scrollContainer.scrollTo === 'function') {
+            scrollContainer.scrollTo(0, 0);
+            return;
+        }
+
+        scrollContainer.scrollTop = 0;
+        if (typeof scrollContainer.scrollLeft === 'number') {
+            scrollContainer.scrollLeft = 0;
+        }
+    }
+
     function bindEditorApi(editorApi) {
         state.editorApi = editorApi || null;
     }
@@ -263,6 +287,7 @@ export function initNavigation(context, viewerApi) {
             const nextFile = data?.file || file;
             context.setCurrentFile(nextFile, { silent: true });
             viewerApi?.render(data?.content || '', { updateCurrent: true });
+            resetDocumentScrollPosition();
             context.setHasPendingChanges(false);
             context.updateActiveFileHighlight();
             context.updateHeader();
