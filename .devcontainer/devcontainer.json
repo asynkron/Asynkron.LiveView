@@ -1,7 +1,7 @@
 {
   "name": "Asynkron LiveView",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
-  "postCreateCommand": "npm install",
+  "postCreateCommand": "npm install --omit=optional",
   "forwardPorts": [8080],
   "portsAttributes": {
     "8080": {
