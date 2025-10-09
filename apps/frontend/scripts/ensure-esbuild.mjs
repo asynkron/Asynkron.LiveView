@@ -29,7 +29,7 @@ function esbuildNeedsRebuild() {
   }
 
   try {
-    execFileSync(esbuildScript, ['--version'], { stdio: 'ignore' });
+    execFileSync(esbuildScript, ['--version']);
     return false;
   } catch (error) {
     const message = `${error?.stderr || error?.stdout || error?.message || ''}`.toLowerCase();
@@ -38,6 +38,16 @@ function esbuildNeedsRebuild() {
     }
 
     if (error?.code === 'ENOENT') {
+      return true;
+    }
+
+    // Some environments report incompatible binaries as a generic non-zero exit
+    if (typeof error?.status === 'number' && error.status !== 0) {
+      if (message.includes('syntax error')) {
+        return true;
+      }
+
+      // Fallback: treat unexpected exit codes as incompatibility so we attempt a rebuild.
       return true;
     }
 
