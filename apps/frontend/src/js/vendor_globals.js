@@ -1,11 +1,15 @@
 import { marked } from 'marked';
 import { baseUrl as markedBaseUrlFn } from 'marked-base-url';
-// Import the core Highlight.js bundle and augment it with a COBOL-specific language pack.
+// Import the core Highlight.js bundle and augment it with language packs for
+// mainframe-friendly runtimes that Markdown snippets often reference.
 import hljs from 'highlight.js';
 import cobol from 'highlightjs-cobol';
+import rpg from './languages/highlightjs-rpg.js';
 
-// Register COBOL so code fences for legacy systems are highlighted alongside the default set.
+// Register COBOL and RPG so code fences for legacy systems are highlighted
+// alongside the default set.
 hljs.registerLanguage('cobol', cobol);
+hljs.registerLanguage('rpg', rpg);
 import mermaid from 'mermaid';
 import * as dockview from 'dockview';
 import React from 'react';
