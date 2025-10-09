@@ -370,6 +370,14 @@ a {
     color: #e0dce1;
 }
 
+blockquote {
+    background-color: #1a304b;
+    margin: 0;
+    padding: 8px;
+    padding-left: 48px;
+    border-left: 8px solid #5aa5ff;
+}
+
 
 .content-area pre {
     background: #2a262b;
