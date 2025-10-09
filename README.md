@@ -173,6 +173,19 @@ PORT=3000 npm run backend:start
 MARKDOWN_DIR=~/git/asynkron/DemoIf/docs npm run backend:start
 ```
 
+### Developing inside the dev container
+
+The repository ships with a ready-to-use dev container configuration under `.devcontainer/`. To share a
+local markdown directory with the container you can either:
+
+- Run `./scripts/devcontainer-with-markdown.sh -- /path/to/logs` to start the container via the
+  Dev Container CLI with the directory mounted and the backend already pointed at it.
+- Copy `.devcontainer/devcontainer.local.example.json` to `.devcontainer/devcontainer.local.json`, change
+  the `source` path, and rebuild the container from VS Code.
+
+Both options expose the mounted directory inside the container at `/workspace/markdown/external` and set
+`MARKDOWN_DIR` accordingly so the backend sees your host logs without extra configuration.
+
 ## Usage
 
 ### Linking to directories and files
