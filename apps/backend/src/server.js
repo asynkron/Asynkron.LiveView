@@ -254,6 +254,7 @@ export class UnifiedMarkdownServer {
     this.directorySocketManager = new DirectorySocketManager({
       watchHub: this.watchHub,
       resolveRoot: this.resolveRoot.bind(this),
+      handleFilesystemEvent: this.handleFilesystemEvent.bind(this),
     });
     this.watchHub.setBroadcaster((root, payload) => {
       this.directorySocketManager.broadcast(root, payload);
@@ -267,10 +268,12 @@ export class UnifiedMarkdownServer {
     this.terminalSocketManager = new TerminalSocketManager();
   }
 
-  async start() {
-    await fs.mkdir(this.defaultRoot, { recursive: true });
-    await this.warnIfMissingBundle();
+  async handleFilesystemEvent(rootPath, kind, relativePath) {
+    const { root } = this.resolveRoot(pathArgument);
+    return this.watchHub.handleFilesystemEvent(root, kind, relativePath);
+  }
 
+  createApp() {
     const routes = createRoutes({
       fileManager: this.fileManager,
       watchHub: this.watchHub,
@@ -278,10 +281,17 @@ export class UnifiedMarkdownServer {
       resolveRoot: this.resolveRoot.bind(this),
     });
 
-    const app = createHttpApp({
+    return createHttpApp({
       routes,
       staticAssetsPath: this.staticAssetsPath,
     });
+  }
+
+  async start() {
+    await fs.mkdir(this.defaultRoot, { recursive: true });
+    await this.warnIfMissingBundle();
+
+    const app = this.createApp();
     const server = http.createServer(app);
 
     const directorySocket = new WebSocketServer({ noServer: true });

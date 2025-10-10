@@ -10,8 +10,13 @@ function wrapRoute(handler) {
   };
 }
 
-export function createRoutes({ fileManager, watchHub, getTemplate, resolveRoot }) {
+export function createRoutes({ fileManager, watchHub, getTemplate, resolveRoot, handleFilesystemEvent = null }) {
   const loadTemplate = typeof getTemplate === 'function' ? getTemplate : async () => '';
+
+  const emitFilesystemEvent =
+    typeof handleFilesystemEvent === 'function'
+      ? handleFilesystemEvent
+      : (root, kind, relativePath) => watchHub.handleFilesystemEvent(root, kind, relativePath);
 
   return {
     handleIndex: wrapRoute(async (req, res) => {
@@ -134,7 +139,7 @@ export function createRoutes({ fileManager, watchHub, getTemplate, resolveRoot }
       const { root } = resolveRoot(pathParam);
       try {
         await fileManager.deleteMarkdown(root, fileParam);
-        await watchHub.handleFilesystemEvent(root, 'deleted', fileParam);
+        await emitFilesystemEvent(root, 'deleted', fileParam);
         res.json({ success: true });
       } catch (error) {
         const status = error.code === 'ENOENT' ? 404 : 400;
@@ -159,7 +164,7 @@ export function createRoutes({ fileManager, watchHub, getTemplate, resolveRoot }
 
       try {
         await fileManager.writeMarkdown(root, fileParam, content);
-        await watchHub.handleFilesystemEvent(root, 'modified', fileParam);
+        await emitFilesystemEvent(root, 'modified', fileParam);
         res.json({ success: true, file: fileParam, content });
       } catch (error) {
         const status = error.code === 'ENOENT' ? 404 : 400;

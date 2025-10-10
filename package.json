@@ -13,10 +13,10 @@
     "format:fix": "npm run format:fix --workspaces --if-present",
     "test": "npm run test --workspaces",
     "test:ci": "npm run test --workspaces --if-present",
-    "backend:start": "npm run start --workspace asynkron-liveview-backend",
-    "backend:dev": "npm run dev --workspace asynkron-liveview-backend",
+    "backend:start": "npm run start --workspace backend",
+    "backend:dev": "npm run dev --workspace backend",
     "frontend:build": "npm run build --workspace asynkron-liveview-frontend",
-    "start": "npm install --workspace asynkron-liveview-frontend && npm run build --workspace asynkron-liveview-frontend && npm install --workspace asynkron-liveview-backend && npm run start --workspace asynkron-liveview-backend -- --port 8080"
+    "start": "npm install --workspace asynkron-liveview-frontend && npm run build --workspace asynkron-liveview-frontend && npm install --workspace backend && npm run start --workspace backend -- --port 8080"
   },
   "devDependencies": {
     "eslint": "^8.57.0",
