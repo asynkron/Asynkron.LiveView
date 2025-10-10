@@ -452,10 +452,11 @@ export class UnifiedMarkdownServer {
 
       console.log('Agent websocket received payload', serialized || raw);
 
-      // Normalise CLI chat events ("type": "chat") into prompt submissions so they
-      // reach the agent runtime input queue. The websocket binding only understands
-      // prompt-style payloads, so we translate here while leaving existing formats
-      // untouched for backwards compatibility.
+      // Normalise CLI chat events ("type": "chat") and explicit prompt payloads
+      // ("type": "prompt") into runtime submissions so they reach the agent
+      // queue. The websocket binding only understands prompt-style payloads, so we
+      // translate here while leaving existing formats untouched for backwards
+      // compatibility.
       if (!serialized || !binding?.runtime?.submitPrompt) {
         return;
       }
@@ -473,18 +474,18 @@ export class UnifiedMarkdownServer {
       }
 
       const type = typeof parsed.type === 'string' ? parsed.type.toLowerCase() : undefined;
-      if (type !== 'chat') {
+      if (type !== 'chat' && type !== 'prompt') {
         return;
       }
 
       const promptSource =
-        typeof parsed.text !== 'undefined'
+        typeof parsed.prompt !== 'undefined'
+          ? parsed.prompt
+          : typeof parsed.text !== 'undefined'
           ? parsed.text
-          : typeof parsed.prompt !== 'undefined'
-            ? parsed.prompt
-            : typeof parsed.value !== 'undefined'
-              ? parsed.value
-              : parsed.message;
+          : typeof parsed.value !== 'undefined'
+            ? parsed.value
+            : parsed.message;
 
       if (typeof promptSource === 'undefined') {
         return;
@@ -501,9 +502,9 @@ export class UnifiedMarkdownServer {
 
       try {
         binding.runtime.submitPrompt(prompt);
-        console.log('Forwarded chat payload to agent runtime queue');
+        console.log('Forwarded agent prompt payload to runtime queue');
       } catch (error) {
-        console.warn('Failed to forward chat payload to agent runtime queue', error);
+        console.warn('Failed to forward agent prompt payload to runtime queue', error);
       }
     });
 
