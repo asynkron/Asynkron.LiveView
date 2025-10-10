@@ -187,6 +187,95 @@ export function createChatService(options = {}) {
         });
     }
 
+    function appendEvent(eventType, payload = {}) {
+        if (!messageList) {
+            return;
+        }
+
+        const text = normaliseText(payload.text).trim();
+        const title = normaliseText(payload.title).trim();
+        const subtitle = normaliseText(payload.subtitle).trim();
+        const description = normaliseText(payload.description).trim();
+        const details = normaliseText(payload.details).trim();
+
+        let headerText = title;
+        let bodyText = '';
+
+        const fallbackTitles = {
+            banner: title || text || 'Agent banner',
+            status: title || 'Status update',
+            'request-input': title || 'Input requested',
+        };
+
+        if (eventType === 'banner') {
+            headerText = fallbackTitles.banner;
+            bodyText = subtitle || description || details;
+            if (!bodyText && text && text !== headerText) {
+                bodyText = text;
+            }
+        } else {
+            headerText = fallbackTitles[eventType] || headerText;
+            bodyText = subtitle || description || details || text;
+        }
+
+        if (!headerText && !bodyText && text) {
+            bodyText = text;
+        }
+
+        if (!headerText && !bodyText) {
+            return;
+        }
+
+        ensureConversationStarted();
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'agent-message agent-message--event';
+        if (eventType) {
+            wrapper.dataset.eventType = eventType;
+        }
+        if (payload.level) {
+            wrapper.dataset.level = payload.level;
+        }
+
+        const bubble = document.createElement('div');
+        bubble.className = 'agent-message-bubble agent-message-bubble--event';
+
+        if (headerText) {
+            const header = document.createElement('div');
+            header.className = 'agent-event-title';
+            header.textContent = headerText;
+            bubble.appendChild(header);
+        }
+
+        if (bodyText && (!headerText || bodyText !== headerText)) {
+            const body = document.createElement('div');
+            body.className = 'agent-event-body';
+            body.textContent = bodyText;
+            bubble.appendChild(body);
+        }
+
+        const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : null;
+        const scopeText = metadata ? normaliseText(metadata.scope).trim() : '';
+        if (scopeText) {
+            const meta = document.createElement('div');
+            meta.className = 'agent-event-meta';
+            const scope = document.createElement('span');
+            scope.className = 'agent-event-meta-tag';
+            scope.textContent = `Scope: ${scopeText}`;
+            meta.appendChild(scope);
+            bubble.appendChild(meta);
+        }
+
+        wrapper.appendChild(bubble);
+        messageList.appendChild(wrapper);
+
+        window.requestAnimationFrame(() => {
+            if (scrollContainer) {
+                scrollContainer.scrollTop = scrollContainer.scrollHeight;
+            }
+        });
+    }
+
     function handleIncoming(event) {
         if (socket && event?.currentTarget && socket !== event.currentTarget) {
             return;
@@ -217,6 +306,8 @@ export function createChatService(options = {}) {
                 if (text) {
                     const level = typeof payload.level === 'string' ? payload.level : undefined;
                     setStatus(text, { level });
+                    const eventType = typeof payload.eventType === 'string' ? payload.eventType : 'status';
+                    appendEvent(eventType, { ...payload, text, level });
                 }
                 break;
             }
@@ -242,12 +333,17 @@ export function createChatService(options = {}) {
                 break;
             }
             case 'agent_request_input': {
+                updateThinkingState(false);
                 const promptText = normaliseText(payload.prompt).trim();
-                if (promptText && promptText !== '▷') {
-                    setStatus(promptText);
-                } else if (!isThinking) {
-                    setStatus('Agent is ready for your next message.');
-                }
+                const readyMessage = 'Agent is ready for your next message.';
+                const shouldShowPrompt = promptText && promptText !== '▷';
+                const displayText = shouldShowPrompt ? promptText : readyMessage;
+                setStatus(displayText);
+                appendEvent('request-input', {
+                    text: displayText,
+                    level: typeof payload.level === 'string' ? payload.level : undefined,
+                    metadata: payload.metadata,
+                });
                 break;
             }
             case 'agent_plan':

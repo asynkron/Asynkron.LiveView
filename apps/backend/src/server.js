@@ -51,12 +51,16 @@ function formatAgentEvent(event) {
       const payload = {
         type: 'agent_status',
         text,
+        eventType: 'status',
       };
       if (typeof event.level === 'string' && event.level) {
         payload.level = event.level;
       }
       if (typeof event.details === 'string' && event.details) {
         payload.details = event.details;
+      }
+      if (typeof event.title === 'string' && event.title) {
+        payload.title = normaliseAgentText(event.title);
       }
       return JSON.stringify(payload);
     }
@@ -82,7 +86,23 @@ function formatAgentEvent(event) {
       if (!title) {
         return undefined;
       }
-      return JSON.stringify({ type: 'agent_status', text: title, level: 'info' });
+      const payload = {
+        type: 'agent_status',
+        text: title,
+        title,
+        level: 'info',
+        eventType: 'banner',
+      };
+      if (typeof event.subtitle === 'string' && event.subtitle) {
+        payload.subtitle = normaliseAgentText(event.subtitle);
+      }
+      if (typeof event.description === 'string' && event.description) {
+        payload.description = normaliseAgentText(event.description);
+      }
+      if (typeof event.details === 'string' && event.details) {
+        payload.details = normaliseAgentText(event.details);
+      }
+      return JSON.stringify(payload);
     }
     case 'plan': {
       if (Array.isArray(event.plan)) {
@@ -91,10 +111,21 @@ function formatAgentEvent(event) {
       return undefined;
     }
     case 'request-input': {
-      return JSON.stringify({
+      const payload = {
         type: 'agent_request_input',
         prompt: normaliseAgentText(event.prompt),
-      });
+      };
+      if (typeof event.level === 'string' && event.level) {
+        payload.level = event.level;
+      }
+      if (event.metadata && typeof event.metadata === 'object') {
+        try {
+          payload.metadata = JSON.parse(JSON.stringify(event.metadata));
+        } catch (error) {
+          console.warn('Failed to serialise agent metadata', error);
+        }
+      }
+      return JSON.stringify(payload);
     }
     default:
       return undefined;
