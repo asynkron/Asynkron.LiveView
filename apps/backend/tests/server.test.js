@@ -6,11 +6,87 @@ import request from 'supertest';
 import WebSocket from 'ws';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-import { UnifiedMarkdownServer } from '../src/server.js';
+const bindingRecords = [];
+
+vi.mock('@asynkron/openagent', () => {
+  return {
+    createWebSocketBinding: vi.fn(({ socket, formatOutgoing, autoStart = true }) => {
+      if (!socket) {
+        throw new Error('Socket instance is required');
+      }
+
+      const record = {
+        socket,
+        formatOutgoing,
+      };
+      bindingRecords.push(record);
+
+      let binding;
+
+      const formatEvent = (event) => {
+        if (typeof formatOutgoing === 'function') {
+          return formatOutgoing(event);
+        }
+        return JSON.stringify(event ?? {});
+      };
+
+      const handleMessage = (raw) => {
+        let value = raw;
+        if (Buffer.isBuffer(raw)) {
+          value = raw.toString('utf8');
+        }
+        if (typeof value === 'string') {
+          let parsed;
+          try {
+            parsed = JSON.parse(value);
+          } catch {
+            parsed = value;
+          }
+
+          if (parsed && typeof parsed === 'object' && typeof parsed.prompt === 'string') {
+            binding.runtime.submitPrompt(parsed.prompt);
+          } else if (typeof parsed === 'string') {
+            binding.runtime.submitPrompt(parsed);
+          }
+        }
+      };
+
+      binding = {
+        runtime: {
+          submitPrompt: vi.fn((prompt) => {
+            const payload = formatEvent({ type: 'assistant-message', message: `Echo: ${prompt}` });
+            if (typeof payload !== 'undefined' && socket.readyState === WebSocket.OPEN) {
+              socket.send(payload);
+            }
+          }),
+          cancel: vi.fn(),
+        },
+        start: vi.fn(async () => {}),
+        stop: vi.fn(async () => {
+          socket.off?.('message', handleMessage);
+        }),
+      };
+
+      socket.on('message', handleMessage);
+
+      if (autoStart !== false) {
+        void binding.start();
+      }
+
+      record.binding = binding;
+      return binding;
+    }),
+  };
+});
+
+const openAgentModule = await import('@asynkron/openagent');
+const { UnifiedMarkdownServer } = await import('../src/server.js');
 
 let tempDir;
 
 beforeEach(async () => {
+  bindingRecords.length = 0;
+  openAgentModule.createWebSocketBinding.mockClear();
   tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'liveview-node-srv-'));
 });
 
@@ -18,7 +94,8 @@ afterEach(async () => {
   if (tempDir) {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
-  vi.restoreAllMocks();
+  bindingRecords.length = 0;
+  vi.clearAllMocks();
 });
 
 describe('UnifiedMarkdownServer', () => {
@@ -124,7 +201,7 @@ describe('UnifiedMarkdownServer', () => {
     expect(eventSpy).toHaveBeenCalledWith(path.resolve(tempDir), 'deleted', 'removable.md');
   });
 
-  it('spins up a fake agent per websocket', async () => {
+  it('bridges websocket traffic to the agent runtime binding', async () => {
     const server = new UnifiedMarkdownServer({ markdownDir: tempDir, port: 0 });
     await server.start();
 
@@ -145,12 +222,17 @@ describe('UnifiedMarkdownServer', () => {
         client.once('error', reject);
       });
 
-      client.send(JSON.stringify({ type: 'user_message', text: 'What time is it?' }));
+      client.send(JSON.stringify({ type: 'prompt', prompt: 'Hello runtime' }));
 
       const raw = await messagePromise;
       const payload = JSON.parse(raw);
       expect(payload.type).toBe('agent_message');
-      expect(payload.text).toMatch(/server time/i);
+      expect(payload.text).toBe('Echo: Hello runtime');
+
+      expect(openAgentModule.createWebSocketBinding).toHaveBeenCalledTimes(1);
+      const [record] = bindingRecords;
+      expect(record?.binding.start).toHaveBeenCalledTimes(1);
+      expect(record?.binding.runtime.submitPrompt).toHaveBeenCalledWith('Hello runtime');
     } finally {
       await new Promise((resolve) => {
         client.once('close', resolve);
@@ -158,6 +240,10 @@ describe('UnifiedMarkdownServer', () => {
       });
 
       await server.stop();
+      const [record] = bindingRecords;
+      if (record) {
+        expect(record.binding.stop).toHaveBeenCalled();
+      }
     }
   });
 });

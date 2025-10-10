@@ -7,38 +7,105 @@ import chokidar from 'chokidar';
 import express from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
 
+import { createWebSocketBinding } from '@asynkron/openagent';
+
 import { FileManager } from './fileManager.js';
 import { createTerminal } from './terminal.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-class FakeAgent {
-  constructor({ send }) {
-    if (typeof send !== 'function') {
-      throw new Error('FakeAgent requires a send function');
+function normaliseAgentText(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value == null) {
+    return '';
+  }
+  try {
+    return String(value);
+  } catch (error) {
+    console.warn('Failed to normalise agent value', error);
+    return '';
+  }
+}
+
+function formatAgentEvent(event) {
+  if (!event || typeof event !== 'object') {
+    return undefined;
+  }
+
+  switch (event.type) {
+    case 'assistant-message': {
+      const text = normaliseAgentText(event.message).trim();
+      if (!text) {
+        return undefined;
+      }
+      return JSON.stringify({ type: 'agent_message', text });
     }
-    this.send = send;
-    this.formatter = new Intl.DateTimeFormat(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'long',
-    });
-  }
-
-  respond() {
-    const formatted = this.formatter.format(new Date());
-    return `It is ${formatted} right now (server time).`;
-  }
-
-  handleUserMessage() {
-    try {
-      this.send({ type: 'agent_message', text: this.respond() });
-    } catch (error) {
-      console.warn('Failed to deliver fake agent response', error);
+    case 'status': {
+      const text = normaliseAgentText(event.message);
+      if (!text) {
+        return undefined;
+      }
+      const payload = {
+        type: 'agent_status',
+        text,
+      };
+      if (typeof event.level === 'string' && event.level) {
+        payload.level = event.level;
+      }
+      if (typeof event.details === 'string' && event.details) {
+        payload.details = event.details;
+      }
+      return JSON.stringify(payload);
     }
+    case 'error': {
+      const message = normaliseAgentText(event.message) || 'Agent runtime reported an error.';
+      const payload = {
+        type: 'agent_error',
+        message,
+      };
+      if (event.details) {
+        payload.details = normaliseAgentText(event.details);
+      }
+      return JSON.stringify(payload);
+    }
+    case 'thinking': {
+      if (event.state === 'start' || event.state === 'stop') {
+        return JSON.stringify({ type: 'agent_thinking', state: event.state });
+      }
+      return undefined;
+    }
+    case 'banner': {
+      const title = normaliseAgentText(event.title);
+      if (!title) {
+        return undefined;
+      }
+      return JSON.stringify({ type: 'agent_status', text: title, level: 'info' });
+    }
+    case 'plan': {
+      if (Array.isArray(event.plan)) {
+        return JSON.stringify({ type: 'agent_plan', plan: event.plan });
+      }
+      return undefined;
+    }
+    case 'request-input': {
+      return JSON.stringify({
+        type: 'agent_request_input',
+        prompt: normaliseAgentText(event.prompt),
+      });
+    }
+    default:
+      return undefined;
   }
+}
 
-  dispose() {}
+function describeAgentError(error) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return typeof error === 'string' ? error : 'Unknown error';
 }
 
 /**
@@ -58,7 +125,7 @@ export class UnifiedMarkdownServer {
     // Track websocket clients and file system watchers so we can broadcast updates.
     this.clients = new Map(); // ws -> subscribed root
     this.watchers = new Map(); // root -> { watcher, clients }
-    this.agentClients = new Map(); // ws -> FakeAgent
+    this.agentClients = new Map(); // ws -> { binding, cleaned }
   }
 
   /**
@@ -152,12 +219,23 @@ export class UnifiedMarkdownServer {
     }
     this.watchers.clear();
 
-    for (const [ws, agent] of this.agentClients.entries()) {
-      try {
-        agent?.dispose?.();
-      } catch (error) {
-        console.warn('Failed to dispose agent instance', error);
+    const agentEntries = Array.from(this.agentClients.entries());
+    for (const [ws, record] of agentEntries) {
+      const binding = record?.binding ?? record;
+      if (record?.cleanup) {
+        try {
+          await record.cleanup('server-stop');
+        } catch (error) {
+          console.warn('Failed to clean up agent binding', error);
+        }
+      } else if (binding) {
+        try {
+          await binding.stop?.({ reason: 'server-stop' });
+        } catch (error) {
+          console.warn('Failed to stop agent binding', error);
+        }
       }
+
       try {
         ws.close();
       } catch (error) {
@@ -253,47 +331,124 @@ export class UnifiedMarkdownServer {
   }
 
   #handleAgentSocket(ws) {
-    const agent = new FakeAgent({
-      send: (payload) => {
-        if (!payload) {
-          return;
-        }
-        try {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(payload));
-          }
-        } catch (error) {
-          console.warn('Failed to send payload to agent client', error);
-        }
-      },
-    });
-
-    this.agentClients.set(ws, agent);
-
-    const cleanup = () => {
-      const stored = this.agentClients.get(ws);
-      if (stored === agent) {
-        this.agentClients.delete(ws);
+    let binding;
+    try {
+      binding = createWebSocketBinding({
+        socket: ws,
+        autoStart: false,
+        formatOutgoing: formatAgentEvent,
+      });
+    } catch (error) {
+      const details = describeAgentError(error);
+      this.#sendAgentPayload(ws, {
+        type: 'agent_error',
+        message: 'Failed to initialize the agent runtime.',
+        details,
+      });
+      try {
+        ws.close(1011, 'Agent runtime unavailable');
+      } catch (closeError) {
+        console.warn('Failed to close agent websocket after initialization error', closeError);
       }
-      agent.dispose?.();
+      return;
+    }
+
+    const record = {
+      binding,
+      cleaned: false,
+      cleanup: null,
     };
 
-    ws.on('message', (data) => {
-      let payload;
-      try {
-        payload = JSON.parse(data);
-      } catch (error) {
-        console.warn('Received malformed agent payload', error);
+    let cleanup;
+
+    const handleClose = () => {
+      void cleanup?.('socket-close');
+    };
+
+    const handleError = (socketError) => {
+      if (socketError && socketError.message) {
+        console.warn('Agent websocket error', socketError);
+      }
+      void cleanup?.('socket-error');
+    };
+
+    cleanup = async (reason = 'socket-close') => {
+      if (record.cleaned) {
         return;
       }
+      record.cleaned = true;
+      this.agentClients.delete(ws);
 
-      if (payload?.type === 'user_message' && typeof payload.text === 'string' && payload.text.trim()) {
-        agent.handleUserMessage();
+      try {
+        ws.off?.('close', handleClose);
+        ws.off?.('error', handleError);
+      } catch (error) {
+        // Ignore listener removal failures; the socket may already be closed.
       }
-    });
 
-    ws.on('close', cleanup);
-    ws.on('error', cleanup);
+      try {
+        await binding.stop?.({ reason });
+      } catch (error) {
+        console.warn('Failed to stop agent binding cleanly', error);
+      }
+    };
+
+    record.cleanup = cleanup;
+    this.agentClients.set(ws, record);
+
+    ws.on('close', handleClose);
+    ws.on('error', handleError);
+
+    try {
+      const startResult = binding.start?.();
+      if (startResult && typeof startResult.then === 'function') {
+        startResult.catch(async (startError) => {
+          const details = describeAgentError(startError);
+          this.#sendAgentPayload(ws, {
+            type: 'agent_error',
+            message: 'Agent runtime failed to start.',
+            details,
+          });
+          await cleanup('runtime-error');
+          try {
+            ws.close(1011, 'Agent runtime failed to start');
+          } catch (closeError) {
+            console.warn('Failed to close agent websocket after runtime error', closeError);
+          }
+        });
+      }
+    } catch (error) {
+      const details = describeAgentError(error);
+      this.#sendAgentPayload(ws, {
+        type: 'agent_error',
+        message: 'Agent runtime failed to start.',
+        details,
+      });
+      void cleanup('runtime-error');
+      try {
+        ws.close(1011, 'Agent runtime failed to start');
+      } catch (closeError) {
+        console.warn('Failed to close agent websocket after synchronous runtime error', closeError);
+      }
+    }
+  }
+
+  #sendAgentPayload(ws, payload) {
+    if (!payload) {
+      return false;
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+
+    try {
+      ws.send(JSON.stringify(payload));
+      return true;
+    } catch (error) {
+      console.warn('Failed to send agent payload to client', error);
+      return false;
+    }
   }
 
   async handleListFiles(req, res) {

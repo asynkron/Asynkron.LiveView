@@ -20,15 +20,79 @@ export function createChatService(options = {}) {
     const cleanupFns = [];
     const pendingMessages = [];
     const scrollContainer = chatBody || messageList;
+    const sendButtons = [];
+    if (startForm) {
+        const button = startForm.querySelector('button[type="submit"]');
+        if (button && !sendButtons.includes(button)) {
+            sendButtons.push(button);
+        }
+    }
+    if (chatForm) {
+        const button = chatForm.querySelector('button[type="submit"]');
+        if (button && !sendButtons.includes(button)) {
+            sendButtons.push(button);
+        }
+    }
     let socket = null;
     let reconnectTimer = null;
     let destroyed = false;
     let hasConversation = false;
     let isConnected = false;
+    let isThinking = false;
+    let lastStatus = '';
+    let lastStatusLevel = '';
 
-    function setStatus(message) {
-        if (statusElement) {
-            statusElement.textContent = message || '';
+    function updateStatusDisplay() {
+        if (!statusElement) {
+            return;
+        }
+        const message = isThinking ? 'Agent is thinking…' : lastStatus;
+        statusElement.textContent = message || '';
+        if (isThinking) {
+            statusElement.dataset.level = 'info';
+            statusElement.dataset.thinking = 'true';
+        } else {
+            if (lastStatusLevel) {
+                statusElement.dataset.level = lastStatusLevel;
+            } else {
+                delete statusElement.dataset.level;
+            }
+            statusElement.dataset.thinking = 'false';
+        }
+    }
+
+    function setStatus(message, { level } = {}) {
+        lastStatus = typeof message === 'string' ? message : '';
+        lastStatusLevel = typeof level === 'string' ? level : '';
+        if (!isThinking) {
+            updateStatusDisplay();
+        }
+    }
+
+    function updateThinkingState(next) {
+        const active = Boolean(next);
+        if (isThinking === active) {
+            return;
+        }
+        isThinking = active;
+        sendButtons.forEach((button) => {
+            button.disabled = active;
+        });
+        updateStatusDisplay();
+    }
+
+    function normaliseText(value) {
+        if (typeof value === 'string') {
+            return value;
+        }
+        if (value == null) {
+            return '';
+        }
+        try {
+            return String(value);
+        } catch (error) {
+            console.warn('Failed to normalise agent text', error);
+            return '';
         }
     }
 
@@ -89,7 +153,7 @@ export function createChatService(options = {}) {
         while (pendingMessages.length > 0) {
             const next = pendingMessages[0];
             try {
-                socket.send(JSON.stringify({ type: 'user_message', text: next }));
+                socket.send(JSON.stringify({ type: 'prompt', prompt: next }));
                 pendingMessages.shift();
             } catch (error) {
                 console.warn('Failed to deliver chat message', error);
@@ -127,13 +191,72 @@ export function createChatService(options = {}) {
         if (socket && event?.currentTarget && socket !== event.currentTarget) {
             return;
         }
+        let payload;
         try {
-            const payload = JSON.parse(event.data);
-            if (payload?.type === 'agent_message' && typeof payload.text === 'string') {
-                appendMessage('agent', payload.text);
-            }
+            payload = JSON.parse(event.data);
         } catch (error) {
             console.warn('Failed to parse agent payload', error);
+            return;
+        }
+
+        if (!payload || typeof payload !== 'object') {
+            return;
+        }
+
+        switch (payload.type) {
+            case 'agent_message': {
+                const text = normaliseText(payload.text).trim();
+                if (text) {
+                    updateThinkingState(false);
+                    appendMessage('agent', text);
+                }
+                break;
+            }
+            case 'agent_status': {
+                const text = normaliseText(payload.text);
+                if (text) {
+                    const level = typeof payload.level === 'string' ? payload.level : undefined;
+                    setStatus(text, { level });
+                }
+                break;
+            }
+            case 'agent_error': {
+                updateThinkingState(false);
+                const message = normaliseText(payload.message);
+                if (message) {
+                    setStatus(message, { level: 'error' });
+                    appendMessage('agent', message);
+                }
+                const details = normaliseText(payload.details).trim();
+                if (details && details !== message) {
+                    appendMessage('agent', details);
+                }
+                break;
+            }
+            case 'agent_thinking': {
+                if (payload.state === 'start') {
+                    updateThinkingState(true);
+                } else if (payload.state === 'stop') {
+                    updateThinkingState(false);
+                }
+                break;
+            }
+            case 'agent_request_input': {
+                const promptText = normaliseText(payload.prompt).trim();
+                if (promptText && promptText !== '▷') {
+                    setStatus(promptText);
+                } else if (!isThinking) {
+                    setStatus('Agent is ready for your next message.');
+                }
+                break;
+            }
+            case 'agent_plan':
+            case 'agent_event':
+                // Reserved for future UI enhancements.
+                break;
+            default:
+                console.warn('Received unsupported agent payload', payload);
+                break;
         }
     }
 
@@ -145,7 +268,8 @@ export function createChatService(options = {}) {
             return;
         }
         isConnected = true;
-        setStatus('Connected to the demo agent.');
+        updateThinkingState(false);
+        setStatus('Connected to the agent runtime.', { level: 'info' });
         flushPending();
     }
 
@@ -157,7 +281,8 @@ export function createChatService(options = {}) {
             return;
         }
         isConnected = false;
-        setStatus('Reconnecting to the agent...');
+        updateThinkingState(false);
+        setStatus('Reconnecting to the agent runtime...', { level: 'warn' });
         scheduleReconnect();
     }
 
@@ -168,11 +293,13 @@ export function createChatService(options = {}) {
         if (!socket) {
             return;
         }
+        updateThinkingState(false);
         try {
             socket.close();
         } catch (error) {
             console.warn('Failed to close agent socket after error', error);
         }
+        setStatus('Agent connection encountered an error.', { level: 'error' });
     }
 
     function connect() {
@@ -200,7 +327,7 @@ export function createChatService(options = {}) {
             return;
         }
 
-        setStatus('Connecting to the agent...');
+        setStatus('Connecting to the agent runtime...');
 
         const nextSocket = new WebSocket(url);
         socket = nextSocket;
@@ -222,28 +349,29 @@ export function createChatService(options = {}) {
                 connect();
             }
             scheduleReconnect();
-            setStatus('Waiting for the agent connection...');
+            setStatus('Waiting for the agent runtime connection...');
         }
     }
 
     function sendUserMessage(rawText) {
-        if (typeof rawText !== 'string') {
-            return;
+        if (typeof rawText !== 'string' || isThinking) {
+            return false;
         }
         const trimmed = rawText.trim();
         if (!trimmed) {
-            return;
+            return false;
         }
 
         appendMessage('user', trimmed);
         queueMessage(trimmed);
+        return true;
     }
 
     function handleStartSubmit(event) {
         event.preventDefault();
         const value = startInput?.value || '';
-        sendUserMessage(value);
-        if (startInput) {
+        const sent = sendUserMessage(value);
+        if (sent && startInput) {
             startInput.value = '';
         }
     }
@@ -251,8 +379,8 @@ export function createChatService(options = {}) {
     function handleChatSubmit(event) {
         event.preventDefault();
         const value = chatInput?.value || '';
-        sendUserMessage(value);
-        if (chatInput) {
+        const sent = sendUserMessage(value);
+        if (sent && chatInput) {
             chatInput.value = '';
             autoResize(chatInput);
         }
@@ -282,12 +410,14 @@ export function createChatService(options = {}) {
         autoResize(chatInput);
     }
 
+    updateStatusDisplay();
     updatePanelState();
     return {
         connect,
         dispose() {
             destroyed = true;
             clearReconnectTimer();
+            updateThinkingState(false);
             if (socket) {
                 try {
                     socket.close();
