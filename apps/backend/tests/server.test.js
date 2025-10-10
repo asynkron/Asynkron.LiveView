@@ -353,4 +353,78 @@ describe('UnifiedMarkdownServer', () => {
       }
     }
   });
+
+  it('formats command execution events for agent clients', async () => {
+    const server = new UnifiedMarkdownServer({ markdownDir: tempDir, port: 0 });
+    await server.start();
+
+    const address = server.server.address();
+    const port = typeof address === 'object' && address?.port ? address.port : server.port;
+    const url = `ws://127.0.0.1:${port}/ws/agent`;
+
+    const client = new WebSocket(url);
+
+    try {
+      await new Promise((resolve, reject) => {
+        client.on('open', resolve);
+        client.on('error', reject);
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      const [record] = bindingRecords;
+      expect(record).toBeDefined();
+      expect(typeof record.formatOutgoing).toBe('function');
+
+      const payload = JSON.parse(
+        record.formatOutgoing({
+          type: 'command-result',
+          command: {
+            run: 'ls -la',
+            description: 'List directory contents',
+            cwd: '/tmp/project',
+            shell: '/bin/bash',
+            timeout_sec: 5,
+            filter_regex: '.*',
+            tail_lines: 10,
+          },
+          result: {
+            exit_code: 0,
+            runtime_ms: 123,
+            killed: false,
+          },
+          preview: {
+            stdoutPreview: 'file1\nfile2',
+            stderrPreview: '',
+          },
+        }),
+      );
+
+      expect(payload.type).toBe('agent_command');
+      expect(payload.command).toEqual({
+        run: 'ls -la',
+        description: 'List directory contents',
+        shell: '/bin/bash',
+        cwd: '/tmp/project',
+        timeoutSeconds: 5,
+        filterRegex: '.*',
+        tailLines: 10,
+      });
+      expect(payload.exitCode).toBe(0);
+      expect(payload.runtimeMs).toBe(123);
+      expect(payload.killed).toBe(false);
+      expect(payload.preview).toEqual({ stdout: 'file1\nfile2' });
+    } finally {
+      await new Promise((resolve) => {
+        client.once('close', resolve);
+        client.close(1000);
+      });
+
+      await server.stop();
+      const [record] = bindingRecords;
+      if (record) {
+        expect(record.binding.stop).toHaveBeenCalled();
+      }
+    }
+  });
 });

@@ -400,6 +400,140 @@ export function createChatService(options = {}) {
         scrollToLatest();
     }
 
+    function appendCommand(payload = {}) {
+        if (!messageList) {
+            return;
+        }
+
+        const command = payload.command && typeof payload.command === 'object' ? payload.command : {};
+        const runText = normaliseText(command.run);
+        const description = normaliseText(command.description).trim();
+        const shellText = typeof command.shell === 'string' ? normaliseText(command.shell).trim() : '';
+        const cwdText = typeof command.cwd === 'string' ? normaliseText(command.cwd).trim() : '';
+        const timeoutSeconds = Number.isFinite(command.timeoutSeconds) ? command.timeoutSeconds : null;
+        const filterRegex = typeof command.filterRegex === 'string' ? normaliseText(command.filterRegex).trim() : '';
+        const tailLines = Number.isFinite(command.tailLines) ? command.tailLines : null;
+        const exitCode = typeof payload.exitCode === 'number' ? payload.exitCode : null;
+        const runtimeMs = Number.isFinite(payload.runtimeMs) ? payload.runtimeMs : null;
+        const killed = payload.killed === true;
+
+        const preview = payload.preview && typeof payload.preview === 'object' ? payload.preview : {};
+        const stdoutRaw = normaliseText(preview.stdout);
+        const stderrRaw = normaliseText(preview.stderr);
+
+        const hasStdout = stdoutRaw.trim().length > 0;
+        const hasStderr = stderrRaw.trim().length > 0;
+        const hasRunText = runText.trim().length > 0;
+
+        ensureConversationStarted();
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'agent-message agent-message--command';
+
+        const bubble = document.createElement('div');
+        bubble.className = 'agent-message-bubble agent-message-bubble--command';
+
+        const title = document.createElement('div');
+        title.className = 'agent-command-title';
+        title.textContent = 'Shell command executed';
+        bubble.appendChild(title);
+
+        if (description) {
+            const descriptionEl = document.createElement('div');
+            descriptionEl.className = 'agent-command-description';
+            descriptionEl.textContent = description;
+            bubble.appendChild(descriptionEl);
+        }
+
+        if (hasRunText) {
+            const runBlock = document.createElement('pre');
+            runBlock.className = 'agent-command-block agent-command-run';
+            const code = document.createElement('code');
+            code.textContent = runText;
+            runBlock.appendChild(code);
+            bubble.appendChild(runBlock);
+        }
+
+        const metaItems = [];
+        if (shellText) {
+            metaItems.push({ label: 'Shell', value: shellText });
+        }
+        if (cwdText) {
+            metaItems.push({ label: 'CWD', value: cwdText });
+        }
+        if (Number.isFinite(timeoutSeconds)) {
+            metaItems.push({ label: 'Timeout', value: `${timeoutSeconds} s` });
+        }
+        if (filterRegex) {
+            metaItems.push({ label: 'Filter', value: filterRegex });
+        }
+        if (Number.isFinite(tailLines)) {
+            metaItems.push({ label: 'Tail lines', value: String(tailLines) });
+        }
+        if (exitCode !== null) {
+            metaItems.push({ label: 'Exit code', value: String(exitCode) });
+        }
+        if (Number.isFinite(runtimeMs)) {
+            metaItems.push({ label: 'Runtime', value: `${Math.round(runtimeMs)} ms` });
+        }
+        if (killed) {
+            metaItems.push({ label: 'Terminated', value: 'Yes' });
+        }
+
+        if (metaItems.length > 0) {
+            const metaList = document.createElement('div');
+            metaList.className = 'agent-command-meta';
+            metaItems.forEach((item) => {
+                const metaItem = document.createElement('div');
+                metaItem.className = 'agent-command-meta-item';
+
+                const label = document.createElement('span');
+                label.className = 'agent-command-meta-label';
+                label.textContent = item.label;
+
+                const value = document.createElement('span');
+                value.className = 'agent-command-meta-value';
+                value.textContent = item.value;
+
+                metaItem.appendChild(label);
+                metaItem.appendChild(value);
+                metaList.appendChild(metaItem);
+            });
+            bubble.appendChild(metaList);
+        }
+
+        function appendOutput(labelText, content) {
+            const section = document.createElement('div');
+            section.className = 'agent-command-output';
+
+            const label = document.createElement('div');
+            label.className = 'agent-command-output-label';
+            label.textContent = labelText;
+            section.appendChild(label);
+
+            const block = document.createElement('pre');
+            block.className = 'agent-command-block agent-command-output-block';
+            const code = document.createElement('code');
+            code.textContent = content;
+            block.appendChild(code);
+            section.appendChild(block);
+
+            bubble.appendChild(section);
+        }
+
+        if (hasStdout) {
+            appendOutput('stdout', stdoutRaw);
+        }
+
+        if (hasStderr) {
+            appendOutput('stderr', stderrRaw);
+        }
+
+        wrapper.appendChild(bubble);
+        messageList.appendChild(wrapper);
+        scrollToLatest();
+    }
+
     function handleIncoming(event) {
         if (socket && event?.currentTarget && socket !== event.currentTarget) {
             return;
@@ -473,6 +607,10 @@ export function createChatService(options = {}) {
             case 'agent_plan':
             case 'agent_event':
                 // Reserved for future UI enhancements.
+                break;
+            case 'agent_command':
+                updateThinkingState(false);
+                appendCommand(payload);
                 break;
             default:
                 console.warn('Received unsupported agent payload', payload);
