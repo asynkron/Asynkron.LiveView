@@ -16,10 +16,21 @@ const argv = yargs(hideBin(process.argv))
     default: 8080,
     describe: 'Port to bind the HTTP server',
   })
+  .option('auto-approve', {
+    type: 'boolean',
+    default: false,
+    describe: 'Start the workspace agent with command auto-approval enabled',
+  })
   .help()
   .parseSync();
 
-const server = new UnifiedMarkdownServer({ markdownDir: argv.path, port: argv.port });
+const server = new UnifiedMarkdownServer({
+  markdownDir: argv.path,
+  port: argv.port,
+  agent: {
+    autoApprove: Boolean(argv.autoApprove),
+  },
+});
 server.start().catch((error) => {
   // eslint-disable-next-line no-console
   console.error('Failed to start Node backend:', error);

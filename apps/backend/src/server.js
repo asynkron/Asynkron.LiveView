@@ -145,7 +145,7 @@ function describeAgentError(error) {
  * recognizable to contributors that are familiar with the aiohttp code.
  */
 export class UnifiedMarkdownServer {
-  constructor({ markdownDir = 'markdown', port = 8080 } = {}) {
+  constructor({ markdownDir = 'markdown', port = 8080, agent = {} } = {}) {
     this.defaultRoot = path.resolve(markdownDir);
     this.port = port;
     this.fileManager = new FileManager();
@@ -153,10 +153,25 @@ export class UnifiedMarkdownServer {
     this.templatePath = path.join(this.publicPath, 'unified_index.html');
     this.staticAssetsPath = path.join(this.publicPath, 'static');
 
+    this.agentConfig = {
+      autoApprove: Boolean(agent?.autoApprove),
+    };
+
     // Track websocket clients and file system watchers so we can broadcast updates.
     this.clients = new Map(); // ws -> subscribed root
     this.watchers = new Map(); // root -> { watcher, clients }
     this.agentClients = new Map(); // ws -> { binding, cleaned }
+  }
+
+  #buildAgentRuntimeOptions() {
+    if (!this.agentConfig?.autoApprove) {
+      return undefined;
+    }
+
+    return {
+      getAutoApproveFlag: () => Boolean(this.agentConfig?.autoApprove),
+      emitAutoApproveStatus: true,
+    };
   }
 
   /**
@@ -365,14 +380,21 @@ export class UnifiedMarkdownServer {
     let binding;
     console.log('Agent websocket connection received - initialising runtime binding');
     try {
-      binding = createWebSocketBinding({
+      const runtimeOptions = this.#buildAgentRuntimeOptions();
+      const bindingOptions = {
         socket: ws,
         autoStart: false,
         formatOutgoing: (event) => {
           console.log('Agent runtime emitted event', event);
           return formatAgentEvent(event);
         },
-      });
+      };
+
+      if (runtimeOptions) {
+        bindingOptions.runtimeOptions = runtimeOptions;
+      }
+
+      binding = createWebSocketBinding(bindingOptions);
     } catch (error) {
       const details = describeAgentError(error);
       this.#sendAgentPayload(ws, {

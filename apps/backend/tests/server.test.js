@@ -10,7 +10,7 @@ const bindingRecords = [];
 
 vi.mock('@asynkron/openagent', () => {
   return {
-    createWebSocketBinding: vi.fn(({ socket, formatOutgoing, autoStart = true }) => {
+    createWebSocketBinding: vi.fn(({ socket, formatOutgoing, autoStart = true, runtimeOptions }) => {
       if (!socket) {
         throw new Error('Socket instance is required');
       }
@@ -18,6 +18,7 @@ vi.mock('@asynkron/openagent', () => {
       const record = {
         socket,
         formatOutgoing,
+        runtimeOptions,
       };
       bindingRecords.push(record);
 
@@ -199,6 +200,38 @@ describe('UnifiedMarkdownServer', () => {
     await request(app).delete('/api/file').query({ path: tempDir, file: 'removable.md' }).expect(200);
 
     expect(eventSpy).toHaveBeenCalledWith(path.resolve(tempDir), 'deleted', 'removable.md');
+  });
+
+  it('enables agent command auto-approval when configured', async () => {
+    const server = new UnifiedMarkdownServer({ markdownDir: tempDir, port: 0, agent: { autoApprove: true } });
+    await server.start();
+
+    const address = server.server.address();
+    const port = typeof address === 'object' && address?.port ? address.port : server.port;
+    const url = `ws://127.0.0.1:${port}/ws/agent`;
+
+    const client = new WebSocket(url);
+
+    try {
+      await new Promise((resolve, reject) => {
+        client.on('open', resolve);
+        client.on('error', reject);
+      });
+
+      expect(openAgentModule.createWebSocketBinding).toHaveBeenCalledTimes(1);
+      const [record] = bindingRecords;
+      expect(record?.runtimeOptions).toBeDefined();
+      expect(typeof record?.runtimeOptions?.getAutoApproveFlag).toBe('function');
+      expect(record?.runtimeOptions?.getAutoApproveFlag()).toBe(true);
+      expect(record?.runtimeOptions?.emitAutoApproveStatus).toBe(true);
+    } finally {
+      await new Promise((resolve) => {
+        client.once('close', resolve);
+        client.close(1000);
+      });
+
+      await server.stop();
+    }
   });
 
   it('bridges websocket traffic to the agent runtime binding', async () => {
