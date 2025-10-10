@@ -406,6 +406,10 @@ body {
     padding: 0;
 }
 
+.agent-message .hljs {
+    background: transparent !important;
+}
+
 .agent-command-meta {
     display: flex;
     flex-wrap: wrap;
