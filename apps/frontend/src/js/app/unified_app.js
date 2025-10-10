@@ -22,11 +22,21 @@ export function createUnifiedApp({
         viewerSection,
         tocSidebar,
         fileSidebar,
+        agentPanel,
         tocSplitter,
         fileSplitter,
         rootElement,
         panelToggleButtons,
         tocList,
+        agentStart,
+        agentStartForm,
+        agentStartInput,
+        agentChat,
+        agentChatBody,
+        agentMessages,
+        agentChatForm,
+        agentChatInput,
+        agentStatus,
         terminalPanel,
         terminalContainer,
         terminalToggleButton,
@@ -47,6 +57,7 @@ export function createUnifiedApp({
 
     const {
         createTerminalService,
+        createChatService,
         createRealtimeService,
         createViewerApi,
         initNavigation,
@@ -66,6 +77,7 @@ export function createUnifiedApp({
     let viewerApi = null;
     let realtimeService = null;
     let terminalService = null;
+    let chatService = null;
     let contentClickHandler = null;
     let pointerListeners = [];
 
@@ -106,6 +118,7 @@ export function createUnifiedApp({
             viewerSection,
             tocSidebar,
             fileSidebar,
+            agentPanel,
             terminalPanel,
             tocSplitter,
             fileSplitter,
@@ -173,6 +186,19 @@ export function createUnifiedApp({
             isDockviewActive: () => Boolean(layoutInstance?.dockviewIsActive),
         }) ?? null;
 
+        chatService = createChatService?.({
+            panel: agentPanel,
+            startContainer: agentStart,
+            startForm: agentStartForm,
+            startInput: agentStartInput,
+            chatContainer: agentChat,
+            chatBody: agentChatBody,
+            messageList: agentMessages,
+            chatForm: agentChatForm,
+            chatInput: agentChatInput,
+            statusElement: agentStatus,
+        }) ?? null;
+
         viewerApi = createViewerApi?.(sharedContext.markdownContext) ?? null;
         navigationApi = initNavigation?.(sharedContext, viewerApi) ?? null;
         editorApi = initEditor?.(sharedContext, viewerApi, navigationApi) ?? null;
@@ -225,6 +251,7 @@ export function createUnifiedApp({
                 sharedContext.setStatus?.(initialState.error);
             }
             terminalService?.setupTerminalPanel?.();
+            chatService?.connect?.();
             realtimeService?.connect?.();
 
             const filesList = sharedContext.getFiles?.() || [];
@@ -262,6 +289,7 @@ export function createUnifiedApp({
 
         router?.dispose?.();
         realtimeService?.disconnect?.();
+        chatService?.dispose?.();
 
         if (sharedContext.controllers) {
             sharedContext.controllers.header = null;

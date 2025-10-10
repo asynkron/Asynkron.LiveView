@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 
 import request from 'supertest';
+import WebSocket from 'ws';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { UnifiedMarkdownServer } from '../src/server.js';
@@ -121,5 +122,42 @@ describe('UnifiedMarkdownServer', () => {
     await request(app).delete('/api/file').query({ path: tempDir, file: 'removable.md' }).expect(200);
 
     expect(eventSpy).toHaveBeenCalledWith(path.resolve(tempDir), 'deleted', 'removable.md');
+  });
+
+  it('spins up a fake agent per websocket', async () => {
+    const server = new UnifiedMarkdownServer({ markdownDir: tempDir, port: 0 });
+    await server.start();
+
+    const address = server.server.address();
+    const port = typeof address === 'object' && address?.port ? address.port : server.port;
+    const url = `ws://127.0.0.1:${port}/ws/agent`;
+
+    const client = new WebSocket(url);
+
+    try {
+      await new Promise((resolve, reject) => {
+        client.on('open', resolve);
+        client.on('error', reject);
+      });
+
+      const messagePromise = new Promise((resolve, reject) => {
+        client.once('message', (data) => resolve(data.toString()));
+        client.once('error', reject);
+      });
+
+      client.send(JSON.stringify({ type: 'user_message', text: 'What time is it?' }));
+
+      const raw = await messagePromise;
+      const payload = JSON.parse(raw);
+      expect(payload.type).toBe('agent_message');
+      expect(payload.text).toMatch(/server time/i);
+    } finally {
+      await new Promise((resolve) => {
+        client.once('close', resolve);
+        client.close(1000);
+      });
+
+      await server.stop();
+    }
   });
 });

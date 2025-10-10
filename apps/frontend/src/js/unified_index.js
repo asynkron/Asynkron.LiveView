@@ -8,6 +8,7 @@ import { createUnifiedApp } from './app/unified_app.js';
 import { createSharedContext } from './app/shared_context.js';
 import { createRealtimeService } from './services/realtime.js';
 import { createTerminalService } from './services/terminal.js';
+import { createChatService } from './services/chat.js';
 import {
     createViewerApi,
     normaliseFileIndex,
@@ -128,6 +129,7 @@ function composeUnifiedApp() {
         },
         services: {
             createTerminalService,
+            createChatService,
             createRealtimeService,
             createViewerApi,
             initNavigation,

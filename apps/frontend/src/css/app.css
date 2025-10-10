@@ -102,6 +102,211 @@ body {
     flex: 1 1 auto;
 }
 
+.dockview-panel-agent .agent-panel {
+    height: 100%;
+    flex: 1 1 auto;
+}
+
+.agent-panel {
+    background: var(--color-bg-body);
+    color: var(--color-text-primary);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    position: relative;
+}
+
+.agent-panel.agent-panel--empty {
+    justify-content: center;
+}
+
+.agent-empty-state {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-32);
+    overflow-y: auto;
+}
+
+.agent-start-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-16);
+    width: min(520px, 100%);
+    padding: var(--space-28) var(--space-24);
+    border-radius: 18px;
+    background: var(--color-overlay-panel);
+    border: 1px solid var(--color-border-default);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+}
+
+.agent-start-title {
+    margin: var(--space-0);
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--color-accent-blue);
+}
+
+.agent-start-subtitle {
+    margin: var(--space-0);
+    font-size: 0.95rem;
+    color: var(--color-text-secondary);
+}
+
+.agent-start-hint {
+    margin: var(--space-0);
+    font-size: 0.85rem;
+    color: var(--color-text-tertiary);
+}
+
+.agent-start-input-row {
+    display: flex;
+    gap: var(--space-12);
+    align-items: stretch;
+}
+
+.agent-start-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: var(--space-12) var(--space-16);
+    border-radius: 12px;
+    border: 1px solid var(--color-border-default);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    font-size: 1rem;
+}
+
+.agent-chat {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.agent-chat-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-24);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-16);
+}
+
+.agent-messages {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-16);
+    margin: var(--space-0);
+    padding: var(--space-0);
+    list-style: none;
+    flex: 1 1 auto;
+}
+
+.agent-message {
+    display: flex;
+    width: 100%;
+}
+
+.agent-message--user {
+    justify-content: flex-end;
+}
+
+.agent-message--agent {
+    justify-content: flex-start;
+}
+
+.agent-message-bubble {
+    max-width: min(680px, 90%);
+    padding: var(--space-16) var(--space-18);
+    border-radius: 18px;
+    background: var(--color-overlay-panel);
+    border: 1px solid var(--color-border-default);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+.agent-message--user .agent-message-bubble {
+    background: var(--color-accent-blue);
+    border-color: transparent;
+    color: var(--color-text-inverse);
+    box-shadow: 0 16px 40px rgba(56, 139, 253, 0.25);
+}
+
+.agent-input-form {
+    padding: var(--space-20) var(--space-24);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-12);
+    border-top: 1px solid var(--color-border-default);
+    background: linear-gradient(180deg, rgba(13, 17, 23, 0.85) 0%, rgba(13, 17, 23, 0.95) 100%);
+}
+
+.agent-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-12);
+}
+
+.agent-input {
+    flex: 1 1 auto;
+    min-height: 48px;
+    max-height: 220px;
+    resize: none;
+    padding: var(--space-12) var(--space-16);
+    border-radius: 16px;
+    border: 1px solid var(--color-border-default);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.agent-input:focus-visible,
+.agent-start-input:focus-visible {
+    outline: 2px solid var(--color-accent-blue-focus);
+    outline-offset: 2px;
+}
+
+.agent-send-button {
+    flex: 0 0 auto;
+    padding: var(--space-12) var(--space-20);
+    border-radius: 999px;
+    border: none;
+    font-weight: 600;
+    background: var(--color-accent-blue);
+    color: var(--color-text-inverse);
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.agent-send-button:hover,
+.agent-send-button:focus-visible {
+    background: var(--color-accent-blue-bright);
+    transform: translateY(-1px);
+}
+
+.agent-send-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.agent-status {
+    font-size: 0.8rem;
+    color: var(--color-text-tertiary);
+    min-height: 1.2em;
+}
+
+.agent-panel .hidden {
+    display: none !important;
+}
+
 .dockview-panel-container .terminal-toolbar {
     flex: 0 0 auto;
 }
