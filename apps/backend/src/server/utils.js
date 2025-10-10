@@ -95,6 +95,98 @@ export function formatAgentEvent(event) {
       }
       return undefined;
     }
+    case 'command-result': {
+      const command = event.command && typeof event.command === 'object' ? event.command : null;
+      const result = event.result && typeof event.result === 'object' ? event.result : null;
+      const preview = event.preview && typeof event.preview === 'object' ? event.preview : null;
+
+      const payload = {
+        type: 'agent_command',
+      };
+
+      if (command) {
+        const normalizedCommand = {};
+
+        const run = normaliseAgentText(command.run).trim();
+        if (run) {
+          normalizedCommand.run = run;
+        }
+
+        const description = normaliseAgentText(command.description).trim();
+        if (description) {
+          normalizedCommand.description = description;
+        }
+
+        if (typeof command.shell === 'string') {
+          const shell = normaliseAgentText(command.shell).trim();
+          if (shell) {
+            normalizedCommand.shell = shell;
+          }
+        }
+
+        if (typeof command.cwd === 'string') {
+          const cwd = normaliseAgentText(command.cwd).trim();
+          if (cwd) {
+            normalizedCommand.cwd = cwd;
+          }
+        }
+
+        const timeout =
+          typeof command.timeout_sec === 'number'
+            ? command.timeout_sec
+            : typeof command.timeout === 'number'
+              ? command.timeout
+              : null;
+        if (Number.isFinite(timeout)) {
+          normalizedCommand.timeoutSeconds = timeout;
+        }
+
+        if (typeof command.filter_regex === 'string') {
+          const filter = normaliseAgentText(command.filter_regex).trim();
+          if (filter) {
+            normalizedCommand.filterRegex = filter;
+          }
+        }
+
+        if (typeof command.tail_lines === 'number' && Number.isFinite(command.tail_lines)) {
+          normalizedCommand.tailLines = command.tail_lines;
+        }
+
+        if (Object.keys(normalizedCommand).length > 0) {
+          payload.command = normalizedCommand;
+        }
+      }
+
+      if (result) {
+        if (typeof result.exit_code === 'number' || result.exit_code === null) {
+          payload.exitCode = result.exit_code;
+        }
+        if (typeof result.runtime_ms === 'number' && Number.isFinite(result.runtime_ms)) {
+          payload.runtimeMs = result.runtime_ms;
+        }
+        if (typeof result.killed === 'boolean') {
+          payload.killed = result.killed;
+        }
+      }
+
+      if (preview) {
+        const stdout = normaliseAgentText(preview.stdoutPreview || preview.stdout);
+        const stderr = normaliseAgentText(preview.stderrPreview || preview.stderr);
+        const trimmedStdout = stdout.trim();
+        const trimmedStderr = stderr.trim();
+        if (trimmedStdout || trimmedStderr) {
+          payload.preview = {};
+          if (trimmedStdout) {
+            payload.preview.stdout = stdout;
+          }
+          if (trimmedStderr) {
+            payload.preview.stderr = stderr;
+          }
+        }
+      }
+
+      return JSON.stringify(payload);
+    }
     case 'request-input': {
       const payload = {
         type: 'agent_request_input',
