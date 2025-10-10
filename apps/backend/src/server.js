@@ -13,6 +13,34 @@ import { createTerminal } from './terminal.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+class FakeAgent {
+  constructor({ send }) {
+    if (typeof send !== 'function') {
+      throw new Error('FakeAgent requires a send function');
+    }
+    this.send = send;
+    this.formatter = new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'long',
+    });
+  }
+
+  respond() {
+    const formatted = this.formatter.format(new Date());
+    return `It is ${formatted} right now (server time).`;
+  }
+
+  handleUserMessage() {
+    try {
+      this.send({ type: 'agent_message', text: this.respond() });
+    } catch (error) {
+      console.warn('Failed to deliver fake agent response', error);
+    }
+  }
+
+  dispose() {}
+}
+
 /**
  * Rough Node.js clone of the original Python server implementation.
  * The class intentionally mirrors the method names so the port stays
@@ -30,6 +58,7 @@ export class UnifiedMarkdownServer {
     // Track websocket clients and file system watchers so we can broadcast updates.
     this.clients = new Map(); // ws -> subscribed root
     this.watchers = new Map(); // root -> { watcher, clients }
+    this.agentClients = new Map(); // ws -> FakeAgent
   }
 
   /**
@@ -66,11 +95,19 @@ export class UnifiedMarkdownServer {
 
     const directorySocket = new WebSocketServer({ noServer: true });
     const terminalSocket = new WebSocketServer({ noServer: true });
+    const agentSocket = new WebSocketServer({ noServer: true });
 
     server.on('upgrade', (request, socket, head) => {
       if (request.url.startsWith('/ws/terminal')) {
         terminalSocket.handleUpgrade(request, socket, head, (ws) => {
           terminalSocket.emit('connection', ws, request);
+        });
+        return;
+      }
+
+      if (request.url.startsWith('/ws/agent')) {
+        agentSocket.handleUpgrade(request, socket, head, (ws) => {
+          agentSocket.emit('connection', ws, request);
         });
         return;
       }
@@ -89,6 +126,9 @@ export class UnifiedMarkdownServer {
     terminalSocket.on('connection', (ws) => {
       this.#handleTerminalSocket(ws);
     });
+    agentSocket.on('connection', (ws) => {
+      this.#handleAgentSocket(ws);
+    });
 
     server.listen(this.port, () => {
       // eslint-disable-next-line no-console
@@ -102,6 +142,7 @@ export class UnifiedMarkdownServer {
     this.server = server;
     this.directorySocket = directorySocket;
     this.terminalSocket = terminalSocket;
+    this.agentSocket = agentSocket;
     return server;
   }
 
@@ -110,6 +151,20 @@ export class UnifiedMarkdownServer {
       await record.watcher.close();
     }
     this.watchers.clear();
+
+    for (const [ws, agent] of this.agentClients.entries()) {
+      try {
+        agent?.dispose?.();
+      } catch (error) {
+        console.warn('Failed to dispose agent instance', error);
+      }
+      try {
+        ws.close();
+      } catch (error) {
+        console.warn('Failed to close agent websocket', error);
+      }
+    }
+    this.agentClients.clear();
 
     for (const ws of this.clients.keys()) {
       ws.close();
@@ -130,6 +185,14 @@ export class UnifiedMarkdownServer {
       }
       await new Promise((resolve) => this.terminalSocket?.close(resolve));
       this.terminalSocket = undefined;
+    }
+
+    if (this.agentSocket) {
+      for (const client of this.agentSocket.clients) {
+        client.terminate();
+      }
+      await new Promise((resolve) => this.agentSocket?.close(resolve));
+      this.agentSocket = undefined;
     }
 
     await new Promise((resolve) => this.server?.close(resolve));
@@ -187,6 +250,50 @@ export class UnifiedMarkdownServer {
     const template = await fs.readFile(this.templatePath, 'utf8');
     const html = template.replace('__INITIAL_STATE_JSON__', JSON.stringify(initialState));
     res.type('html').send(html);
+  }
+
+  #handleAgentSocket(ws) {
+    const agent = new FakeAgent({
+      send: (payload) => {
+        if (!payload) {
+          return;
+        }
+        try {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(payload));
+          }
+        } catch (error) {
+          console.warn('Failed to send payload to agent client', error);
+        }
+      },
+    });
+
+    this.agentClients.set(ws, agent);
+
+    const cleanup = () => {
+      const stored = this.agentClients.get(ws);
+      if (stored === agent) {
+        this.agentClients.delete(ws);
+      }
+      agent.dispose?.();
+    };
+
+    ws.on('message', (data) => {
+      let payload;
+      try {
+        payload = JSON.parse(data);
+      } catch (error) {
+        console.warn('Received malformed agent payload', error);
+        return;
+      }
+
+      if (payload?.type === 'user_message' && typeof payload.text === 'string' && payload.text.trim()) {
+        agent.handleUserMessage();
+      }
+    });
+
+    ws.on('close', cleanup);
+    ws.on('error', cleanup);
   }
 
   async handleListFiles(req, res) {

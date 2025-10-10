@@ -7,6 +7,7 @@ export function initLayout(context) {
         viewerSection,
         tocSidebar,
         fileSidebar,
+        agentPanel,
         terminalPanel,
         tocSplitter,
         fileSplitter,
@@ -232,7 +233,7 @@ export function initLayout(context) {
             return null;
         }
 
-        if (!viewerSection || !tocSidebar || !fileSidebar || !terminalPanel) {
+        if (!viewerSection || !tocSidebar || !fileSidebar || !terminalPanel || !agentPanel) {
             console.warn('Dockview initialisation skipped: missing panel sources.');
             dockviewRoot.classList.add('hidden');
             if (appShell) {
@@ -252,6 +253,7 @@ export function initLayout(context) {
             viewer: viewerSection,
             toc: tocSidebar,
             files: fileSidebar,
+            agent: agentPanel,
             terminal: terminalPanel,
         };
 
@@ -314,6 +316,13 @@ export function initLayout(context) {
             position: { referencePanel: viewerPanel, direction: 'bottom' },
         });
 
+        const agentDockviewPanel = dockview.addPanel({
+            id: 'dockview-agent',
+            component: 'agent',
+            title: 'Agent',
+            position: { referencePanel: filesPanel, direction: 'bottom' },
+        });
+
         dockviewRoot.classList.remove('hidden');
         appShell?.classList.add('hidden');
 
@@ -323,6 +332,7 @@ export function initLayout(context) {
                 viewer: viewerPanel,
                 toc: tocPanel,
                 files: filesPanel,
+                agent: agentDockviewPanel,
                 terminal: terminalDockviewPanel,
             },
         };
