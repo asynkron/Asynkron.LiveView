@@ -332,11 +332,15 @@ export class UnifiedMarkdownServer {
 
   #handleAgentSocket(ws) {
     let binding;
+    console.log('Agent websocket connection received - initialising runtime binding');
     try {
       binding = createWebSocketBinding({
         socket: ws,
         autoStart: false,
-        formatOutgoing: formatAgentEvent,
+        formatOutgoing: (event) => {
+          console.log('Agent runtime emitted event', event);
+          return formatAgentEvent(event);
+        },
       });
     } catch (error) {
       const details = describeAgentError(error);
@@ -362,6 +366,7 @@ export class UnifiedMarkdownServer {
     let cleanup;
 
     const handleClose = () => {
+      console.log('Agent websocket closed by client');
       void cleanup?.('socket-close');
     };
 
@@ -378,6 +383,8 @@ export class UnifiedMarkdownServer {
       }
       record.cleaned = true;
       this.agentClients.delete(ws);
+
+      console.log('Cleaning up agent websocket binding', { reason });
 
       try {
         ws.off?.('close', handleClose);
@@ -399,23 +406,34 @@ export class UnifiedMarkdownServer {
     ws.on('close', handleClose);
     ws.on('error', handleError);
 
+    ws.on('message', (raw) => {
+      // Log the control flow of the agent socket without disrupting existing consumers.
+      console.log('Agent websocket received payload', raw.toString());
+    });
+
     try {
       const startResult = binding.start?.();
       if (startResult && typeof startResult.then === 'function') {
-        startResult.catch(async (startError) => {
-          const details = describeAgentError(startError);
-          this.#sendAgentPayload(ws, {
-            type: 'agent_error',
-            message: 'Agent runtime failed to start.',
-            details,
+        startResult
+          .then(() => {
+            console.log('Agent runtime reported async start completion');
+          })
+          .catch(async (startError) => {
+            const details = describeAgentError(startError);
+            this.#sendAgentPayload(ws, {
+              type: 'agent_error',
+              message: 'Agent runtime failed to start.',
+              details,
+            });
+            await cleanup('runtime-error');
+            try {
+              ws.close(1011, 'Agent runtime failed to start');
+            } catch (closeError) {
+              console.warn('Failed to close agent websocket after runtime error', closeError);
+            }
           });
-          await cleanup('runtime-error');
-          try {
-            ws.close(1011, 'Agent runtime failed to start');
-          } catch (closeError) {
-            console.warn('Failed to close agent websocket after runtime error', closeError);
-          }
-        });
+      } else {
+        console.log('Agent runtime started synchronously');
       }
     } catch (error) {
       const details = describeAgentError(error);
