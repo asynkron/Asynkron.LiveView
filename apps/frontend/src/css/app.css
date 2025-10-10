@@ -218,6 +218,10 @@ body {
     justify-content: flex-start;
 }
 
+.agent-message--command {
+    justify-content: flex-start;
+}
+
 .agent-message--thinking .agent-message-bubble {
     background: var(--color-overlay-panel);
 }
@@ -314,6 +318,17 @@ body {
     gap: var(--space-8);
 }
 
+.agent-message-bubble--command {
+    max-width: min(680px, 95%);
+    width: 100%;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-12);
+}
+
 .agent-message--event[data-level="error"] .agent-message-bubble--event {
     border-color: var(--color-danger-emphasis);
 }
@@ -359,6 +374,80 @@ body {
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+}
+
+.agent-command-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.agent-command-description {
+    font-size: 0.95rem;
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+}
+
+.agent-command-block {
+    margin: 0;
+    background: var(--color-overlay-60);
+    border-radius: 12px;
+    padding: var(--space-12) var(--space-16);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--color-text-primary);
+}
+
+.agent-command-block code {
+    background: transparent;
+    padding: 0;
+}
+
+.agent-command-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-12);
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+}
+
+.agent-command-meta-item {
+    display: flex;
+    gap: var(--space-6);
+    align-items: baseline;
+}
+
+.agent-command-meta-label {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-muted);
+}
+
+.agent-command-meta-value {
+    font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+    color: var(--color-text-primary);
+}
+
+.agent-command-output {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+}
+
+.agent-command-output-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-muted);
+}
+
+.agent-command-output-block {
+    margin-top: 0;
 }
 
 .agent-input-form {
