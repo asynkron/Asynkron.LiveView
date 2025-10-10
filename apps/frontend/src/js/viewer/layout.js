@@ -291,21 +291,69 @@ export function initLayout(context) {
 
         const newlyAddedPanels = [];
 
+        // Small helper that tries every known Dockview lookup surface so that
+        // we can find a panel regardless of which API version is present.
+        function findExistingPanel(id) {
+            if (!dockview || !id) {
+                return null;
+            }
+
+            const lookups = [
+                () => dockview.getPanel?.(id),
+                () => dockview.api?.getPanel?.(id),
+            ];
+
+            for (const lookup of lookups) {
+                try {
+                    const panel = lookup?.();
+                    if (panel) {
+                        return panel;
+                    }
+                } catch (_error) {
+                    // Ignore lookup failures – different Dockview builds expose
+                    // slightly different APIs and we only care about success.
+                }
+            }
+
+            return null;
+        }
+
         // Restored layouts from before the agent chat existed won't include the
         // new panel, so ensurePanel() rehydrates missing Dockview panels using
         // the default positioning logic.
         function ensurePanel(id, createPanel) {
-            const existing = dockview.getPanel?.(id);
+            const existing = findExistingPanel(id);
             if (existing) {
                 return { panel: existing, created: false };
             }
 
-            const panel = createPanel?.();
-            if (panel) {
-                newlyAddedPanels.push(panel);
-            }
+            try {
+                const panel = createPanel?.();
+                if (panel) {
+                    newlyAddedPanels.push(panel);
+                }
 
-            return { panel: panel ?? null, created: Boolean(panel) };
+                return { panel: panel ?? null, created: Boolean(panel) };
+            } catch (error) {
+                if (error instanceof Error && /already exists/i.test(error.message)) {
+                    console.warn(`Dockview panel '${id}' already existed; using the restored instance.`, error);
+
+                    const fallbackPanel = findExistingPanel(id);
+                    if (fallbackPanel) {
+                        return { panel: fallbackPanel, created: false };
+                    }
+
+                    try {
+                        window.localStorage?.removeItem?.(storageKey);
+                    } catch (storageError) {
+                        console.warn('Unable to clear conflicting dockview layout.', storageError);
+                    }
+
+                    return { panel: null, created: false };
+                }
+
+                throw error;
+            }
         }
 
         // Try to restore the user's saved layout first; missing panels will be
