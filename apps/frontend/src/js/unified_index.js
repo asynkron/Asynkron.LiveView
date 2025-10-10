@@ -9,6 +9,7 @@ import { createSharedContext } from './app/shared_context.js';
 import { createRealtimeService } from './services/realtime.js';
 import { createTerminalService } from './services/terminal.js';
 import { createChatService } from './services/chat.js';
+import { createMarkdownDisplay } from './components/markdown_display.js';
 import {
     createViewerApi,
     normaliseFileIndex,
@@ -105,7 +106,7 @@ function composeUnifiedApp() {
         rootElement,
         setStatus,
     });
-    const markdownContext = {
+    const markdownDisplay = createMarkdownDisplay({
         content,
         tocList,
         getCurrentFile: () => sharedContext.getCurrentFile(),
@@ -113,8 +114,9 @@ function composeUnifiedApp() {
             sharedContext.setCurrentContent(value);
         },
         buildQuery: (params) => sharedContext.buildQuery(params),
-    };
-    sharedContext.markdownContext = markdownContext;
+    });
+    sharedContext.markdownDisplay = markdownDisplay;
+    sharedContext.markdownContext = markdownDisplay.getContext();
 
     const unifiedApp = createUnifiedApp({
         context,
