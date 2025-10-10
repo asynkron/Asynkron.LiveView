@@ -254,7 +254,7 @@ export class UnifiedMarkdownServer {
     this.directorySocketManager = new DirectorySocketManager({
       watchHub: this.watchHub,
       resolveRoot: this.resolveRoot.bind(this),
-      handleFilesystemEvent: this.handleFilesystemEvent.bind(this),
+      handleFilesystemEvent: (...args) => this.handleFilesystemEvent(...args),
     });
     this.watchHub.setBroadcaster((root, payload) => {
       this.directorySocketManager.broadcast(root, payload);
@@ -269,16 +269,16 @@ export class UnifiedMarkdownServer {
   }
 
   async handleFilesystemEvent(rootPath, kind, relativePath) {
-    const { root } = this.resolveRoot(pathArgument);
-    return this.watchHub.handleFilesystemEvent(root, kind, relativePath);
+    return this.watchHub.handleFilesystemEvent(rootPath, kind, relativePath);
   }
 
   createApp() {
     const routes = createRoutes({
       fileManager: this.fileManager,
       watchHub: this.watchHub,
-      getTemplate: () => fs.readFile(this.templatePath, 'utf8'),
+      getTemplate: () => fs.readFile(this.templatePath, "utf8"),
       resolveRoot: this.resolveRoot.bind(this),
+      handleFilesystemEvent: (...args) => this.handleFilesystemEvent(...args),
     });
 
     return createHttpApp({
