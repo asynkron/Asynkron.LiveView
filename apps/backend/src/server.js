@@ -154,7 +154,7 @@ export class UnifiedMarkdownServer {
     this.staticAssetsPath = path.join(this.publicPath, 'static');
 
     this.agentConfig = {
-      autoApprove: Boolean(agent?.autoApprove),
+      autoApprove: agent?.autoApprove !== false,
     };
 
     // Track websocket clients and file system watchers so we can broadcast updates.
@@ -164,12 +164,12 @@ export class UnifiedMarkdownServer {
   }
 
   #buildAgentRuntimeOptions() {
-    if (!this.agentConfig?.autoApprove) {
+    if (this.agentConfig?.autoApprove === false) {
       return undefined;
     }
 
     return {
-      getAutoApproveFlag: () => Boolean(this.agentConfig?.autoApprove),
+      getAutoApproveFlag: () => true,
       emitAutoApproveStatus: true,
     };
   }

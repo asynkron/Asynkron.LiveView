@@ -45,6 +45,12 @@ export function createChatService(options = {}) {
     let lastStatusLevel = '';
     let thinkingMessage = null;
 
+    const approvalSuppressionPhrases = [
+        'approve running this command?',
+        'approved and added to session approvals.',
+        'command approved for the remainder of the session.',
+    ];
+
     function scrollToLatest() {
         if (!scrollContainer) {
             return;
@@ -58,7 +64,7 @@ export function createChatService(options = {}) {
         if (!statusElement) {
             return;
         }
-        const message = isThinking ? 'Agent is thinking…' : lastStatus;
+        const message = lastStatus;
         statusElement.textContent = message || '';
         if (isThinking) {
             statusElement.dataset.level = 'info';
@@ -158,6 +164,43 @@ export function createChatService(options = {}) {
             console.warn('Failed to normalise agent text', error);
             return '';
         }
+    }
+
+    function toComparableText(value) {
+        const normalised = normaliseText(value);
+        if (!normalised) {
+            return '';
+        }
+        return normalised.replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    function isApprovalText(value) {
+        const comparable = toComparableText(value);
+        if (!comparable) {
+            return false;
+        }
+        return approvalSuppressionPhrases.some((phrase) => comparable.includes(phrase));
+    }
+
+    function isApprovalNotification(payload = {}) {
+        if (!payload || typeof payload !== 'object') {
+            return false;
+        }
+
+        const fields = [
+            payload.text,
+            payload.title,
+            payload.subtitle,
+            payload.description,
+            payload.details,
+            payload.prompt,
+        ];
+
+        if (payload.metadata && typeof payload.metadata === 'object') {
+            fields.push(payload.metadata.scope);
+        }
+
+        return fields.some((value) => isApprovalText(value));
     }
 
     function updatePanelState() {
@@ -269,6 +312,16 @@ export function createChatService(options = {}) {
         const description = normaliseText(payload.description).trim();
         const details = normaliseText(payload.details).trim();
 
+        if (isApprovalNotification({
+            text,
+            title,
+            subtitle,
+            description,
+            details,
+        })) {
+            return;
+        }
+
         if (eventType === 'request-input') {
             return;
         }
@@ -315,14 +368,14 @@ export function createChatService(options = {}) {
         const bubble = document.createElement('div');
         bubble.className = 'agent-message-bubble agent-message-bubble--event';
 
-        if (headerText) {
+        if (headerText && !isApprovalText(headerText)) {
             const header = document.createElement('div');
             header.className = 'agent-event-title';
             header.textContent = headerText;
             bubble.appendChild(header);
         }
 
-        if (bodyText && (!headerText || bodyText !== headerText)) {
+        if (bodyText && (!headerText || bodyText !== headerText) && !isApprovalText(bodyText)) {
             const body = document.createElement('div');
             body.className = 'agent-event-body';
             body.textContent = bodyText;
@@ -374,6 +427,10 @@ export function createChatService(options = {}) {
             }
             case 'agent_status': {
                 const text = normaliseText(payload.text);
+                const statusPayload = { ...payload, text };
+                if (isApprovalNotification(statusPayload)) {
+                    break;
+                }
                 if (text) {
                     const level = typeof payload.level === 'string' ? payload.level : undefined;
                     setStatus(text, { level });
@@ -406,10 +463,11 @@ export function createChatService(options = {}) {
             case 'agent_request_input': {
                 updateThinkingState(false);
                 const promptText = normaliseText(payload.prompt).trim();
-                const readyMessage = 'Agent is ready for your next message.';
-                const shouldShowPrompt = promptText && promptText !== '▷';
-                const displayText = shouldShowPrompt ? promptText : readyMessage;
-                setStatus(displayText);
+                if (!promptText || promptText === '▷' || isApprovalText(promptText)) {
+                    setStatus('');
+                } else {
+                    setStatus(promptText);
+                }
                 break;
             }
             case 'agent_plan':
