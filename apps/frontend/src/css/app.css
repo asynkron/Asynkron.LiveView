@@ -303,6 +303,18 @@ body {
     min-height: 1.2em;
 }
 
+.agent-status[data-level="warn"] {
+    color: var(--color-accent-gold);
+}
+
+.agent-status[data-level="error"] {
+    color: var(--color-accent-salmon);
+}
+
+.agent-status[data-thinking="true"] {
+    color: var(--color-text-secondary);
+}
+
 .agent-panel .hidden {
     display: none !important;
 }

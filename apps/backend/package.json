@@ -16,6 +16,7 @@
     "format:fix": "prettier --write \"src/**/*.js\" \"tests/**/*.js\" README.md"
   },
   "dependencies": {
+    "@asynkron/openagent": "^2.13.2",
     "chokidar": "^3.5.3",
     "express": "^4.19.2",
     "ws": "^8.15.1",
