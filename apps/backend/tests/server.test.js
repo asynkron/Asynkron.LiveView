@@ -246,4 +246,49 @@ describe('UnifiedMarkdownServer', () => {
       }
     }
   });
+
+  it('translates chat feed payloads into runtime prompts', async () => {
+    const server = new UnifiedMarkdownServer({ markdownDir: tempDir, port: 0 });
+    await server.start();
+
+    const address = server.server.address();
+    const port = typeof address === 'object' && address?.port ? address.port : server.port;
+    const url = `ws://127.0.0.1:${port}/ws/agent`;
+
+    const client = new WebSocket(url);
+
+    try {
+      await new Promise((resolve, reject) => {
+        client.on('open', resolve);
+        client.on('error', reject);
+      });
+
+      const messagePromise = new Promise((resolve, reject) => {
+        client.once('message', (data) => resolve(data.toString()));
+        client.once('error', reject);
+      });
+
+      client.send(JSON.stringify({ type: 'chat', text: 'Hello via chat feed' }));
+
+      const raw = await messagePromise;
+      const payload = JSON.parse(raw);
+      expect(payload.type).toBe('agent_message');
+      expect(payload.text).toBe('Echo: Hello via chat feed');
+
+      expect(openAgentModule.createWebSocketBinding).toHaveBeenCalledTimes(1);
+      const [record] = bindingRecords;
+      expect(record?.binding.runtime.submitPrompt).toHaveBeenCalledWith('Hello via chat feed');
+    } finally {
+      await new Promise((resolve) => {
+        client.once('close', resolve);
+        client.close(1000);
+      });
+
+      await server.stop();
+      const [record] = bindingRecords;
+      if (record) {
+        expect(record.binding.stop).toHaveBeenCalled();
+      }
+    }
+  });
 });

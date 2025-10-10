@@ -437,9 +437,74 @@ export class UnifiedMarkdownServer {
     ws.on('close', handleClose);
     ws.on('error', handleError);
 
-    ws.on('message', (raw) => {
+    ws.on('message', (raw, isBinary) => {
       // Log the control flow of the agent socket without disrupting existing consumers.
-      console.log('Agent websocket received payload', raw.toString());
+      let serialized;
+      if (typeof raw === 'string') {
+        serialized = raw;
+      } else if (Buffer.isBuffer(raw)) {
+        serialized = raw.toString('utf8');
+      } else if (!isBinary && raw && typeof raw.toString === 'function') {
+        serialized = raw.toString();
+      } else {
+        serialized = '';
+      }
+
+      console.log('Agent websocket received payload', serialized || raw);
+
+      // Normalise CLI chat events ("type": "chat") into prompt submissions so they
+      // reach the agent runtime input queue. The websocket binding only understands
+      // prompt-style payloads, so we translate here while leaving existing formats
+      // untouched for backwards compatibility.
+      if (!serialized || !binding?.runtime?.submitPrompt) {
+        return;
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(serialized);
+      } catch (error) {
+        // Non-JSON payloads are handled by the OpenAgent websocket binding.
+        return;
+      }
+
+      if (!parsed || typeof parsed !== 'object') {
+        return;
+      }
+
+      const type = typeof parsed.type === 'string' ? parsed.type.toLowerCase() : undefined;
+      if (type !== 'chat') {
+        return;
+      }
+
+      const promptSource =
+        typeof parsed.text !== 'undefined'
+          ? parsed.text
+          : typeof parsed.prompt !== 'undefined'
+            ? parsed.prompt
+            : typeof parsed.value !== 'undefined'
+              ? parsed.value
+              : parsed.message;
+
+      if (typeof promptSource === 'undefined') {
+        return;
+      }
+
+      const prompt =
+        typeof promptSource === 'string'
+          ? promptSource.trim()
+          : normaliseAgentText(promptSource).trim();
+
+      if (!prompt) {
+        return;
+      }
+
+      try {
+        binding.runtime.submitPrompt(prompt);
+        console.log('Forwarded chat payload to agent runtime queue');
+      } catch (error) {
+        console.warn('Failed to forward chat payload to agent runtime queue', error);
+      }
     });
 
     try {
