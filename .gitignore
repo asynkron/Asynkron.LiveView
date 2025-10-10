@@ -224,3 +224,10 @@ markdown/*
 /apps/backend/node_modules/
 !/apps/backend/public/static/dist/
 .DS_Store
+apps/backend/.openagent/plan.json
+apps/backend/public/static/dist/app.css
+apps/backend/public/static/dist/unified_index.js
+apps/backend/public/static/dist/unified_index.js.map
+apps/backend/public/static/dist/unified_index.js
+apps/backend/public/static/dist/app.css
+apps/backend/public/static/dist/unified_index.js.map
