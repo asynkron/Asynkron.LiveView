@@ -43,6 +43,16 @@ export function createChatService(options = {}) {
     let isThinking = false;
     let lastStatus = '';
     let lastStatusLevel = '';
+    let thinkingMessage = null;
+
+    function scrollToLatest() {
+        if (!scrollContainer) {
+            return;
+        }
+        window.requestAnimationFrame(() => {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        });
+    }
 
     function updateStatusDisplay() {
         if (!statusElement) {
@@ -71,8 +81,60 @@ export function createChatService(options = {}) {
         }
     }
 
+    // Render a lightweight placeholder while the agent prepares a response.
+    function ensureThinkingMessage() {
+        if (!messageList || thinkingMessage) {
+            return;
+        }
+
+        ensureConversationStarted();
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'agent-message agent-message--agent agent-message--thinking';
+
+        const bubble = document.createElement('div');
+        bubble.className = 'agent-message-bubble agent-message-bubble--thinking';
+        bubble.setAttribute('aria-live', 'polite');
+
+        const indicator = document.createElement('div');
+        indicator.className = 'agent-thinking-indicator';
+
+        const text = document.createElement('span');
+        text.className = 'agent-thinking-text';
+        text.textContent = 'Preparing response';
+        indicator.appendChild(text);
+
+        const dots = document.createElement('span');
+        dots.className = 'agent-thinking-dots';
+        for (let index = 0; index < 3; index += 1) {
+            const dot = document.createElement('span');
+            dot.className = 'agent-thinking-dot';
+            dots.appendChild(dot);
+        }
+        indicator.appendChild(dots);
+
+        bubble.appendChild(indicator);
+        wrapper.appendChild(bubble);
+        messageList.appendChild(wrapper);
+
+        thinkingMessage = wrapper;
+        scrollToLatest();
+    }
+
+    function removeThinkingMessage() {
+        if (thinkingMessage?.parentElement) {
+            thinkingMessage.parentElement.removeChild(thinkingMessage);
+        }
+        thinkingMessage = null;
+    }
+
     function updateThinkingState(next) {
         const active = Boolean(next);
+        if (active) {
+            ensureThinkingMessage();
+        } else {
+            removeThinkingMessage();
+        }
         if (isThinking === active) {
             return;
         }
@@ -193,11 +255,7 @@ export function createChatService(options = {}) {
         wrapper.appendChild(bubble);
         messageList.appendChild(wrapper);
 
-        window.requestAnimationFrame(() => {
-            if (scrollContainer) {
-                scrollContainer.scrollTop = scrollContainer.scrollHeight;
-            }
-        });
+        scrollToLatest();
     }
 
     function appendEvent(eventType, payload = {}) {
@@ -286,11 +344,7 @@ export function createChatService(options = {}) {
         wrapper.appendChild(bubble);
         messageList.appendChild(wrapper);
 
-        window.requestAnimationFrame(() => {
-            if (scrollContainer) {
-                scrollContainer.scrollTop = scrollContainer.scrollHeight;
-            }
-        });
+        scrollToLatest();
     }
 
     function handleIncoming(event) {
