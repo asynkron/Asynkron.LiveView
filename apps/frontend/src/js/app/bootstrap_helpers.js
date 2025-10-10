@@ -1,21 +1,33 @@
 import { renderMarkdown, captureHeadingLocations, getHeadingLocation, getHeadingSection } from '../viewer/markdown.js';
 
-export function createViewerApi(markdownContext) {
+export function createViewerApi(markdownTarget) {
+    if (!markdownTarget) {
+        throw new Error('createViewerApi requires a markdown context or display.');
+    }
+
+    const hasRenderer = typeof markdownTarget.render === 'function'
+        && typeof markdownTarget.getContext === 'function';
+    const context = hasRenderer ? markdownTarget.getContext() : markdownTarget;
+
     return {
         render(contentValue, options = {}) {
-            renderMarkdown(markdownContext, contentValue, options);
+            if (hasRenderer) {
+                markdownTarget.render(contentValue, options);
+                return;
+            }
+            renderMarkdown(context, contentValue, options);
         },
         captureHeadings(source) {
-            return captureHeadingLocations(markdownContext, source);
+            return captureHeadingLocations(context, source);
         },
         getHeadingLocation(slug) {
-            return getHeadingLocation(markdownContext, slug);
+            return getHeadingLocation(context, slug);
         },
         getHeadingSection(slug) {
-            return getHeadingSection(markdownContext, slug);
+            return getHeadingSection(context, slug);
         },
         getMarkdownContext() {
-            return markdownContext;
+            return context;
         },
     };
 }

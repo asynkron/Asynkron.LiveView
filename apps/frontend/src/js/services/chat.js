@@ -1,3 +1,5 @@
+import { createMarkdownDisplay } from '../components/markdown_display.js';
+
 export function createChatService(options = {}) {
     const {
         panel,
@@ -175,7 +177,18 @@ export function createChatService(options = {}) {
 
         const bubble = document.createElement('div');
         bubble.className = 'agent-message-bubble';
-        bubble.textContent = text;
+
+        if (role === 'agent') {
+            const markdownDisplay = createMarkdownDisplay({
+                content: bubble,
+                getCurrentFile: () => null,
+                setCurrentContent: () => {},
+                buildQuery: () => '',
+            });
+            markdownDisplay.render(text, { updateCurrent: false });
+        } else {
+            bubble.textContent = text;
+        }
 
         wrapper.appendChild(bubble);
         messageList.appendChild(wrapper);
@@ -197,6 +210,10 @@ export function createChatService(options = {}) {
         const subtitle = normaliseText(payload.subtitle).trim();
         const description = normaliseText(payload.description).trim();
         const details = normaliseText(payload.details).trim();
+
+        if (eventType === 'request-input') {
+            return;
+        }
 
         let headerText = title;
         let bodyText = '';
@@ -339,11 +356,6 @@ export function createChatService(options = {}) {
                 const shouldShowPrompt = promptText && promptText !== '▷';
                 const displayText = shouldShowPrompt ? promptText : readyMessage;
                 setStatus(displayText);
-                appendEvent('request-input', {
-                    text: displayText,
-                    level: typeof payload.level === 'string' ? payload.level : undefined,
-                    metadata: payload.metadata,
-                });
                 break;
             }
             case 'agent_plan':
