@@ -1,4 +1,5 @@
 import { createMarkdownDisplay } from '../components/markdown_display.js';
+import { createPlanDisplay } from '../components/plan_display.js';
 
 const globalScope = typeof window !== 'undefined' ? window : globalThis;
 const markedLib = globalScope?.marked;
@@ -15,6 +16,7 @@ export function createChatService(options = {}) {
         messageList,
         chatForm,
         chatInput,
+        planContainer,
         statusElement,
         reconnectDelay = 2000,
     } = options;
@@ -27,6 +29,7 @@ export function createChatService(options = {}) {
     const pendingMessages = [];
     const scrollContainer = chatBody || messageList;
     const sendButtons = [];
+    const planDisplay = createPlanDisplay({ container: planContainer });
     if (startForm) {
         const button = startForm.querySelector('button[type="submit"]');
         if (button && !sendButtons.includes(button)) {
@@ -709,6 +712,10 @@ export function createChatService(options = {}) {
                 break;
             }
             case 'agent_plan':
+                ensureConversationStarted();
+                planDisplay?.update(payload.plan);
+                break;
+            case 'agent_event':
                 // Reserved for future UI enhancements.
                 break;
             case 'agent_event': {
@@ -882,6 +889,7 @@ export function createChatService(options = {}) {
         connect,
         dispose() {
             destroyed = true;
+            planDisplay?.reset?.();
             clearReconnectTimer();
             updateThinkingState(false);
             if (socket) {

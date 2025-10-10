@@ -33,6 +33,7 @@ export function createUnifiedApp({
         agentStartInput,
         agentChat,
         agentChatBody,
+        agentPlan,
         agentMessages,
         agentChatForm,
         agentChatInput,
@@ -196,6 +197,7 @@ export function createUnifiedApp({
             messageList: agentMessages,
             chatForm: agentChatForm,
             chatInput: agentChatInput,
+            planContainer: agentPlan,
             statusElement: agentStatus,
         }) ?? null;
 
