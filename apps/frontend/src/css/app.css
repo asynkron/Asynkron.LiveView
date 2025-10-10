@@ -235,6 +235,10 @@ body {
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
 }
 
+.agent-message-bubble.markdown-display {
+    white-space: normal;
+}
+
 .agent-message--user .agent-message-bubble {
     background: var(--color-accent-blue);
     border-color: transparent;
@@ -532,12 +536,12 @@ a {
     display: none;
 }
 
-.content-area h1,
-.content-area h2,
-.content-area h3,
-.content-area h4,
-.content-area h5,
-.content-area h6 {
+:where(.content-area, .markdown-display) h1,
+:where(.content-area, .markdown-display) h2,
+:where(.content-area, .markdown-display) h3,
+:where(.content-area, .markdown-display) h4,
+:where(.content-area, .markdown-display) h5,
+:where(.content-area, .markdown-display) h6 {
     color: var(--color-text-inverse);
     position: relative;
 }
@@ -605,30 +609,30 @@ a {
     outline: none;
 }
 
-.content-area h1:hover .heading-anchor,
-.content-area h1:focus-within .heading-anchor,
-.content-area h2:hover .heading-anchor,
-.content-area h2:focus-within .heading-anchor,
-.content-area h3:hover .heading-anchor,
-.content-area h3:focus-within .heading-anchor,
-.content-area h4:hover .heading-anchor,
-.content-area h4:focus-within .heading-anchor,
-.content-area h5:hover .heading-anchor,
-.content-area h5:focus-within .heading-anchor,
-.content-area h6:hover .heading-anchor,
-.content-area h6:focus-within .heading-anchor,
-.content-area h1:hover .heading-actions,
-.content-area h1:focus-within .heading-actions,
-.content-area h2:hover .heading-actions,
-.content-area h2:focus-within .heading-actions,
-.content-area h3:hover .heading-actions,
-.content-area h3:focus-within .heading-actions,
-.content-area h4:hover .heading-actions,
-.content-area h4:focus-within .heading-actions,
-.content-area h5:hover .heading-actions,
-.content-area h5:focus-within .heading-actions,
-.content-area h6:hover .heading-actions,
-.content-area h6:focus-within .heading-actions {
+:where(.content-area, .markdown-display) h1:hover .heading-anchor,
+:where(.content-area, .markdown-display) h1:focus-within .heading-anchor,
+:where(.content-area, .markdown-display) h2:hover .heading-anchor,
+:where(.content-area, .markdown-display) h2:focus-within .heading-anchor,
+:where(.content-area, .markdown-display) h3:hover .heading-anchor,
+:where(.content-area, .markdown-display) h3:focus-within .heading-anchor,
+:where(.content-area, .markdown-display) h4:hover .heading-anchor,
+:where(.content-area, .markdown-display) h4:focus-within .heading-anchor,
+:where(.content-area, .markdown-display) h5:hover .heading-anchor,
+:where(.content-area, .markdown-display) h5:focus-within .heading-anchor,
+:where(.content-area, .markdown-display) h6:hover .heading-anchor,
+:where(.content-area, .markdown-display) h6:focus-within .heading-anchor,
+:where(.content-area, .markdown-display) h1:hover .heading-actions,
+:where(.content-area, .markdown-display) h1:focus-within .heading-actions,
+:where(.content-area, .markdown-display) h2:hover .heading-actions,
+:where(.content-area, .markdown-display) h2:focus-within .heading-actions,
+:where(.content-area, .markdown-display) h3:hover .heading-actions,
+:where(.content-area, .markdown-display) h3:focus-within .heading-actions,
+:where(.content-area, .markdown-display) h4:hover .heading-actions,
+:where(.content-area, .markdown-display) h4:focus-within .heading-actions,
+:where(.content-area, .markdown-display) h5:hover .heading-actions,
+:where(.content-area, .markdown-display) h5:focus-within .heading-actions,
+:where(.content-area, .markdown-display) h6:hover .heading-actions,
+:where(.content-area, .markdown-display) h6:focus-within .heading-actions {
     opacity: 1;
 }
 
@@ -636,13 +640,13 @@ a {
     background: var(--color-accent-blue-focus);
 }
 
-.content-area pre code {
+:where(.content-area, .markdown-display) pre code {
     background: transparent;
     border-radius: 0;
     padding: var(--space-2) var(--space-5);
 }
 
-.content-area code {
+:where(.content-area, .markdown-display) code {
     border-radius: 6px;
     padding: var(--space-2) var(--space-5);
     background: #3a343b;
@@ -663,7 +667,7 @@ blockquote code {
 }
 
 
-.content-area pre {
+:where(.content-area, .markdown-display) pre {
     background: #2a262b;
     /* border-radius: 8px; */
     padding: var(--space-16);
@@ -692,31 +696,31 @@ blockquote code {
     padding: var(--space-12);
 }
 
-.content-area .mermaid {
+:where(.content-area, .markdown-display) .mermaid {
     display: block;
     margin: var(--space-24) var(--space-0);
 }
 
-.content-area .vega-diagram,
-.content-area .excalidraw-diagram {
+:where(.content-area, .markdown-display) .vega-diagram,
+:where(.content-area, .markdown-display) .excalidraw-diagram {
     margin: var(--space-24) var(--space-0);
     position: relative;
     min-height: 120px;
     overflow: hidden;
 }
 
-.content-area .excalidraw-wrapper {
+:where(.content-area, .markdown-display) .excalidraw-wrapper {
     width: 100%;
     min-height: 320px;
     height: clamp(320px, 65vh, 640px);
     pointer-events: none;
 }
 
-.content-area .excalidraw-wrapper canvas {
+:where(.content-area, .markdown-display) .excalidraw-wrapper canvas {
     pointer-events: none !important;
 }
 
-.content-area .excalidraw-wrapper .layer-ui__wrapper {
+:where(.content-area, .markdown-display) .excalidraw-wrapper .layer-ui__wrapper {
     display: none !important;
 }
 
