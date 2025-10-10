@@ -195,6 +195,171 @@ body {
     gap: var(--space-16);
 }
 
+.agent-plan {
+    flex: 0 0 auto;
+    padding: var(--space-20) var(--space-24);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-12);
+    border-top: 1px solid var(--color-border-default);
+    border-bottom: 1px solid var(--color-border-default);
+    background: linear-gradient(180deg, rgba(13, 17, 23, 0.85) 0%, rgba(13, 17, 23, 0.95) 100%);
+}
+
+.agent-plan.hidden + .agent-input-form {
+    border-top: 1px solid var(--color-border-default);
+}
+
+.agent-plan:not(.hidden) + .agent-input-form {
+    border-top: none;
+}
+
+.agent-plan-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-12);
+}
+
+.agent-plan-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.agent-plan-summary {
+    font-size: 0.75rem;
+    color: var(--color-text-tertiary);
+    white-space: nowrap;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agent-plan-progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+}
+
+.agent-plan-progress-bar {
+    position: relative;
+    width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-bg-muted);
+    overflow: hidden;
+}
+
+.agent-plan-progress-fill {
+    position: absolute;
+    inset: 0;
+    width: 0%;
+    background: var(--color-accent-blue);
+    transition: width 0.3s ease;
+}
+
+.agent-plan-progress-label {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+}
+
+.agent-plan-steps-container {
+    max-height: 240px;
+    overflow-y: auto;
+    padding-right: var(--space-4);
+}
+
+.agent-plan-steps {
+    margin: var(--space-0);
+    padding: var(--space-0);
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-10);
+}
+
+.agent-plan-step {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+.agent-plan-step-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-10);
+}
+
+.agent-plan-step-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--color-text-muted);
+    box-shadow: 0 0 0 2px rgba(13, 17, 23, 0.6);
+}
+
+.agent-plan-step-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+}
+
+.agent-plan-step-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--color-text-primary);
+    font-size: 0.9rem;
+}
+
+.agent-plan-step-status {
+    font-size: 0.75rem;
+    color: var(--color-text-tertiary);
+    margin-left: calc(10px + var(--space-10));
+}
+
+.agent-plan-step > .agent-plan-steps {
+    margin-top: var(--space-6);
+    margin-left: calc(10px + var(--space-10) + 1.6ch);
+}
+
+.agent-plan-step--completed .agent-plan-step-indicator {
+    background: var(--color-accent-green);
+}
+
+.agent-plan-step--completed .agent-plan-step-label {
+    color: var(--color-accent-green);
+}
+
+.agent-plan-step--active .agent-plan-step-indicator {
+    background: var(--color-accent-blue);
+}
+
+.agent-plan-step--active .agent-plan-step-label {
+    color: var(--color-accent-blue);
+}
+
+.agent-plan-step--active .agent-plan-step-status {
+    color: var(--color-accent-blue);
+}
+
+.agent-plan-step--blocked .agent-plan-step-indicator {
+    background: var(--color-accent-salmon);
+}
+
+.agent-plan-step--blocked .agent-plan-step-status {
+    color: var(--color-accent-salmon);
+}
+
+.agent-plan-step--pending .agent-plan-step-label {
+    color: var(--color-text-muted);
+}
+
 .agent-messages {
     display: flex;
     flex-direction: column;

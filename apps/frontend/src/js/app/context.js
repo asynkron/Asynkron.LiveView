@@ -38,6 +38,7 @@ export function createAppContext() {
         agentStartInput: document.getElementById('agent-start-input'),
         agentChat: document.getElementById('agent-chat'),
         agentChatBody: document.getElementById('agent-chat-body'),
+        agentPlan: document.getElementById('agent-plan'),
         agentMessages: document.getElementById('agent-messages'),
         agentChatForm: document.getElementById('agent-chat-form'),
         agentChatInput: document.getElementById('agent-chat-input'),
