@@ -289,39 +289,68 @@ export function initLayout(context) {
             ? currentFile
             : 'Document';
 
-        const viewerPanel = dockview.addPanel({
+        const newlyAddedPanels = [];
+
+        // Restored layouts from before the agent chat existed won't include the
+        // new panel, so ensurePanel() rehydrates missing Dockview panels using
+        // the default positioning logic.
+        function ensurePanel(id, createPanel) {
+            const existing = dockview.getPanel?.(id);
+            if (existing) {
+                return { panel: existing, created: false };
+            }
+
+            const panel = createPanel?.();
+            if (panel) {
+                newlyAddedPanels.push(panel);
+            }
+
+            return { panel: panel ?? null, created: Boolean(panel) };
+        }
+
+        // Try to restore the user's saved layout first; missing panels will be
+        // re-added below so older layouts keep working.
+        restoreDockviewLayout(dockview);
+
+        const { panel: viewerPanel } = ensurePanel('dockview-viewer', () => dockview.addPanel({
             id: 'dockview-viewer',
             component: 'viewer',
             title: currentViewerTitle,
-        });
+        }));
 
-        const tocPanel = dockview.addPanel({
+        if (viewerPanel?.api?.setTitle) {
+            viewerPanel.api.setTitle(currentViewerTitle);
+        }
+
+        const { panel: tocPanel } = ensurePanel('dockview-toc', () => dockview.addPanel({
             id: 'dockview-toc',
             component: 'toc',
             title: 'Table of contents',
-            position: { referencePanel: viewerPanel, direction: 'left' },
-        });
+            position: viewerPanel ? { referencePanel: viewerPanel, direction: 'left' } : undefined,
+        }));
 
-        const filesPanel = dockview.addPanel({
+        const { panel: filesPanel } = ensurePanel('dockview-files', () => dockview.addPanel({
             id: 'dockview-files',
             component: 'files',
             title: 'Files',
-            position: { referencePanel: viewerPanel, direction: 'right' },
-        });
+            position: viewerPanel ? { referencePanel: viewerPanel, direction: 'right' } : undefined,
+        }));
 
-        const terminalDockviewPanel = dockview.addPanel({
+        const { panel: terminalDockviewPanel } = ensurePanel('dockview-terminal', () => dockview.addPanel({
             id: 'dockview-terminal',
             component: 'terminal',
             title: 'Terminal',
-            position: { referencePanel: viewerPanel, direction: 'bottom' },
-        });
+            position: viewerPanel ? { referencePanel: viewerPanel, direction: 'bottom' } : undefined,
+        }));
 
-        const agentDockviewPanel = dockview.addPanel({
+        const { panel: agentDockviewPanel } = ensurePanel('dockview-agent', () => dockview.addPanel({
             id: 'dockview-agent',
             component: 'agent',
             title: 'Agent',
-            position: { referencePanel: filesPanel, direction: 'bottom' },
-        });
+            position: (filesPanel ?? viewerPanel)
+                ? { referencePanel: filesPanel ?? viewerPanel, direction: 'bottom' }
+                : undefined,
+        }));
 
         dockviewRoot.classList.remove('hidden');
         appShell?.classList.add('hidden');
@@ -339,8 +368,6 @@ export function initLayout(context) {
 
         window.__dockviewSetup = setup;
 
-        restoreDockviewLayout(dockview);
-
         [
             ['toc', tocPanel?.group?.api],
             ['files', filesPanel?.group?.api],
@@ -352,8 +379,14 @@ export function initLayout(context) {
             }
         });
 
-        updatePanelToggleButtonState('toc', true);
-        updatePanelToggleButtonState('files', true);
+        updatePanelToggleButtonState('toc', getPanelVisibility('toc'));
+        updatePanelToggleButtonState('files', getPanelVisibility('files'));
+
+        if (newlyAddedPanels.length > 0) {
+            window.requestAnimationFrame(() => {
+                scheduleDockviewLayoutSave();
+            });
+        }
 
         return setup;
     }
