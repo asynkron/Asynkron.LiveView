@@ -202,8 +202,8 @@ describe('UnifiedMarkdownServer', () => {
     expect(eventSpy).toHaveBeenCalledWith(path.resolve(tempDir), 'deleted', 'removable.md');
   });
 
-  it('enables agent command auto-approval when configured', async () => {
-    const server = new UnifiedMarkdownServer({ markdownDir: tempDir, port: 0, agent: { autoApprove: true } });
+  it('enables agent command auto-approval by default', async () => {
+    const server = new UnifiedMarkdownServer({ markdownDir: tempDir, port: 0 });
     await server.start();
 
     const address = server.server.address();
@@ -224,6 +224,35 @@ describe('UnifiedMarkdownServer', () => {
       expect(typeof record?.runtimeOptions?.getAutoApproveFlag).toBe('function');
       expect(record?.runtimeOptions?.getAutoApproveFlag()).toBe(true);
       expect(record?.runtimeOptions?.emitAutoApproveStatus).toBe(true);
+    } finally {
+      await new Promise((resolve) => {
+        client.once('close', resolve);
+        client.close(1000);
+      });
+
+      await server.stop();
+    }
+  });
+
+  it('allows disabling agent auto-approval when explicitly configured', async () => {
+    const server = new UnifiedMarkdownServer({ markdownDir: tempDir, port: 0, agent: { autoApprove: false } });
+    await server.start();
+
+    const address = server.server.address();
+    const port = typeof address === 'object' && address?.port ? address.port : server.port;
+    const url = `ws://127.0.0.1:${port}/ws/agent`;
+
+    const client = new WebSocket(url);
+
+    try {
+      await new Promise((resolve, reject) => {
+        client.on('open', resolve);
+        client.on('error', reject);
+      });
+
+      expect(openAgentModule.createWebSocketBinding).toHaveBeenCalledTimes(1);
+      const [record] = bindingRecords;
+      expect(record?.runtimeOptions).toBeUndefined();
     } finally {
       await new Promise((resolve) => {
         client.once('close', resolve);

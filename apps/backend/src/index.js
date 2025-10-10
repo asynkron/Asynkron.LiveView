@@ -18,8 +18,8 @@ const argv = yargs(hideBin(process.argv))
   })
   .option('auto-approve', {
     type: 'boolean',
-    default: false,
-    describe: 'Start the workspace agent with command auto-approval enabled',
+    default: true,
+    describe: 'Start the workspace agent with command auto-approval enabled (use --no-auto-approve to disable)',
   })
   .help()
   .parseSync();
