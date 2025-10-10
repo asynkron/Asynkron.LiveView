@@ -1,5 +1,9 @@
 import { createMarkdownDisplay } from '../components/markdown_display.js';
 
+const globalScope = typeof window !== 'undefined' ? window : globalThis;
+const markedLib = globalScope?.marked;
+const hljsLib = globalScope?.hljs;
+
 export function createChatService(options = {}) {
     const {
         panel,
@@ -400,6 +404,106 @@ export function createChatService(options = {}) {
         scrollToLatest();
     }
 
+    function normaliseClassList(value) {
+        if (Array.isArray(value)) {
+            return value.filter(Boolean);
+        }
+        if (typeof value === 'string') {
+            return value
+                .split(/\s+/)
+                .map((part) => part.trim())
+                .filter(Boolean);
+        }
+        return [];
+    }
+
+    function createHighlightedCodeBlock(text, { language = '', classNames = [] } = {}) {
+        if (typeof text !== 'string' || text.length === 0) {
+            return null;
+        }
+
+        const blockClasses = normaliseClassList(classNames);
+        const safeLanguage = typeof language === 'string' ? language.trim() : '';
+
+        if (markedLib && typeof markedLib.parse === 'function') {
+            try {
+                const markdown = `\`\`\`${safeLanguage}\n${text}\n\`\`\``;
+                const html = markedLib.parse(markdown, {
+                    mangle: false,
+                    headerIds: false,
+                    gfm: true,
+                    highlight(code, infoString) {
+                        if (!hljsLib) {
+                            return code;
+                        }
+                        const requestedLanguage = safeLanguage || (infoString || '').trim();
+                        try {
+                            if (requestedLanguage && hljsLib.getLanguage(requestedLanguage)) {
+                                return hljsLib.highlight(code, { language: requestedLanguage }).value;
+                            }
+                            return hljsLib.highlightAuto(code).value;
+                        } catch (error) {
+                            console.warn('Failed to highlight command preview snippet', error);
+                            return code;
+                        }
+                    },
+                });
+
+                const template = document.createElement('template');
+                template.innerHTML = html.trim();
+                const pre = template.content.querySelector('pre');
+                const codeElement = pre ? pre.querySelector('code') : null;
+                if (pre && codeElement) {
+                    blockClasses.forEach((className) => pre.classList.add(className));
+                    if (safeLanguage) {
+                        codeElement.classList.add(`language-${safeLanguage}`);
+                    }
+                    if (hljsLib && !codeElement.classList.contains('hljs')) {
+                        codeElement.classList.add('hljs');
+                    }
+                    return pre;
+                }
+            } catch (error) {
+                console.warn('Failed to render command preview with marked', error);
+            }
+        }
+
+        const pre = document.createElement('pre');
+        blockClasses.forEach((className) => pre.classList.add(className));
+
+        const codeElement = document.createElement('code');
+        const content = text;
+
+        if (hljsLib) {
+            try {
+                const requestedLanguage = safeLanguage && hljsLib.getLanguage(safeLanguage) ? safeLanguage : '';
+                if (requestedLanguage) {
+                    codeElement.innerHTML = hljsLib.highlight(content, { language: requestedLanguage }).value;
+                } else {
+                    codeElement.innerHTML = hljsLib.highlightAuto(content).value;
+                }
+                codeElement.classList.add('hljs');
+                if (requestedLanguage) {
+                    codeElement.classList.add(`language-${requestedLanguage}`);
+                }
+            } catch (error) {
+                console.warn('Failed to highlight command preview fallback', error);
+                codeElement.textContent = content;
+                if (safeLanguage) {
+                    codeElement.classList.add(`language-${safeLanguage}`);
+                }
+            }
+        } else {
+            codeElement.textContent = content;
+            if (safeLanguage) {
+                codeElement.classList.add(`language-${safeLanguage}`);
+            }
+        }
+
+        pre.appendChild(codeElement);
+        return pre;
+    }
+
     function appendCommand(payload = {}) {
         if (!messageList) {
             return;
@@ -446,12 +550,13 @@ export function createChatService(options = {}) {
         }
 
         if (hasRunText) {
-            const runBlock = document.createElement('pre');
-            runBlock.className = 'agent-command-block agent-command-run';
-            const code = document.createElement('code');
-            code.textContent = runText;
-            runBlock.appendChild(code);
-            bubble.appendChild(runBlock);
+            const runBlock = createHighlightedCodeBlock(runText, {
+                language: 'bash',
+                classNames: ['agent-command-block', 'agent-command-run'],
+            });
+            if (runBlock) {
+                bubble.appendChild(runBlock);
+            }
         }
 
         const metaItems = [];
@@ -502,7 +607,7 @@ export function createChatService(options = {}) {
             bubble.appendChild(metaList);
         }
 
-        function appendOutput(labelText, content) {
+        function appendOutput(labelText, content, { language = '' } = {}) {
             const section = document.createElement('div');
             section.className = 'agent-command-output';
 
@@ -511,12 +616,13 @@ export function createChatService(options = {}) {
             label.textContent = labelText;
             section.appendChild(label);
 
-            const block = document.createElement('pre');
-            block.className = 'agent-command-block agent-command-output-block';
-            const code = document.createElement('code');
-            code.textContent = content;
-            block.appendChild(code);
-            section.appendChild(block);
+            const block = createHighlightedCodeBlock(content, {
+                language,
+                classNames: ['agent-command-block', 'agent-command-output-block'],
+            });
+            if (block) {
+                section.appendChild(block);
+            }
 
             bubble.appendChild(section);
         }
@@ -568,8 +674,6 @@ export function createChatService(options = {}) {
                 if (text) {
                     const level = typeof payload.level === 'string' ? payload.level : undefined;
                     setStatus(text, { level });
-                    const eventType = typeof payload.eventType === 'string' ? payload.eventType : 'status';
-                    appendEvent(eventType, { ...payload, text, level });
                 }
                 break;
             }
@@ -605,9 +709,13 @@ export function createChatService(options = {}) {
                 break;
             }
             case 'agent_plan':
-            case 'agent_event':
                 // Reserved for future UI enhancements.
                 break;
+            case 'agent_event': {
+                const eventType = typeof payload.eventType === 'string' ? payload.eventType : 'event';
+                appendEvent(eventType, payload);
+                break;
+            }
             case 'agent_command':
                 updateThinkingState(false);
                 appendCommand(payload);
