@@ -184,9 +184,42 @@ export function getCssNumber(rootElement, variableName, fallback) {
     return typeof fallback === 'number' ? fallback : 0;
 }
 
-export function setStatus(message) {
-    // Status banner removed; keep function to avoid touching callers.
-    void message;
+let cachedStatusElement = null;
+
+function resolveStatusElement() {
+    if (cachedStatusElement && cachedStatusElement.isConnected) {
+        return cachedStatusElement;
+    }
+
+    const candidate = document?.querySelector?.('[data-status-target]')
+        || document?.querySelector?.('[data-role="status-banner"]')
+        || document?.querySelector?.('#agent-status');
+
+    cachedStatusElement = candidate || null;
+    return cachedStatusElement;
+}
+
+export function setStatus(message, options = {}) {
+    const statusElement = resolveStatusElement();
+    const text = typeof message === 'string' ? message : message ? String(message) : '';
+    const level = typeof options.level === 'string' ? options.level : '';
+
+    if (!statusElement) {
+        if (text) {
+            console.info('Status:', text);
+        }
+        return;
+    }
+
+    statusElement.textContent = text;
+
+    if (level) {
+        statusElement.dataset.level = level;
+    } else {
+        delete statusElement.dataset.level;
+    }
+
+    statusElement.classList.toggle('is-visible', Boolean(text));
 }
 
 export function createSetConnectionStatus(offlineOverlay) {

@@ -715,9 +715,6 @@ export function createChatService(options = {}) {
                 ensureConversationStarted();
                 planDisplay?.update(payload.plan);
                 break;
-            case 'agent_event':
-                // Reserved for future UI enhancements.
-                break;
             case 'agent_event': {
                 const eventType = typeof payload.eventType === 'string' ? payload.eventType : 'event';
                 appendEvent(eventType, payload);
