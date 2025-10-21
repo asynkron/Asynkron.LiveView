@@ -16,7 +16,6 @@
     "format:fix": "prettier --write \"src/**/*.js\" \"tests/**/*.js\" README.md"
   },
   "dependencies": {
-    "@asynkron/openagent": "^2.13.11",
     "chokidar": "^3.5.3",
     "express": "^4.19.2",
     "ws": "^8.15.1",
@@ -25,8 +24,5 @@
   "devDependencies": {
     "supertest": "^6.3.4",
     "vitest": "^1.6.0"
-  },
-  "optionalDependencies": {
-    "node-pty": "^1.0.0"
   }
 }

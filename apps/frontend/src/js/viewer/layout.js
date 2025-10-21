@@ -7,8 +7,6 @@ export function initLayout(context) {
         viewerSection,
         tocSidebar,
         fileSidebar,
-        agentPanel,
-        terminalPanel,
         tocSplitter,
         fileSplitter,
         rootElement,
@@ -233,7 +231,7 @@ export function initLayout(context) {
             return null;
         }
 
-        if (!viewerSection || !tocSidebar || !fileSidebar || !terminalPanel || !agentPanel) {
+        if (!viewerSection || !tocSidebar || !fileSidebar) {
             console.warn('Dockview initialisation skipped: missing panel sources.');
             dockviewRoot.classList.add('hidden');
             if (appShell) {
@@ -253,8 +251,6 @@ export function initLayout(context) {
             viewer: viewerSection,
             toc: tocSidebar,
             files: fileSidebar,
-            agent: agentPanel,
-            terminal: terminalPanel,
         };
 
         tocSidebar?.classList.add('is-expanded');
@@ -318,9 +314,6 @@ export function initLayout(context) {
             return null;
         }
 
-        // Restored layouts from before the agent chat existed won't include the
-        // new panel, so ensurePanel() rehydrates missing Dockview panels using
-        // the default positioning logic.
         function ensurePanel(id, createPanel) {
             const existing = findExistingPanel(id);
             if (existing) {
@@ -384,22 +377,6 @@ export function initLayout(context) {
             position: viewerPanel ? { referencePanel: viewerPanel, direction: 'right' } : undefined,
         }));
 
-        const { panel: terminalDockviewPanel } = ensurePanel('dockview-terminal', () => dockview.addPanel({
-            id: 'dockview-terminal',
-            component: 'terminal',
-            title: 'Terminal',
-            position: viewerPanel ? { referencePanel: viewerPanel, direction: 'bottom' } : undefined,
-        }));
-
-        const { panel: agentDockviewPanel } = ensurePanel('dockview-agent', () => dockview.addPanel({
-            id: 'dockview-agent',
-            component: 'agent',
-            title: 'Agent',
-            position: (filesPanel ?? viewerPanel)
-                ? { referencePanel: filesPanel ?? viewerPanel, direction: 'bottom' }
-                : undefined,
-        }));
-
         dockviewRoot.classList.remove('hidden');
         appShell?.classList.add('hidden');
 
@@ -409,8 +386,6 @@ export function initLayout(context) {
                 viewer: viewerPanel,
                 toc: tocPanel,
                 files: filesPanel,
-                agent: agentDockviewPanel,
-                terminal: terminalDockviewPanel,
             },
         };
 

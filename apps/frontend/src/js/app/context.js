@@ -32,22 +32,6 @@ export function createAppContext() {
         appShell: document.querySelector('.app-shell'),
         rootElement: document.documentElement,
         viewerSection: document.querySelector('.viewer'),
-        agentPanel: document.getElementById('agent-panel'),
-        agentStart: document.getElementById('agent-start'),
-        agentStartForm: document.getElementById('agent-start-form'),
-        agentStartInput: document.getElementById('agent-start-input'),
-        agentChat: document.getElementById('agent-chat'),
-        agentChatBody: document.getElementById('agent-chat-body'),
-        agentPlan: document.getElementById('agent-plan'),
-        agentMessages: document.getElementById('agent-messages'),
-        agentChatForm: document.getElementById('agent-chat-form'),
-        agentChatInput: document.getElementById('agent-chat-input'),
-        agentStatus: document.getElementById('agent-status'),
-        terminalPanel: document.getElementById('terminal-panel'),
-        terminalContainer: document.getElementById('terminal-container'),
-        terminalToggleButton: document.getElementById('terminal-toggle'),
-        terminalStatusText: document.getElementById('terminal-status'),
-        terminalResizeHandle: document.getElementById('terminal-resize-handle'),
         panelToggleButtons: Array.from(document.querySelectorAll('[data-panel-toggle]')),
     };
 
@@ -73,7 +57,6 @@ export function createAppContext() {
             expandedDirectories: new Set(),
             knownDirectories: new Set(),
         },
-        terminalStorageKey: 'terminalPanelHeight',
         initialFileFromLocation: '',
     };
 }

@@ -7,8 +7,6 @@ import { createAppContext } from './app/context.js';
 import { createUnifiedApp } from './app/unified_app.js';
 import { createSharedContext } from './app/shared_context.js';
 import { createRealtimeService } from './services/realtime.js';
-import { createTerminalService } from './services/terminal.js';
-import { createChatService } from './services/chat.js';
 import { createMarkdownDisplay } from './components/markdown_display.js';
 import {
     createViewerApi,
@@ -130,8 +128,6 @@ function composeUnifiedApp() {
             createRouter,
         },
         services: {
-            createTerminalService,
-            createChatService,
             createRealtimeService,
             createViewerApi,
             initNavigation,
