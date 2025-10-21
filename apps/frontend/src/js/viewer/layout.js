@@ -159,7 +159,172 @@ export function initLayout(context) {
         });
     }
 
-    function restoreDockviewLayout(instance) {
+    // Remove references to panels that are no longer provided by the app before restoring a layout snapshot.
+    function sanitiseDockviewLayout(savedLayout, allowedPanelComponents) {
+        if (!savedLayout || typeof savedLayout !== 'object') {
+            return null;
+        }
+
+        const allowedComponents = new Set((allowedPanelComponents ?? []).filter(Boolean));
+        if (allowedComponents.size === 0) {
+            return savedLayout;
+        }
+
+        const layoutPanels = savedLayout.panels;
+        if (!layoutPanels || typeof layoutPanels !== 'object') {
+            return savedLayout;
+        }
+
+        const eligiblePanels = new Map();
+        const allowedPanelIds = new Set();
+
+        for (const [panelId, panelState] of Object.entries(layoutPanels)) {
+            if (!panelState || typeof panelState !== 'object') {
+                continue;
+            }
+
+            const componentName = panelState.contentComponent ?? panelState.renderer;
+            if (componentName && allowedComponents.has(componentName)) {
+                eligiblePanels.set(panelId, { ...panelState });
+                allowedPanelIds.add(panelId);
+            }
+        }
+
+        if (eligiblePanels.size === 0) {
+            return null;
+        }
+
+        const referencedPanelIds = new Set();
+        const remainingGroupIds = new Set();
+
+        const pruneGroupState = (groupState) => {
+            if (!groupState || typeof groupState !== 'object') {
+                return null;
+            }
+
+            const filteredViews = Array.isArray(groupState.views)
+                ? groupState.views.filter((viewId) => {
+                      if (allowedPanelIds.has(viewId)) {
+                          referencedPanelIds.add(viewId);
+                          return true;
+                      }
+                      return false;
+                  })
+                : [];
+
+            if (filteredViews.length === 0) {
+                return null;
+            }
+
+            const activeView = filteredViews.includes(groupState.activeView)
+                ? groupState.activeView
+                : filteredViews[0];
+
+            if (groupState.id) {
+                remainingGroupIds.add(groupState.id);
+            }
+
+            return {
+                ...groupState,
+                views: filteredViews,
+                activeView,
+            };
+        };
+
+        const pruneGridNode = (node) => {
+            if (!node || typeof node !== 'object') {
+                return null;
+            }
+
+            if (node.type === 'leaf') {
+                const prunedGroup = pruneGroupState(node.data);
+                if (!prunedGroup) {
+                    return null;
+                }
+                return {
+                    ...node,
+                    data: prunedGroup,
+                };
+            }
+
+            if (node.type === 'branch' && Array.isArray(node.data)) {
+                const prunedChildren = node.data.map(pruneGridNode).filter(Boolean);
+                if (prunedChildren.length === 0) {
+                    return null;
+                }
+                return {
+                    ...node,
+                    data: prunedChildren,
+                };
+            }
+
+            return null;
+        };
+
+        const pruneGroupCollection = (groups) => {
+            if (!Array.isArray(groups)) {
+                return [];
+            }
+
+            return groups
+                .map((group) => {
+                    const prunedGroup = pruneGroupState(group?.data);
+                    if (!prunedGroup) {
+                        return null;
+                    }
+                    return {
+                        ...group,
+                        data: prunedGroup,
+                    };
+                })
+                .filter(Boolean);
+        };
+
+        const grid = savedLayout.grid ? { ...savedLayout.grid } : null;
+        const prunedRoot = grid?.root ? pruneGridNode(grid.root) : null;
+        const floatingGroups = pruneGroupCollection(savedLayout.floatingGroups);
+        const popoutGroups = pruneGroupCollection(savedLayout.popoutGroups);
+
+        if (!prunedRoot && floatingGroups.length === 0 && popoutGroups.length === 0) {
+            return null;
+        }
+
+        const sanitisedPanels = {};
+        referencedPanelIds.forEach((panelId) => {
+            const panelState = eligiblePanels.get(panelId);
+            if (panelState) {
+                sanitisedPanels[panelId] = panelState;
+            }
+        });
+
+        if (Object.keys(sanitisedPanels).length === 0) {
+            return null;
+        }
+
+        const sanitisedLayout = {
+            ...savedLayout,
+            panels: sanitisedPanels,
+            floatingGroups: floatingGroups.length > 0 ? floatingGroups : undefined,
+            popoutGroups: popoutGroups.length > 0 ? popoutGroups : undefined,
+        };
+
+        if (grid && prunedRoot) {
+            sanitisedLayout.grid = {
+                ...grid,
+                root: prunedRoot,
+            };
+        } else if (!prunedRoot) {
+            delete sanitisedLayout.grid;
+        }
+
+        if (sanitisedLayout.activeGroup && !remainingGroupIds.has(sanitisedLayout.activeGroup)) {
+            delete sanitisedLayout.activeGroup;
+        }
+
+        return sanitisedLayout;
+    }
+
+    function restoreDockviewLayout(instance, allowedPanelComponents = []) {
         if (!instance || typeof window?.localStorage === 'undefined') {
             return false;
         }
@@ -178,10 +343,14 @@ export function initLayout(context) {
 
         try {
             const savedLayout = JSON.parse(rawLayout);
+            const sanitisedLayout = sanitiseDockviewLayout(savedLayout, allowedPanelComponents);
+            if (!sanitisedLayout) {
+                return false;
+            }
             if (typeof instance.restoreLayout === 'function') {
-                instance.restoreLayout(savedLayout);
+                instance.restoreLayout(sanitisedLayout);
             } else if (typeof instance.fromJSON === 'function') {
-                instance.fromJSON(savedLayout);
+                instance.fromJSON(sanitisedLayout);
             } else {
                 throw new Error('Dockview instance cannot restore layouts');
             }
@@ -351,7 +520,7 @@ export function initLayout(context) {
 
         // Try to restore the user's saved layout first; missing panels will be
         // re-added below so older layouts keep working.
-        restoreDockviewLayout(dockview);
+        restoreDockviewLayout(dockview, Object.keys(panelSources));
 
         const { panel: viewerPanel } = ensurePanel('dockview-viewer', () => dockview.addPanel({
             id: 'dockview-viewer',
