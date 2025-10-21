@@ -1,10 +1,18 @@
-import { isWebSocketOpen } from './utils.js';
-
 export class DirectorySocketManager {
   constructor({ watchHub, resolveRoot }) {
     this.watchHub = watchHub;
     this.resolveRoot = resolveRoot;
     this.clients = new Map(); // ws -> root
+  }
+
+  isWebSocketOpen(ws) {
+    if (!ws) {
+      return false;
+    }
+    // ws.OPEN is available on real WebSocket instances; fall back to the
+    // literal readyState value used by the ws library for robustness.
+    const openState = typeof ws.OPEN === 'number' ? ws.OPEN : 1;
+    return ws.readyState === openState;
   }
 
   async handleConnection(ws) {
@@ -31,7 +39,7 @@ export class DirectorySocketManager {
 
       this.clients.set(ws, root);
       const index = await this.watchHub.fileManager.buildMarkdownIndex(root);
-      if (isWebSocketOpen(ws)) {
+      if (this.isWebSocketOpen(ws)) {
         ws.send(
           JSON.stringify({
             type: 'directory_update',
@@ -54,7 +62,7 @@ export class DirectorySocketManager {
 
   broadcast(root, payload) {
     for (const [ws, subscribedRoot] of this.clients.entries()) {
-      if (subscribedRoot !== root || !isWebSocketOpen(ws)) {
+      if (subscribedRoot !== root || !this.isWebSocketOpen(ws)) {
         continue;
       }
       try {

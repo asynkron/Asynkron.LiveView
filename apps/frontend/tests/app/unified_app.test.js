@@ -75,11 +75,6 @@ function createContext() {
         appShell: documentRef.createElement('div'),
         rootElement: documentRef.documentElement,
         viewerSection: documentRef.createElement('section'),
-        terminalPanel: documentRef.createElement('div'),
-        terminalContainer: documentRef.createElement('div'),
-        terminalToggleButton: documentRef.createElement('button'),
-        terminalStatusText: documentRef.createElement('div'),
-        terminalResizeHandle: documentRef.createElement('div'),
         panelToggleButtons: [],
     };
 
@@ -116,7 +111,6 @@ function createContext() {
                 expandedDirectories: new Set(),
                 knownDirectories: new Set(),
             },
-            terminalStorageKey: 'terminal-test',
             initialFileFromLocation: null,
         },
         elements,
@@ -228,15 +222,9 @@ test('start wires listeners and destroy unwires them', () => {
         }),
     };
 
-    let terminalSetup = 0;
     const realtimeEvents = [];
     let disconnectCalled = 0;
     const services = {
-        createTerminalService: () => ({
-            setupTerminalPanel() {
-                terminalSetup += 1;
-            },
-        }),
         createRealtimeService: (options) => {
             realtimeEvents.push(options);
             return {
@@ -280,7 +268,6 @@ test('start wires listeners and destroy unwires them', () => {
     assert.equal(layoutCalls.refresh, 1);
     assert.equal(dockviewRoot._listeners.has('pointerdown'), true);
     assert.equal(pointerEvents.has('pointerup'), true);
-    assert.equal(terminalSetup, 1);
     assert.equal(realtimeEvents.includes('connect'), true);
     assert.equal(elements.content._listeners.has('click'), true);
     assert.equal(state.currentFile, 'README.md');

@@ -16,20 +16,12 @@ const argv = yargs(hideBin(process.argv))
     default: 8080,
     describe: 'Port to bind the HTTP server',
   })
-  .option('auto-approve', {
-    type: 'boolean',
-    default: true,
-    describe: 'Start the workspace agent with command auto-approval enabled (use --no-auto-approve to disable)',
-  })
   .help()
   .parseSync();
 
 const server = new UnifiedMarkdownServer({
   markdownDir: argv.path,
   port: argv.port,
-  agent: {
-    autoApprove: Boolean(argv.autoApprove),
-  },
 });
 server.start().catch((error) => {
   // eslint-disable-next-line no-console

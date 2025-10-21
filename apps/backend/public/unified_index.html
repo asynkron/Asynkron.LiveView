@@ -75,43 +75,6 @@
         </div>
     </div>
 
-    <div id="agent-panel" class="agent-panel agent-panel--empty">
-        <div id="agent-start" class="agent-empty-state">
-            <form id="agent-start-form" class="agent-start-form" autocomplete="off">
-                <h2 class="agent-start-title">Ask the workspace agent</h2>
-                <p class="agent-start-subtitle">Chat with OpenAgent, the workspace-aware assistant powered by the server runtime.</p>
-                <div class="agent-start-input-row">
-                    <input id="agent-start-input" class="agent-start-input" type="text" name="message"
-                        placeholder="Send a message..." required />
-                    <button type="submit" class="agent-send-button" aria-label="Send message">Send</button>
-                </div>
-                <p class="agent-start-hint">OpenAgent may take a moment to think before responding.</p>
-            </form>
-        </div>
-
-        <div id="agent-chat" class="agent-chat hidden" aria-live="polite">
-            <div id="agent-chat-body" class="agent-chat-body">
-                <div id="agent-messages" class="agent-messages" role="log" aria-live="polite"></div>
-            </div>
-            <div id="agent-plan" class="agent-plan hidden" aria-live="polite"></div>
-            <form id="agent-chat-form" class="agent-input-form" autocomplete="off">
-                <div class="agent-input-row">
-                    <textarea id="agent-chat-input" class="agent-input" name="message" rows="1"
-                        placeholder="Send a message..." aria-label="Message the agent"></textarea>
-                    <button type="submit" class="agent-send-button" aria-label="Send message">Send</button>
-                </div>
-                <div id="agent-status" class="agent-status" role="status" aria-live="polite"></div>
-            </form>
-        </div>
-    </div>
-
-    <div id="terminal-panel" class="terminal-panel">
-
-        <div class="terminal-body">
-            <div id="terminal-container"></div>
-        </div>
-    </div>
-
     <script>
         window.__INITIAL_STATE__ = __INITIAL_STATE_JSON__;
     </script>
